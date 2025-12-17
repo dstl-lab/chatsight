@@ -87,7 +87,7 @@ export function OperationsPanel() {
             key={name}
             title={name}
             selected={selectedFile === name}
-            onClick={() => setSelectedFile(name)}
+            onClick={() => setSelectedFile((prev) => (prev === name ? null : name))}
           />
         ))}
       </div>
