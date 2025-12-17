@@ -11,7 +11,10 @@ function App() {
     <>
       <Header />
       <div className="body">
-        <OperationsPanel />
+        <aside className="sidebar">
+          <OperationsPanel />
+        </aside>
+        <div className="vertical-separator" />
         <Workspace />
       </div>
     </>

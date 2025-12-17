@@ -7,6 +7,12 @@
 
 .body {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px 10px 1fr; /* sidebar | separator | main */
   height: calc(100vh - var(--header-height));
+}
+
+.vertical-separator {
+  width: 10px;
+  background: #c3c3c3;
+  height: 100%;
 }
