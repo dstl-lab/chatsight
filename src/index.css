@@ -11,6 +11,9 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Header height: header content (~50px) + separator (10px) = 60px */
+  --header-height: 60px;
 }
 
 body {
