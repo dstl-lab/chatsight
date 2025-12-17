@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import './OperationsPanel.css';
-
-// #region PNG imports
 import operations from '../assets/operations.png';
 import files from '../assets/files.png';
 import messages from '../assets/messages.png';
@@ -10,8 +8,6 @@ import notes from '../assets/notes.png';
 import chatgpt from '../assets/chatgpt.png';
 import wordcloud from '../assets/wordcloud.png';
 import sentiment from '../assets/sentiment.png';
-
-// #endregion
 
 function SectionTitle({ icon, title }: { icon: string; title: string }) {
   return (
