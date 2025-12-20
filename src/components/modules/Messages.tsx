@@ -110,27 +110,29 @@ export function Messages({ messages, onClose }: MessagesProps) {
     return (
         <div className="messages-module">
             <div className="module-header">
-                <h3 className="module-title">Messages</h3>
-                <div className="navigation">
-                    <button 
-                        className="nav-button prev-button"
-                        onClick={handlePrev}
-                        disabled={currentIndex === 0}
-                        aria-label="Previous message"
-                    >
-                        ←
-                    </button>
-                    <span className="message-counter">
-                        {currentIndex + 1} / {defaultMessages.length}
-                    </span>
-                    <button
-                        className="nav-button next-button"
-                        onClick={handleNext}
-                        disabled={currentIndex === defaultMessages.length - 1}
-                        aria-label="Next message"
-                    >
-                        →
-                    </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <h3 className="module-title">Messages</h3>
+                    <div className="navigation">
+                        <button 
+                            className="nav-button prev-button"
+                            onClick={handlePrev}
+                            disabled={currentIndex === 0}
+                            aria-label="Previous message"
+                        >
+                            ←
+                        </button>
+                        <span className="message-counter">
+                            {currentIndex + 1} / {defaultMessages.length}
+                        </span>
+                        <button
+                            className="nav-button next-button"
+                            onClick={handleNext}
+                            disabled={currentIndex === defaultMessages.length - 1}
+                            aria-label="Next message"
+                        >
+                            →
+                        </button>
+                    </div>
                 </div>
                 <button className="close-button" onClick={onClose} aria-label="Close module">
                     x
