@@ -42,8 +42,18 @@ function CollapsibleSection({ title, children }: { title: string; children: Reac
 }
 
 function OperationItem({ icon, title }: { icon: string; title: string }) {
+  const handleDragStart = (e: React.DragEvent) => {
+    const moduleType = title.toLowerCase().replace(/\s+/g, '');
+    e.dataTransfer.setData('moduleType', moduleType);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
   return (
-    <div className="operation-item">
+    <div 
+      className="operation-item"
+      draggable
+      onDragStart={handleDragStart}
+    >
       <img className="operation-img" src={icon} alt={title.toLowerCase()} />
       <p>{title}</p>
     </div>
@@ -61,7 +71,7 @@ function FileItem({ title, selected, onClick }: { title: string; selected: boole
 
 export function OperationsPanel() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const filesList = ['tempfile1.txt', 'tempfile2.txt', 'tempfile3.txt'];
+  const filesList = ['tempfile1.txt', 'tempfile2.txt', 'tempfile3.txt', 'tempfile4.txt'];
 
   return (
     <aside className="files-and-notes">
@@ -69,7 +79,7 @@ export function OperationsPanel() {
         <SectionTitle icon={operations} title="OPERATIONS" />
         <div className="section-separator"></div>
         <CollapsibleSection title="Line-by-Line">
-          <OperationItem icon={messages} title="Messsages" />
+          <OperationItem icon={messages} title="Messages" />
           <OperationItem icon={code} title="Code" />
         </CollapsibleSection>
         <CollapsibleSection title="Holistic">
