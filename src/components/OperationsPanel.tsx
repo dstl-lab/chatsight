@@ -12,6 +12,12 @@ import collapseIcon from '../assets/collapse.png';
 import expandIcon from '../assets/expand.png';
 import txtFile from '../assets/txtfile.png';
 
+interface OperationItemProps {
+  icon: string;
+  title: string;
+  isMessagesDisabled?: boolean;
+}
+
 function SectionTitle({ icon, title }: { icon: string; title: string }) {
   return (
     <div className="section-title">
@@ -41,8 +47,13 @@ function CollapsibleSection({ title, children }: { title: string; children: Reac
   );
 }
 
-function OperationItem({ icon, title }: { icon: string; title: string }) {
+function OperationItem({ icon, title, isMessagesDisabled }: OperationItemProps) {
   const handleDragStart = (e: React.DragEvent) => {
+    if (isMessagesDisabled) {
+      e.preventDefault();
+      return;
+    }
+
     const moduleType = title.toLowerCase().replace(/\s+/g, '');
     e.dataTransfer.setData('moduleType', moduleType);
     e.dataTransfer.effectAllowed = 'move';
@@ -50,8 +61,8 @@ function OperationItem({ icon, title }: { icon: string; title: string }) {
 
   return (
     <div 
-      className="operation-item"
-      draggable
+      className={`operation-item ${isMessagesDisabled ? 'disabled' : ''}`}
+      draggable={!isMessagesDisabled}
       onDragStart={handleDragStart}
     >
       <img className="operation-img" src={icon} alt={title.toLowerCase()} />
@@ -69,7 +80,7 @@ function FileItem({ title, selected, onClick }: { title: string; selected: boole
   );
 }
 
-export function OperationsPanel() {
+export function OperationsPanel({ hasMessages }: { hasMessages: boolean }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const filesList = ['tempfile1.txt', 'tempfile2.txt', 'tempfile3.txt', 'tempfile4.txt'];
 
@@ -79,7 +90,7 @@ export function OperationsPanel() {
         <SectionTitle icon={operations} title="OPERATIONS" />
         <div className="section-separator"></div>
         <CollapsibleSection title="Line-by-Line">
-          <OperationItem icon={messages} title="Messages" />
+          <OperationItem icon={messages} title="Messages" isMessagesDisabled={hasMessages} />
           <OperationItem icon={code} title="Code" />
         </CollapsibleSection>
         <CollapsibleSection title="Holistic">

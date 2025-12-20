@@ -110,6 +110,12 @@ h3 {
 .operation-item:hover {
   font-weight: 600;
 }
+
+.operation-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 /* #endregion */
 
 /* #region Files */

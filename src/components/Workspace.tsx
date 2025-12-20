@@ -4,11 +4,12 @@ import { Messages } from './modules/Messages';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
-export function Workspace() {
-  const [gridSlots, setGridSlots] = useState<(ModuleType | null)[]>([
-    null, null, null, 
-    null, null, null, 
-  ]);
+interface WorkspaceProps {
+  gridSlots: (ModuleType | null)[];
+  setGridSlots: React.Dispatch<React.SetStateAction<(ModuleType | null)[]>>;
+}
+
+export function Workspace({ gridSlots, setGridSlots }: WorkspaceProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -52,12 +53,16 @@ export function Workspace() {
 
     const normalizedType = moduleType === 'messages' ? 'messages' : moduleType;
 
+    if (normalizedType === 'messages' && gridSlots.includes('messages')) {
+      return;
+    }
+
     if (normalizedType && gridSlots[slotIndex] === null) {
       setGridSlots(prev => {
         const newSlots = [...prev];
         newSlots[slotIndex] = normalizedType;
         return newSlots;
-      });
+      })
     }
   };
 
