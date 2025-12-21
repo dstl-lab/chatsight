@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import './Workspace.css';
 import { Messages } from './modules/Messages';
+import { Code } from './modules/Code';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
@@ -152,6 +153,15 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
       case 'messages':
         return (
           <Messages
+            onClose={() => handleClose(module.id)}
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan = {module.colSpan}
+            rowSpan = {module.rowSpan}
+          />
+        );  
+      case 'code':
+        return (
+          <Code
             onClose={() => handleClose(module.id)}
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan = {module.colSpan}
