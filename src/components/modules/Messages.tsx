@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import './Messages.css';
+import { useModuleResize } from './useModuleResize';
 
 interface Message {
     id: string;
@@ -11,9 +12,12 @@ interface Message {
 interface MessagesProps {
     messages?: Message[];
     onClose?: () => void;
+    onResize?: (newColSpan: number, newRowSpan: number) => void;
+    colSpan?: number;
+    rowSpan?: number;
 }
 
-export function Messages({ messages, onClose }: MessagesProps) {
+export function Messages({ messages, onClose, onResize, colSpan = 1, rowSpan = 1 }: MessagesProps) {
     const defaultMessages: Message[] = messages || [
         {
             id: '1',
@@ -106,9 +110,33 @@ export function Messages({ messages, onClose }: MessagesProps) {
             scrollToMessage(newIndex);
         }
     }
+    
+    const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({ 
+        colSpan, 
+        rowSpan,
+        onResize,
+    });
 
     return (
-        <div className="messages-module">
+        <div className="messages-module" ref={moduleRef}>
+            {resizeHandles.right && (
+                <div
+                    className="resize-handle resize-handle-right"
+                    onMouseDown={(e) => handleResizeStart(e, 'right')}
+                />
+            )}
+            {resizeHandles.bottom && (
+                <div
+                    className="resize-handle resize-handle-bottom"
+                    onMouseDown={(e) => handleResizeStart(e, 'down')}
+                />
+            )}
+            {resizeHandles.corner && (
+                <div
+                    className="resize-handle resize-handle-corner"
+                    onMouseDown={(e) => handleResizeStart(e, 'corner')}
+                />
+            )}
             <div className="module-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <h3 className="module-title">Messages</h3>

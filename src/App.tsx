@@ -9,13 +9,18 @@ import { Workspace } from './components/Workspace';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
-function App() {
-  const [gridSlots, setGridSlots] = useState<(ModuleType | null)[]>([
-    null, null, null, 
-    null, null, null, 
-  ]);
+interface Module {
+  id: string;
+  type: ModuleType;
+  startIndex: number;
+  colSpan: number;
+  rowSpan: number;
+}
 
-  const hasMessages = gridSlots.includes('messages')
+function App() {
+  const [modules, setModules] = useState<Module[]>([]);
+
+  const hasMessages = modules.some(m => m.type === 'messages');
 
   return (
     <>
@@ -25,7 +30,7 @@ function App() {
           <OperationsPanel hasMessages={hasMessages} />
         </aside>
         <div className="vertical-separator" />
-        <Workspace gridSlots={gridSlots} setGridSlots={setGridSlots} />
+        <Workspace modules={modules} setModules={setModules} />
       </div>
     </>
   );
