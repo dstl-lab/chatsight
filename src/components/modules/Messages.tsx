@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import './Messages.css';
+import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
 
 interface Message {

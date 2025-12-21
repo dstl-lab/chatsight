@@ -10,53 +10,6 @@
     position: relative;
 }
 
-.resize-handle {
-    position: absolute;
-    background-color: transparent;
-    z-index: 10;
-    pointer-events: auto;
-}
-
-.resize-handle-right {
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    cursor: ew-resize;
-}
-
-.resize-handle-right:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-.resize-handle-bottom {
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    cursor: ns-resize;
-}
-
-.resize-handle-bottom:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-.resize-handle-corner {
-    right: 0;
-    bottom: 0;
-    width: 12px;
-    height: 12px;
-    cursor: nwse-resize;
-    background-color: #FFFFFF;
-    border: 1px solid #000000;
-    border-top: none;
-    border-left: none;
-}
-
-.resize-handle-corner:hover {
-    background-color: #E0E0E0;
-}
-
 .module-header {
     display: flex;
     flex-direction: row;
