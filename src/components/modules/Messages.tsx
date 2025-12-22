@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import './Messages.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
@@ -16,9 +16,11 @@ interface MessagesProps {
     onResize?: (newColSpan: number, newRowSpan: number) => void;
     colSpan?: number;
     rowSpan?: number;
+    currentIndex?: number;
+    onIndexChange?: (index: number) => void;
 }
 
-export function Messages({ messages, onClose, onResize, colSpan = 1, rowSpan = 1 }: MessagesProps) {
+export function Messages({ messages, onClose, onResize, colSpan = 1, rowSpan = 1, currentIndex: externalIndex, onIndexChange }: MessagesProps) {
     const defaultMessages: Message[] = messages || [
         {
             id: '1',
@@ -70,7 +72,9 @@ export function Messages({ messages, onClose, onResize, colSpan = 1, rowSpan = 1
         },
     ];
 
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const[localIndex, setLocalIndex] = useState(0);
+    const currentIndex = externalIndex !== undefined ? externalIndex : localIndex;
+    const setCurrentIndex = onIndexChange || setLocalIndex;
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -111,6 +115,21 @@ export function Messages({ messages, onClose, onResize, colSpan = 1, rowSpan = 1
             scrollToMessage(newIndex);
         }
     }
+
+    useEffect(() => {
+        const handleKey = (event: KeyboardEvent) => {
+            if (event.metaKey && event.key == 'j') {
+                event.preventDefault()
+                handlePrev()
+            } else if (event.metaKey && event.key == 'k') {
+                event.preventDefault()
+                handleNext()
+            }
+        }
+
+        window.addEventListener('keydown', handleKey)
+        return () => window.removeEventListener('keydown', handleKey)
+    })
     
     const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({ 
         colSpan, 

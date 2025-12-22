@@ -148,6 +148,8 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
     });
   };
 
+  const [messageIndex, setMessageIndex] = useState(0);
+  
   const renderModule = (module: Module) => {
     switch (module.type) {
       case 'messages':
@@ -157,6 +159,8 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan = {module.colSpan}
             rowSpan = {module.rowSpan}
+            currentIndex={messageIndex}
+            onIndexChange={setMessageIndex}
           />
         );  
       case 'code':
@@ -166,6 +170,7 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan = {module.colSpan}
             rowSpan = {module.rowSpan}
+            messageIndex={messageIndex}
           />
         );
         default: 
