@@ -1,7 +1,8 @@
-import { useRef, useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import './Code.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
+import { apiClient, type DiffLine } from '../../services/apiClient';
 
 interface CodeProps {
     codes?: string;
@@ -13,24 +14,78 @@ interface CodeProps {
 }
 
 export function Code({ codes, onClose, onResize, colSpan = 1, rowSpan = 1, messageIndex }: CodeProps) {
-    const defaultCodeArray = [
-        {
-            id: '1',
-            content: "print('Hello world')",
-        },
-        {
-            id: '2',
-            content: "def add(a, b): \n    return a + b"
+    const [codeContent, setCodeContent] = useState<string>('');
+    const [diffLines, setDiffLines] = useState<DiffLine[] | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const prevMessageIndexRef = useRef<number | undefined>(undefined);
+
+    useEffect(() => {
+        if (codes && typeof codes === 'string') {
+            setCodeContent(codes);
+            setDiffLines(null);
+            return;
         }
-    ];
 
-    const currentCodeId = messageIndex !== undefined ? String(messageIndex + 1) : '1';
-    const selectedCode = defaultCodeArray.find(item => item.id === currentCodeId);
+        if (messageIndex !== undefined) {
+            setLoading(true);
+            setError(null);
 
-    const codeString = typeof codes === 'string'
-        ? codes
-        : (selectedCode?.content || defaultCodeArray[0].content);  
-    const codeLines = codeString.split('\n');
+            const prevIndex = prevMessageIndexRef.current;
+            prevMessageIndexRef.current = messageIndex;
+
+            if (prevIndex !== undefined && prevIndex !== messageIndex) {
+                Promise.all([
+                    apiClient.getCode(messageIndex),
+                    apiClient.getDiff(prevIndex, messageIndex)
+                ])
+                    .then(([codeData, diffData]) => {
+                        setCodeContent(codeData.codeContent);
+                        setDiffLines(diffData.diff);
+                        console.log('Diff data:', diffData.diff);
+                        console.log('Diff types:', diffData.diff.map(d => d.type));
+                        setLoading(false);
+                    })
+                    .catch((error) => {
+                        console.warn('Diff fetch failed, falling back to code only:', error.message);
+                        apiClient.getCode(messageIndex)
+                            .then((data) => {
+                                setCodeContent(data.codeContent);
+                                setDiffLines(null);
+                                setLoading(false);
+                            })
+                            .catch((codeError) => {
+                                setError(codeError.message);
+                                setLoading(false);
+                                setCodeContent('');
+                                setDiffLines(null);
+                            });
+                    });
+            } else {
+                apiClient.getCode(messageIndex)
+                    .then((data) => {
+                        setCodeContent(data.codeContent);
+                        setDiffLines(null);
+                        setLoading(false);
+                    })
+                    .catch((error) => {
+                        setError(error.message);
+                        setLoading(false);
+                        setCodeContent('');
+                        setDiffLines(null);
+                    });
+            }
+        }
+    }, [messageIndex, codes]);
+
+    const linesToDisplay = diffLines !== null
+        ? diffLines
+        : codeContent.split('\n').map((content, index) => ({
+            type: 'unchanged' as const,
+            line: index + 1,
+            originalLine: index + 1,  // For unchanged lines, original equals current
+            content
+        }));
 
     const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({
         colSpan,
@@ -67,14 +122,42 @@ export function Code({ codes, onClose, onResize, colSpan = 1, rowSpan = 1, messa
                 </button>
             </div>
             <div className="code-content">
-                <div className="code-lines">
-                    {codeLines.map((line, index) => (
-                        <div key={index} className="code-line">
-                            <span className="line-number">{index + 1}</span>
-                            <span className="line-content">{line || ' '}</span>
-                        </div>
-                    ))}
-                </div>
+                {loading && (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#6A737D' }}>
+                        Loading...
+                    </div>
+                )}
+                {error && (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#f85149' }}>
+                        Error: {error}
+                    </div>
+                )}
+                {!loading && !error && (
+                    <div className="code-lines">
+                        {linesToDisplay.map((diffLine, index) => (
+                            <div
+                                key = {index}
+                                className={`code-line code-line-${diffLine.type}`}
+                            >
+                                <span className="line-number line-number-original">
+                                    {diffLine.type === 'added'
+                                        ? '+'
+                                        : diffLine.type === 'removed'
+                                        ? diffLine.originalLine
+                                        : diffLine.originalLine || diffLine.line
+                                    }
+                                </span>
+                                <span className="line-number line-number-current">
+                                    {diffLine.type === 'removed'
+                                        ? '-'
+                                        : diffLine.line
+                                    }
+                                </span>
+                                <span className="line-content">{diffLine.content || ' '}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     )
