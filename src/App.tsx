@@ -21,13 +21,14 @@ function App() {
   const [modules, setModules] = useState<Module[]>([]);
 
   const hasMessages = modules.some(m => m.type === 'messages');
+  const hasCode = modules.some(m => m.type === 'code')
 
   return (
     <>
       <Header />
       <div className="body">
         <aside className="sidebar">
-          <OperationsPanel hasMessages={hasMessages} />
+          <OperationsPanel hasMessages={hasMessages} hasCode={hasCode} />
         </aside>
         <div className="vertical-separator" />
         <Workspace modules={modules} setModules={setModules} />
