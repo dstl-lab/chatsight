@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { apiClient, type FileData } from '../services/apiClient';
+import { apiClient } from '../services/apiClient';
 import dstlLogo from '../assets/dstl-logo.png';
 import './Header.css';
 
