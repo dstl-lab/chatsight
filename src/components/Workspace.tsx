@@ -2,6 +2,7 @@ import { useState } from 'react';
 import './Workspace.css';
 import { Messages } from './modules/Messages';
 import { Code } from './modules/Code';
+import { Sentiment } from './modules/Sentiment';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
@@ -172,6 +173,10 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
             rowSpan = {module.rowSpan}
             messageIndex={messageIndex}
           />
+        );
+      case 'sentiment':
+        return (
+          <Sentiment />
         );
         default: 
           return null;
