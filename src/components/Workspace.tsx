@@ -97,20 +97,37 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
     setDragOverIndex(null);
     const moduleType = e.dataTransfer.getData('moduleType') as ModuleType;
 
-    const normalizedType = moduleType === 'messages' ? 'messages' : moduleType;
-
-    if (normalizedType === 'messages' && modules.some(m => m.type === 'messages')) {
+    if (moduleType === 'messages' && modules.some(m => m.type === 'messages')) {
       return;
     }
 
     const moduleAtPos = findModuleAtPosition(slotIndex, modules);
-    if (!moduleAtPos && normalizedType) {
+    if (!moduleAtPos && moduleType) {
+      // Set default dimensions based on module type
+      const defaultColSpan = moduleType === 'sentiment' ? 2 : 1;
+      const defaultRowSpan = 1;
+      
+      const startRow = Math.floor(slotIndex / 3);
+      const startCol = slotIndex % 3;
+      const defaultPositions: number[] = [];
+      for (let row = 0; row < defaultRowSpan; row++) {
+        for (let col = 0; col < defaultColSpan; col++) {
+          const pos = (startRow + row) * 3 + (startCol + col);
+          if (pos < 6) defaultPositions.push(pos);
+        }
+      }
+      
+      // Later can be split into canRow... and canColFitDefault
+      const canFitDefault = startCol + defaultColSpan <= 3 && 
+                            startRow + defaultRowSpan <= 2 && 
+                            arePositionsAvailable(defaultPositions, modules);
+      
       const newModule: Module = {
-        id: `${normalizedType}-${Date.now()}`,
-        type: normalizedType,
+        id: `${moduleType}-${Date.now()}`,
+        type: moduleType,
         startIndex: slotIndex,
-        colSpan: 1,
-        rowSpan: 1,
+        colSpan: canFitDefault ? defaultColSpan : 1,
+        rowSpan: canFitDefault ? defaultRowSpan : 1,
       };
       setModules(prev => [...prev, newModule]);
     }
@@ -176,7 +193,11 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
         );
       case 'sentiment':
         return (
-          <Sentiment />
+          <Sentiment 
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan={module.colSpan}
+            rowSpan={module.rowSpan}
+          />
         );
         default: 
           return null;
