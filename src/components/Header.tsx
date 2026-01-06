@@ -5,6 +5,7 @@ import './Header.css';
 export function Header() {
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -26,9 +27,26 @@ export function Header() {
     setIsFileMenuOpen(!isFileMenuOpen);
   };
 
-  const handleMenuItemClick = (_action: string) => {
+  const handleMenuItemClick = (action: string) => {
     setIsFileMenuOpen(false);
+
+    if (action === 'add-new-file') {
+      fileInputRef.current?.click();
+    } else if (action === 'export-template') {
+      console.log('Export template'); // PLACEHOLDER
+    }
   }
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <>
@@ -69,6 +87,15 @@ export function Header() {
         </div>
       </div>
       <div className="header-separator" />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+        accept=".txt"
+        multiple={true}
+      />
     </>
   );
 }
