@@ -1,12 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import { codeService } from '../services/codeService';
+import { fileService } from '../services/fileService';
 
 const app = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/', (req, res) => {
     res.json({ message: 'Code Service API is running', endpoints: ['/api/code/:index', '/api/code/diff?from=X&to=Y', 'POST /api/code'] });
@@ -56,6 +57,50 @@ app.post('/api/code', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.post('/api/files', async (req, res) => {
+    try {
+        const { filename, content, fileType, fileSize } = req.body;
+
+        if (!filename || !content) {
+            return res.status(400).json({ error: 'Filename and content are required' });
+        }
+
+        const fileData = await fileService.saveFile(filename, content, fileType, fileSize);
+        res.json(fileData);
+    } catch (error) {
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/files', async (req, res) => {
+    try {
+        const files = await fileService.getAllFiles();
+        res.json(files);
+    } catch (error) {
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/files/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const file = await fileService.getFile(id);
+        res.json(file);
+    } catch (error) {
+        res.status(404).json({ error: (error as Error).message });
+    }
+});
+
+app.delete('/api/files/:id', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        await fileService.deleteFile(id);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(404).json({ error: (error as Error).message });
     }
 });
 

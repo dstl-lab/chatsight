@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
+import { apiClient, type FileData } from '../services/apiClient';
 import dstlLogo from '../assets/dstl-logo.png';
 import './Header.css';
 
-export function Header() {
+export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,14 +38,18 @@ export function Header() {
     }
   }
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) {
       const file = files[0];
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      try {
+        await apiClient.uploadFile(file);
+        onFileUpload?.();
+      } catch (error) {
+        console.error('Failed to upload file:', error);
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     }
   };
 

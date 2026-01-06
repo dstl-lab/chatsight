@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { apiClient } from '../services/apiClient'
 import './OperationsPanel.css';
 import operations from '../assets/operations.png';
-import files from '../assets/files.png';
+import files_png from '../assets/files.png';
 import messages from '../assets/messages.png';
 import code from '../assets/code.png';
 import notes from '../assets/notes.png';
@@ -112,9 +113,20 @@ function FileItem({
   );
 }
 
-export function OperationsPanel({ hasMessages, hasCode }: { hasMessages: boolean, hasCode: boolean }) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const filesList = ['tempfile1.txt', 'tempfile2.txt', 'tempfile3.txt', 'tempfile4.txt'];
+export function OperationsPanel({ 
+  hasMessages, 
+  hasCode,
+  files,
+  onFileUpload,
+  onFileDelete
+}: { 
+  hasMessages: boolean, 
+  hasCode: boolean,
+  files: Array<{ id: number; filename: string; fileType: string | null; fileSize: number | null; createdAt: string }>
+  onFileUpload?: () => void;
+  onFileDelete?: () => void;
+}) {
+  const [selectedFile, setSelectedFile] = useState<number | null>(null);
 
   return (
     <aside className="files-and-notes">
@@ -133,17 +145,23 @@ export function OperationsPanel({ hasMessages, hasCode }: { hasMessages: boolean
         </CollapsibleSection>
       </div>
       <div className="files">
-        <SectionTitle icon={files} title="FILES" />
+        <SectionTitle icon={files_png} title="FILES" />
         <div className="section-separator"></div>
-        {filesList.map((name) => (
+        {files.map((file) => (
           <FileItem
-            key={name}
-            title={name}
-            selected={selectedFile === name}
-            onClick={() => setSelectedFile((prev) => (prev === name ? null : name))}
-            onClose={() => {
-              if (selectedFile === name) {
+            key={file.id}
+            title={file.filename}
+            selected={selectedFile === file.id}
+            onClick={() => setSelectedFile((prev) => (prev === file.id ? null : file.id))}
+            onClose={async () => {
+              if (selectedFile === file.id) {
                 setSelectedFile(null);
+              }
+              try {
+                await apiClient.deleteFile(file.id);
+                onFileDelete?.();
+              } catch (error) {
+                console.error('Failed to delete file:', error);
               }
             }}
           />

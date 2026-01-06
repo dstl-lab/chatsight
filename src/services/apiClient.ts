@@ -18,6 +18,23 @@ export interface DiffData {
     diff: DiffLine[];
 }
 
+export interface FileData {
+    id: number;
+    filename: string;
+    content: string;
+    fileType: string | null;
+    fileSize: number | null;
+    createdAt: string;
+}
+
+export interface FileListItem {
+    id: number;
+    filename: string;
+    fileType: string | null;
+    fileSize: number | null;
+    createdAt: string;
+}
+
 class ApiClient {
     private baseUrl: string;
 
@@ -51,6 +68,54 @@ class ApiClient {
         });
         if (!response.ok) {
             throw new Error('Failed to save code');
+        }
+    }
+
+    async uploadFile(file: File): Promise<FileData> {
+        const content = await file.text();
+
+        const response = await fetch(`${this.baseUrl}/files`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                filename: file.name,
+                content: content,
+                fileType: file.type || null,
+                fileSize: file.size || null,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload file');
+        }
+
+        return response.json();
+    }
+
+    async getFiles(): Promise<FileListItem[]> {
+        const response = await fetch(`${this.baseUrl}/files`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch files');
+        }
+        return response.json();
+    }
+
+    async getFile(id: number): Promise<FileData> {
+        const response = await fetch(`${this.baseUrl}/files/${id}`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch `)
+        }
+        return response.json();
+    }
+
+    async deleteFile(id: number): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/files/${id}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to delete file ${id}`);
         }
     }
 }

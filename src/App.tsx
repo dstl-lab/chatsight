@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiClient, type FileListItem } from './services/apiClient'
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './App.css';
@@ -19,16 +20,44 @@ interface Module {
 
 function App() {
   const [modules, setModules] = useState<Module[]>([]);
+  const [files, setFiles] = useState<FileListItem[]>([]);
 
   const hasMessages = modules.some(m => m.type === 'messages');
   const hasCode = modules.some(m => m.type === 'code')
 
+  useEffect(() => {
+    const loadFiles = async () => {
+      try {
+        const filesList = await apiClient.getFiles();
+        setFiles(filesList);
+      } catch (error) {
+        console.error('Failed to load files:', error);
+      }
+    };
+    loadFiles();
+  }, []);
+  
+  const refreshFiles = async () => {
+    try {
+      const filesList = await apiClient.getFiles();
+      setFiles(filesList);
+    } catch (error) {
+      console.error('Filed to refresh files:', error);
+    }
+  };
+
   return (
     <>
-      <Header />
+      <Header onFileUpload={refreshFiles}/>
       <div className="body">
         <aside className="sidebar">
-          <OperationsPanel hasMessages={hasMessages} hasCode={hasCode} />
+          <OperationsPanel 
+            hasMessages={hasMessages} 
+            hasCode={hasCode} 
+            files={files}
+            onFileUpload={refreshFiles}
+            onFileDelete={refreshFiles}
+          />
         </aside>
         <div className="vertical-separator" />
         <Workspace modules={modules} setModules={setModules} />
