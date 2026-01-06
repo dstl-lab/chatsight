@@ -179,7 +179,15 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
   };
 
   const handleClose = (moduleId: string) => {
-    setModules(prev => prev.filter(m => m.id !== moduleId));
+    setModules(prev => {
+        const moduleToClose = prev.find(m => m.id === moduleId);
+
+        if (moduleToClose?.type === 'messages') {
+          return prev.filter(m => m.type !== 'messages' && m.type !== 'code');
+        }
+
+        return prev.filter(m => m.id !== moduleId);
+      });
   };
 
   const positionMap = new Map<number, Module>();

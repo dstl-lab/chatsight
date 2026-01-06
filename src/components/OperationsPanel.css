@@ -21,11 +21,6 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
-
-.file-item.selected {
-  background-color: #E2E2E2;
-  border-radius: 5px;
-}
 /* #endregion */
 
 /* #region Section Title */
@@ -127,6 +122,7 @@ h3 {
   padding: 5px 5px;
   font-size: 16px;
   cursor: pointer;
+  position: relative;
 }
 
 .file-item:not(:last-child) {
@@ -140,6 +136,45 @@ h3 {
 
 .file-item p {
   margin: 0;
+}
+
+.file-item.selected {
+  background-color: #E2E2E2;
+  border-radius: 5px;
+  font-weight: 600;
+}
+
+.file-item:hover {
+  background-color: #F5F5F5;
+}
+
+.file-item.selected:hover {
+  background-color: #F5F5F5;
+}
+
+.file-item-close {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #555555;
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1;
+  padding: 0 10px 0 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-item-close:hover {
+  color: #000000;
+  border-radius: 3px;
+}
+
+.file-item:hover .file-item-close {
+  display: flex;
 }
 /* #endregion */
 

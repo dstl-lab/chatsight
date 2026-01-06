@@ -79,11 +79,35 @@ function OperationItem({ icon, title, isMessagesDisabled, isCodeDisabled }: Oper
   );
 }
 
-function FileItem({ title, selected, onClick }: { title: string; selected: boolean; onClick: () => void}) {
+function FileItem({ 
+  title, 
+  selected, 
+  onClick, 
+  onClose
+ }: { 
+  title: string; 
+  selected: boolean; 
+  onClick: () => void; 
+  onClose?: () => void; 
+}) {
+  const handleCloseClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClose?.();
+  };
+
   return (
     <div className={`file-item ${selected ? 'selected' : ''}`} onClick={onClick}>
       <img className="file-img" src={txtFile} alt={title.toLowerCase()} />
       <p>{title}</p>
+      {onClose && (
+        <button
+          className="file-item-close"
+          onClick={handleCloseClick}
+          aria-label={`Close ${title}`}
+        >
+          x
+        </button>
+      )}
     </div>
   );
 }
@@ -99,7 +123,7 @@ export function OperationsPanel({ hasMessages, hasCode }: { hasMessages: boolean
         <div className="section-separator"></div>
         <CollapsibleSection title="Line-by-Line">
           <OperationItem icon={messages} title="Messages" isMessagesDisabled={hasMessages} />
-          <OperationItem icon={code} title="Code" isCodeDisabled={hasCode} />
+          <OperationItem icon={code} title="Code" isCodeDisabled={!hasMessages || hasCode} />
         </CollapsibleSection>
         <CollapsibleSection title="Holistic">
           <OperationItem icon={notes} title="Notes" />
@@ -117,6 +141,11 @@ export function OperationsPanel({ hasMessages, hasCode }: { hasMessages: boolean
             title={name}
             selected={selectedFile === name}
             onClick={() => setSelectedFile((prev) => (prev === name ? null : name))}
+            onClose={() => {
+              if (selectedFile === name) {
+                setSelectedFile(null);
+              }
+            }}
           />
         ))}
       </div>
