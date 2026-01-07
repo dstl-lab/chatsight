@@ -116,13 +116,13 @@ function FileItem({
 export function OperationsPanel({ 
   hasMessages, 
   hasCode,
-  files,
+  uploadedFiles,
   onFileUpload,
   onFileDelete
 }: { 
   hasMessages: boolean, 
   hasCode: boolean,
-  files: Array<{ id: number; filename: string; fileType: string | null; fileSize: number | null; createdAt: string }>
+  uploadedFiles: Array<{ id: number; filename: string; fileType: string | null; fileSize: number | null; createdAt: string }>
   onFileUpload?: () => void;
   onFileDelete?: () => void;
 }) {
@@ -147,7 +147,7 @@ export function OperationsPanel({
       <div className="files">
         <SectionTitle icon={files_png} title="FILES" />
         <div className="section-separator"></div>
-        {files.map((file) => (
+        { uploadedFiles.map((file) => (
           <FileItem
             key={file.id}
             title={file.filename}

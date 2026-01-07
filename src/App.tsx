@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { apiClient, type FileListItem } from './services/apiClient'
+import { apiClient, type FileListItem } from './services/apiClient';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './App.css';
@@ -23,7 +23,7 @@ function App() {
   const [files, setFiles] = useState<FileListItem[]>([]);
 
   const hasMessages = modules.some(m => m.type === 'messages');
-  const hasCode = modules.some(m => m.type === 'code')
+  const hasCode = modules.some(m => m.type === 'code');
 
   useEffect(() => {
     const loadFiles = async () => {

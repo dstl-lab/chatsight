@@ -108,7 +108,7 @@ export class LocalDatabase {
     }
 
     getFile(id: number): { id: number; filename: string; content: string; fileType: string | null; fileSize: number | null; createdAt: string } | null {
-        const stmt = this.db.prepare('SELECT * FROM files WHERE id = ?')
+        const stmt = this.db.prepare('SELECT * FROM files WHERE id = ?');
         const row = stmt.get(id) as any;
 
         if (!row) return null;
@@ -140,7 +140,7 @@ export class LocalDatabase {
     }
 
     deleteFile(id: number): void {
-        const stmt = this.db.prepare(`DELETE FROM files WHERE id = ?`)
+        const stmt = this.db.prepare(`DELETE FROM files WHERE id = ?`);
         stmt.run(id);
     }
 
