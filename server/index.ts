@@ -6,6 +6,45 @@ import { fileService } from '../services/fileService';
 const app = express();
 const PORT = 3000;
 
+const ALLOWED_FILE_EXTENSIONS = ['txt']
+function sanitizeFilename(filename: string): string {
+    let sanitized = filename
+        .replace(/[\/\\:*?"<>|]/g, '')
+        .replace(/^[.\s]+/, '')
+        .replace(/[.\s]+$/, '');
+    
+    if (sanitized.length > 255) {
+        const parts = sanitized.split('.');
+        const ext = parts.length > 1 ? parts.pop() || '' : '';
+        const name = parts.join('.');
+        sanitized = name.substring(0, 255 - ext.length - 1) + (ext ? '.' + ext : '');
+    }
+    
+    return sanitized || 'untitled';
+}
+
+function getFileExtension(filename: string): string {
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
+
+function isFileTypeAllowed(filename: string): { allowed: boolean; reason?: string } {
+    const extension = getFileExtension(filename);
+
+    if (!extension) {
+        return { allowed: false, reason: 'File must have an extension' };
+    }
+
+    if (!ALLOWED_FILE_EXTENSIONS.includes(extension)) {
+        return {
+            allowed: false,
+            reason: `File type .${extension} is not allowed. Allowed types: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`
+        };
+    }
+    
+    return { allowed: true }
+}
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -42,7 +81,14 @@ app.get('/api/code/diff', async (req, res) => {
 
 app.get('/api/code/:index', async (req, res) => {
     try {
-        const index = parseInt(req.params.index);
+        const index = parseInt(req.params.index, 10);
+
+        if (isNaN(index) || index < 0) {
+            return res.status(400).json({ 
+                error: `Invalid code index: ${req.params.index}. Must be a non-negative integer.` 
+            });
+        }
+
         const data = await codeService.getCode(index);
         res.json(data);
     } catch (error) {
@@ -68,6 +114,21 @@ app.post('/api/files', async (req, res) => {
             return res.status(400).json({ error: 'Filename and content are required' });
         }
 
+        const sanitizedFilename = sanitizeFilename(filename);
+        const validation = isFileTypeAllowed(sanitizedFilename);
+        if (!validation.allowed) {
+            return res.status(400).json({
+                error: validation.reason || 'File type not allowed'
+            });
+        }
+
+        const MAX_FILE_SIZE = 10 * 1024 * 1024;
+        if (fileSize && fileSize > MAX_FILE_SIZE) {
+            return res.status(400).json({
+                error: `File size exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`
+            });
+        }
+
         const fileData = await fileService.saveFile(filename, content, fileType, fileSize);
         res.json(fileData);
     } catch (error) {
@@ -86,7 +147,14 @@ app.get('/api/files', async (req, res) => {
 
 app.get('/api/files/:id', async (req, res) => {
     try {
-        const id = parseInt(req.params.id);
+        const id = parseInt(req.params.id, 10);
+
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ 
+                error: `Invalid file id: ${req.params.id}. Must be a positive integer.` 
+            });
+        }
+
         const file = await fileService.getFile(id);
         res.json(file);
     } catch (error) {
@@ -96,7 +164,14 @@ app.get('/api/files/:id', async (req, res) => {
 
 app.delete('/api/files/:id', async (req, res) => {
     try {
-        const id = parseInt(req.params.id);
+        const id = parseInt(req.params.id, 10);
+
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ 
+                error: `Invalid file id: ${req.params.id}. Must be a positive integer.` 
+            });
+        }
+
         await fileService.deleteFile(id);
         res.json({ success: true });
     } catch (error) {
