@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { apiClient } from '../services/apiClient'
+import { apiClient } from '../services/apiClient';
 import './OperationsPanel.css';
 import operations from '../assets/operations.png';
 import files_png from '../assets/files.png';
