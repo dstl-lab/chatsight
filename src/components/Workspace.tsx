@@ -194,6 +194,7 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
       case 'sentiment':
         return (
           <Sentiment 
+            onClose={() => handleClose(module.id)}
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
