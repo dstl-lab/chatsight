@@ -36,7 +36,7 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
     } else if (action === 'export-template') {
       console.log('Export template'); // PLACEHOLDER
     }
-  }
+  };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
