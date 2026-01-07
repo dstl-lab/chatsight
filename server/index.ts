@@ -6,7 +6,7 @@ import { fileService } from '../services/fileService';
 const app = express();
 const PORT = 3000;
 
-const ALLOWED_FILE_EXTENSIONS = ['txt']
+const ALLOWED_FILE_EXTENSIONS = ['txt'];
 function sanitizeFilename(filename: string): string {
     let sanitized = filename
         .replace(/[\/\\:*?"<>|]/g, '')
@@ -42,7 +42,7 @@ function isFileTypeAllowed(filename: string): { allowed: boolean; reason?: strin
         };
     }
     
-    return { allowed: true }
+    return { allowed: true };
 }
 
 app.use(cors());
@@ -123,13 +123,15 @@ app.post('/api/files', async (req, res) => {
         }
 
         const MAX_FILE_SIZE = 10 * 1024 * 1024;
-        if (fileSize && fileSize > MAX_FILE_SIZE) {
+        const actualFileSize = Buffer.byteLength(content, 'utf8');
+
+        if (actualFileSize > MAX_FILE_SIZE) {
             return res.status(400).json({
-                error: `File size exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`
-            });
+                error: `File size (${(actualFileSize / 1024 / 1024).toFixed(2)} MB) exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`
+            })
         }
 
-        const fileData = await fileService.saveFile(filename, content, fileType, fileSize);
+        const fileData = await fileService.saveFile(filename, content, fileType, actualFileSize);
         res.json(fileData);
     } catch (error) {
         res.status(500).json({ error: (error as Error).message });
