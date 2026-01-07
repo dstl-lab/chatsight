@@ -129,7 +129,7 @@ app.post('/api/files', async (req, res) => {
             });
         }
 
-        const fileData = await fileService.saveFile(filename, content, fileType, fileSize);
+        const fileData = await fileService.saveFile(sanitizedFilename, content, fileType, fileSize);
         res.json(fileData);
     } catch (error) {
         res.status(500).json({ error: (error as Error).message });
