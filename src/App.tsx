@@ -54,7 +54,7 @@ function App() {
           <OperationsPanel 
             hasMessages={hasMessages} 
             hasCode={hasCode} 
-            files={files}
+            uploadedFiles={files}
             onFileUpload={refreshFiles}
             onFileDelete={refreshFiles}
           />

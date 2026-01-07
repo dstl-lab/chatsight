@@ -159,11 +159,10 @@ export function OperationsPanel({
               }
               try {
                 await apiClient.deleteFile(file.id);
+                onFileDelete?.();
               } catch (error) {
                 console.error('Failed to delete file:', error);
-              } finally {
-                onFileDelete?.();
-              }
+              } 
             }}
           />
         ))}

@@ -108,7 +108,7 @@ app.post('/api/code', async (req, res) => {
 
 app.post('/api/files', async (req, res) => {
     try {
-        const { filename, content, fileType, fileSize } = req.body;
+        const { filename, content, fileType } = req.body;
 
         if (!filename || !content) {
             return res.status(400).json({ error: 'Filename and content are required' });
@@ -128,7 +128,7 @@ app.post('/api/files', async (req, res) => {
         if (actualFileSize > MAX_FILE_SIZE) {
             return res.status(400).json({
                 error: `File size (${(actualFileSize / 1024 / 1024).toFixed(2)} MB) exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`
-            })
+            });
         }
 
         const fileData = await fileService.saveFile(sanitizedFilename, content, fileType, actualFileSize);

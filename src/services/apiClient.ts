@@ -83,7 +83,6 @@ class ApiClient {
                 filename: file.name,
                 content: content,
                 fileType: file.type || null,
-                fileSize: file.size || null,
             }),
         });
 
@@ -105,7 +104,7 @@ class ApiClient {
     async getFile(id: number): Promise<FileData> {
         const response = await fetch(`${this.baseUrl}/files/${id}`);
         if (!response.ok) {
-            throw new Error(`Failed to fetch file with id ${id}`)
+            throw new Error(`Failed to fetch file with id ${id}`);
         }
         return response.json();
     }

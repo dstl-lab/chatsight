@@ -42,11 +42,20 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
     const files = event.target.files;
     if (files && files.length > 0) {
       const file = files[0];
+  
+      const MAX_FILE_SIZE = 10 * 1024 * 1024;
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds the maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB. Please choose a smaller file.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      
       try {
         await apiClient.uploadFile(file);
         onFileUpload?.();
       } catch (error) {
         console.error('Failed to upload file:', error);
+        alert('Failed to upload file. Please try again.');
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
@@ -59,7 +68,7 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
         <div className="header-left">
           <div className="header-menu-item" ref={fileMenuRef}>
             <p
-              className={`header-menu-trigger ${isFileMenuOpen ? 'active': ''}`}
+              className={`header-menu-trigger ${isFileMenuOpen ? 'active' : ''}`}
               onClick={handleFileClick}
             >
               File
