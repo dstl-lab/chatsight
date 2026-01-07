@@ -44,7 +44,6 @@
     border-bottom: 1px solid #000000;
     background-color: #D0D0D0;
     flex-shrink: 0;
-    align-items: center;
     gap: 20px;
 }
 
