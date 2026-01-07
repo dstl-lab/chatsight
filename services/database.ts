@@ -135,7 +135,7 @@ export class LocalDatabase {
             filename: row.filename,
             fileType: row.file_type,
             fileSize: row.file_size,
-            createdAt: row.createdAt
+            createdAt: row.created_at
         }));
     }
 

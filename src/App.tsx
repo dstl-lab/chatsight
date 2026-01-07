@@ -42,7 +42,7 @@ function App() {
       const filesList = await apiClient.getFiles();
       setFiles(filesList);
     } catch (error) {
-      console.error('Filed to refresh files:', error);
+      console.error('Failed to refresh files:', error);
     }
   };
 
