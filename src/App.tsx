@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from './services/apiClient';
-import type { FileListItem } from './types';
+import type { FileListItem } from '../shared/types';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './App.css';

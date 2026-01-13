@@ -3,7 +3,7 @@ import './Code.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
 import { apiClient } from '../../services/apiClient';
-import type { DiffLine } from '../../types';
+import type { DiffLine } from '../../../shared/types';
 
 interface CodeProps {
     codes?: string;

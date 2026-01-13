@@ -8,8 +8,8 @@ const PORT = 3000;
 
 const ALLOWED_FILE_EXTENSIONS = ['txt'];
 function sanitizeFilename(filename: string): string {
-    const parts = filename.split('.')
-    const extension = parts.length > 1 ? parts.pop() || '': '';
+    const parts = filename.split('.');
+    const extension = parts.length > 1 ? parts.pop() || '' : '';
     const nameWithoutExt = parts.join('.');
 
     let sanitized = nameWithoutExt
@@ -18,7 +18,8 @@ function sanitizeFilename(filename: string): string {
         .replace(/[.\s]+$/, '');
     
     if (sanitized.length > 255) {
-        sanitized = sanitized.substring(0, 255);
+        const maxNameLength = extension ? 255 - extension.length - 1 : 255;
+        sanitized = sanitized.substring(0, Math.max(0, maxNameLength));
     }
     
     const finalName = sanitized || 'untitled';
@@ -74,7 +75,7 @@ app.get('/api/code/diff', async (req, res) => {
             });
         }
 
-        const data = await codeService.getDiff(fromIndex, toIndex)
+        const data = await codeService.getDiff(fromIndex, toIndex);
         res.json(data);
     } catch (error) {
         res.status(404).json({ error: (error as Error).message });
@@ -186,8 +187,14 @@ app.delete('/api/files/:id', async (req, res) => {
         await fileService.deleteFile(id);
         res.json({ success: true });
     } catch (error) {
-        res.status(404).json({ error: (error as Error).message });
-    }
+        const errorMessage = (error as Error).message;
+        
+        if (errorMessage.includes('not found')) {
+            res.status(404).json({ error: errorMessage });
+        } else {
+            console.error('Error fetching file:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }    }
 });
 
 app.listen(PORT, () => {

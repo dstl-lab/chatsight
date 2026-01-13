@@ -1,4 +1,4 @@
-import type { FileData, FileListItem } from './types';
+import type { FileData, FileListItem } from '../shared/types';
 import { getDatabase } from './database';
 
 class LocalFileService {

@@ -16,7 +16,7 @@ export interface DiffData {
     diff: DiffLine[];
 }
 
-interface FileMetadata {
+export interface FileMetadata {
     id: number;
     filename: string;
     fileType: string | null;

@@ -1,4 +1,4 @@
-import type { CodeData, DiffLine, DiffData } from './types';
+import type { CodeData, DiffLine, DiffData } from '../shared/types';
 import { getDatabase } from './database';
 import { diffLines } from 'diff';
 
