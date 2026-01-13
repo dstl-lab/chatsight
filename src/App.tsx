@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { apiClient, type FileListItem } from './services/apiClient';
+import { apiClient } from './services/apiClient';
+import type { FileListItem } from './types';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './App.css';
@@ -25,26 +26,20 @@ function App() {
   const hasMessages = modules.some(m => m.type === 'messages');
   const hasCode = modules.some(m => m.type === 'code');
 
-  useEffect(() => {
-    const loadFiles = async () => {
-      try {
-        const filesList = await apiClient.getFiles();
-        setFiles(filesList);
-      } catch (error) {
-        console.error('Failed to load files:', error);
-      }
-    };
-    loadFiles();
-  }, []);
-  
-  const refreshFiles = async () => {
-    try {
+  const fetchFiles = async () => {
+    try { 
       const filesList = await apiClient.getFiles();
       setFiles(filesList);
     } catch (error) {
-      console.error('Failed to refresh files:', error);
+      console.error('Failed to load files:', error);
     }
   };
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  const refreshFiles = () => fetchFiles();
 
   return (
     <>

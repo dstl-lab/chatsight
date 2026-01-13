@@ -1,39 +1,5 @@
+import type { CodeData, DiffData, FileData, FileListItem } from '../types';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
-export interface CodeData {
-    messageIndex: number;
-    codeContent: string;
-}
-
-export interface DiffLine {
-    type: 'added' | 'removed' | 'unchanged';
-    line: number;
-    originalLine?: number;
-    content: string;
-}
-
-export interface DiffData {
-    fromIndex: number;
-    toIndex: number;
-    diff: DiffLine[];
-}
-
-export interface FileData {
-    id: number;
-    filename: string;
-    content: string;
-    fileType: string | null;
-    fileSize: number | null;
-    createdAt: string;
-}
-
-export interface FileListItem {
-    id: number;
-    filename: string;
-    fileType: string | null;
-    fileSize: number | null;
-    createdAt: string;
-}
 
 class ApiClient {
     private baseUrl: string;
@@ -83,6 +49,7 @@ class ApiClient {
                 filename: file.name,
                 content: content,
                 fileType: file.type || null,
+                fileSize: file.size,
             }),
         });
 

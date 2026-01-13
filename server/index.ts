@@ -8,19 +8,21 @@ const PORT = 3000;
 
 const ALLOWED_FILE_EXTENSIONS = ['txt'];
 function sanitizeFilename(filename: string): string {
-    let sanitized = filename
+    const parts = filename.split('.')
+    const extension = parts.length > 1 ? parts.pop() || '': '';
+    const nameWithoutExt = parts.join('.');
+
+    let sanitized = nameWithoutExt
         .replace(/[\/\\:*?"<>|]/g, '')
         .replace(/^[.\s]+/, '')
         .replace(/[.\s]+$/, '');
     
     if (sanitized.length > 255) {
-        const parts = sanitized.split('.');
-        const ext = parts.length > 1 ? parts.pop() || '' : '';
-        const name = parts.join('.');
-        sanitized = name.substring(0, 255 - ext.length - 1) + (ext ? '.' + ext : '');
+        sanitized = sanitized.substring(0, 255);
     }
     
-    return sanitized || 'untitled';
+    const finalName = sanitized || 'untitled';
+    return extension ? `${finalName}.${extension}` : finalName;
 }
 
 function getFileExtension(filename: string): string {
@@ -114,17 +116,17 @@ app.post('/api/files', async (req, res) => {
             return res.status(400).json({ error: 'Filename and content are required' });
         }
 
-        const sanitizedFilename = sanitizeFilename(filename);
-        const validation = isFileTypeAllowed(sanitizedFilename);
+        const validation = isFileTypeAllowed(filename);
         if (!validation.allowed) {
             return res.status(400).json({
                 error: validation.reason || 'File type not allowed'
             });
         }
 
+        const sanitizedFilename = sanitizeFilename(filename);
         const MAX_FILE_SIZE = 10 * 1024 * 1024;
         const actualFileSize = Buffer.byteLength(content, 'utf8');
-
+        
         if (actualFileSize > MAX_FILE_SIZE) {
             return res.status(400).json({
                 error: `File size (${(actualFileSize / 1024 / 1024).toFixed(2)} MB) exceeds maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB`
@@ -160,7 +162,14 @@ app.get('/api/files/:id', async (req, res) => {
         const file = await fileService.getFile(id);
         res.json(file);
     } catch (error) {
-        res.status(404).json({ error: (error as Error).message });
+        const errorMessage = (error as Error).message;
+        
+        if (errorMessage.includes('not found')) {
+            res.status(404).json({ error: errorMessage });
+        } else {
+            console.error('Error fetching file:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
     }
 });
 

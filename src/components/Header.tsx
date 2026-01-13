@@ -52,11 +52,11 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
       
       try {
         await apiClient.uploadFile(file);
-        onFileUpload?.();
       } catch (error) {
         console.error('Failed to upload file:', error);
         alert('Failed to upload file. Please try again.');
       } finally {
+        onFileUpload?.();
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     }
@@ -108,7 +108,6 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
         style={{ display: 'none' }}
         onChange={handleFileChange}
         accept=".txt"
-        multiple={true}
       />
     </>
   );

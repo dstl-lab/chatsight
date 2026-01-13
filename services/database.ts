@@ -40,7 +40,7 @@ export class LocalDatabase {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE INDEX IF NOT EXISTS idx_filename ON files(filename);
+            CREATE INDEX IF NOT EXISTS idx_filename_created_at ON files(filename, created_at);
         `;
 
         this.db.exec(schema);

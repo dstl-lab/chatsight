@@ -1,21 +1,5 @@
+import type { FileData, FileListItem } from './types';
 import { getDatabase } from './database';
-
-export interface FileData {
-    id: number;
-    filename: string;
-    content: string;
-    fileType: string | null;
-    fileSize: number | null;
-    createdAt: string;
-}
-
-export interface FileListItem {
-    id: number;
-    filename: string;
-    fileType: string | null;
-    fileSize: number | null;
-    createdAt: string;
-}
 
 class LocalFileService {
     private db = getDatabase();

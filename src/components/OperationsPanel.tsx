@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { apiClient } from '../services/apiClient';
 import './OperationsPanel.css';
 import operations from '../assets/operations.png';
-import files_png from '../assets/files.png';
+import filesIcon from '../assets/files.png';
 import messages from '../assets/messages.png';
 import code from '../assets/code.png';
 import notes from '../assets/notes.png';
@@ -145,7 +145,7 @@ export function OperationsPanel({
         </CollapsibleSection>
       </div>
       <div className="files">
-        <SectionTitle icon={files_png} title="FILES" />
+        <SectionTitle icon={filesIcon} title="FILES" />
         <div className="section-separator"></div>
         { uploadedFiles.map((file) => (
           <FileItem
@@ -162,6 +162,7 @@ export function OperationsPanel({
                 onFileDelete?.();
               } catch (error) {
                 console.error('Failed to delete file:', error);
+                window.alert('Could not delete file. Please try again.');
               } 
             }}
           />
