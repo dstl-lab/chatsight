@@ -4,14 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "server": "tsx server/index.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start-both": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
     "better-sqlite3": "^12.5.0",
+    "concurrently": "^9.2.1",
     "cors": "^2.8.5",
     "diff": "^8.0.2",
     "express": "^5.2.1",
