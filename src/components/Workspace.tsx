@@ -103,8 +103,8 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
 
     const moduleAtPos = findModuleAtPosition(slotIndex, modules);
     if (!moduleAtPos && moduleType) {
-      // Set default dimensions based on module type
-      const defaultColSpan = moduleType === 'sentiment' ? 2 : 1;
+      // Leaving this in for future use with larger grid size
+      const defaultColSpan = 1;
       const defaultRowSpan = 1;
       
       const startRow = Math.floor(slotIndex / 3);

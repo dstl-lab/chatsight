@@ -77,12 +77,10 @@ export function Sentiment({
                 />
             )}
             <div className="module-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <h3 className="module-title">Sentiment</h3>
                 <button className="close-button" onClick={onClose} aria-label="Close module">
                     x
                 </button>
-              </div>
             </div>
             <div className="sentiment-content">
               <div className="sentiment-chart">
