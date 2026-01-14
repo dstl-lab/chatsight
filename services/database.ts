@@ -30,6 +30,17 @@ export class LocalDatabase {
             );
 
             CREATE INDEX IF NOT EXISTS idx_message_index ON code_versions(message_index);
+
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                content TEXT NOT NULL,
+                file_type TEXT,
+                file_size INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_filename_created_at ON files(filename, created_at);
         `;
 
         this.db.exec(schema);
@@ -85,6 +96,52 @@ export class LocalDatabase {
         const stmt = this.db.prepare('SELECT message_index FROM code_versions ORDER BY message_index');
         const rows = stmt.all() as { message_index: number }[];
         return rows.map(row => row.message_index);
+    }
+
+    saveFile(filename: string, content: string, fileType?: string, fileSize?: number): number {
+        const stmt = this.db.prepare(`
+            INSERT INTO files (filename, content, file_type, file_size)
+            VALUES (?, ?, ?, ?)
+        `);
+        const result = stmt.run(filename, content, fileType || null, fileSize || null);
+        return result.lastInsertRowid as number;
+    }
+
+    getFile(id: number): { id: number; filename: string; content: string; fileType: string | null; fileSize: number | null; createdAt: string } | null {
+        const stmt = this.db.prepare('SELECT * FROM files WHERE id = ?');
+        const row = stmt.get(id) as any;
+
+        if (!row) return null;
+
+        return {
+            id: row.id,
+            filename: row.filename,
+            content: row.content,
+            fileType: row.file_type,
+            fileSize: row.file_size,
+            createdAt: row.created_at
+        };
+    }
+
+    getAllFiles(): Array<{ id: number; filename: string; fileType: string | null; fileSize: number | null; createdAt: string }> {
+        const stmt = this.db.prepare(`
+            SELECT id, filename, file_type, file_size, created_at 
+            FROM files 
+            ORDER BY created_at DESC
+        `);
+        const rows = stmt.all() as any[];
+        return rows.map(row => ({
+            id: row.id,
+            filename: row.filename,
+            fileType: row.file_type,
+            fileSize: row.file_size,
+            createdAt: row.created_at
+        }));
+    }
+
+    deleteFile(id: number): void {
+        const stmt = this.db.prepare(`DELETE FROM files WHERE id = ?`);
+        stmt.run(id);
     }
 
     close(): void {

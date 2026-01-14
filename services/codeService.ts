@@ -1,23 +1,6 @@
+import type { CodeData, DiffLine, DiffData } from '../shared/types';
 import { getDatabase } from './database';
 import { diffLines } from 'diff';
-
-export interface CodeData {
-    messageIndex: number;
-    codeContent: string;
-}
-
-export interface DiffLine {
-    type: 'added' | 'removed' | 'unchanged';
-    line: number;
-    originalLine?: number;
-    content: string;
-}
-
-export interface DiffData {
-    fromIndex: number;
-    toIndex: number;
-    diff: DiffLine[];
-}
 
 class LocalCodeService {
     private db = getDatabase();

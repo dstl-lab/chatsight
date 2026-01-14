@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import './Code.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
-import { apiClient, type DiffLine } from '../../services/apiClient';
+import { apiClient } from '../../services/apiClient';
+import type { DiffLine } from '../../../shared/types';
 
 interface CodeProps {
     codes?: string;

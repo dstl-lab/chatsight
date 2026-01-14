@@ -1,22 +1,5 @@
+import type { CodeData, DiffData, FileData, FileListItem } from '../../shared/types';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
-export interface CodeData {
-    messageIndex: number;
-    codeContent: string;
-}
-
-export interface DiffLine {
-    type: 'added' | 'removed' | 'unchanged';
-    line: number;
-    originalLine?: number;
-    content: string;
-}
-
-export interface DiffData {
-    fromIndex: number;
-    toIndex: number;
-    diff: DiffLine[];
-}
 
 class ApiClient {
     private baseUrl: string;
@@ -51,6 +34,54 @@ class ApiClient {
         });
         if (!response.ok) {
             throw new Error('Failed to save code');
+        }
+    }
+
+    async uploadFile(file: File): Promise<FileData> {
+        const content = await file.text();
+
+        const response = await fetch(`${this.baseUrl}/files`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                filename: file.name,
+                content: content,
+                fileType: file.type || null,
+                fileSize: file.size,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload file');
+        }
+
+        return response.json();
+    }
+
+    async getFiles(): Promise<FileListItem[]> {
+        const response = await fetch(`${this.baseUrl}/files`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch files');
+        }
+        return response.json();
+    }
+
+    async getFile(id: number): Promise<FileData> {
+        const response = await fetch(`${this.baseUrl}/files/${id}`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch file with id ${id}`);
+        }
+        return response.json();
+    }
+
+    async deleteFile(id: number): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/files/${id}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to delete file ${id}`);
         }
     }
 }
