@@ -219,7 +219,7 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                 />
             )}
             <div className="module-header">
-                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px', position: 'relative'}}>
                     <h3 className="module-title">Notes</h3>
                     {!conversationId && (
                         <span className="messages-hint">Select a conversation</span>
@@ -235,7 +235,7 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                         onClick={handleExport}
                     >
                         Export 
-                        <img className="export-img" src="src/components/modules/Images/ExportButton.png" width="10px"></img>
+                        <img className="export-img" src={require('../assets/export.png')} alt="export" width="10px" />
                     </button>
                     <button className="close-button" onClick={onClose} aria-label="Close module" >
                         x
@@ -280,6 +280,9 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                             +
                     </button>
                 </div>
+                <button className="notes-new-tabs" onClick={() => handleTabAdd()} aria-label="Close module">
+                    +
+                </button>
             </div>
             <div className="notes-content-container" style={{ height: "100%" }}>
                 {conversationId && !loading && (
