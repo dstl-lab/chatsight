@@ -24,14 +24,14 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, }: NotesPro
         onResize,
     });
 
-    const [tabs, setTabs] = useState(['tab1', 'tab2', 'tab3']);
-    const[tabCounter, setTabCounter] = useState(4);
+    const [tabs, setTabs] = useState(['tab1']);
+    const[tabCounter, setTabCounter] = useState(2);
 
     const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState('');
 
     const [activeTabIndex, setActiveTabIndex] = useState(0);
-    const [tabContents, setTabContents] = useState(['', '', '']);
+    const [tabContents, setTabContents] = useState(['']);
 
 
     const handleTabDoubleClick = (index: number) => {
