@@ -69,12 +69,16 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, }: NotesPro
     };
 
     const handleTabDelete = (index: number) => {
-        const newTabs = tabs.filter((_, i) => i !== index);
-        setTabs(newTabs);
-        const newTabContents = tabContents.filter((_, i) => i !== index);
-        setTabContents(newTabContents);
-        if (activeTabIndex === index) {
-            setActiveTabIndex(0);
+        if (tabs.length === 1) {
+            return;
+        } else {
+            const newTabs = tabs.filter((_, i) => i !== index);
+            setTabs(newTabs);
+            const newTabContents = tabContents.filter((_, i) => i !== index);
+            setTabContents(newTabContents);
+            if (activeTabIndex === index) {
+                setActiveTabIndex(0);
+            }
         }
     };
 
