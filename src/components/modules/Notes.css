@@ -3,7 +3,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background-color: #FFFDCA;
+    background-color: #B0B0B0; /*#FFFDCA;*/
     border: 1px solid #000000;
     border-radius: 8px;
     overflow: hidden;
@@ -12,7 +12,7 @@
 
 .notes-textarea {
     position: absolute;
-    top: 45px;
+    top: 65px;
     left: 5px;
     right: 5px;
     bottom: 5px;
@@ -22,6 +22,10 @@
     font-size: 10px;
     box-sizing: border-box;
     line-height: 1.5;
+}
+
+.notes-textarea::placeholder {
+    color: #333333;
 }
 
 .module-header {
@@ -84,7 +88,7 @@
     margin-left: 4px;
     vertical-align: middle;
 }
-
+/*
 .notes-line {
     position: relative;
     border: .5px solid #000000;
@@ -94,16 +98,121 @@
     top: 20px;
     margin-bottom: 14px;
 }
-
-.dropdown-button {
-    background-color: grey;
-    color: white;
-    cursor: pointer;
+*/
+.notes-tabs-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background-color: #D0D0D0;
+    flex-shrink: 0;
+    gap: 0;
+    padding: 0px;
 }
 
-.dropdown-content {
+.notes-tabs-container {
+    display: flex;
+    flex: 1;
+    gap: 0;
+    min-width: 0;
+}
+
+.notes-tabs {
+    flex: 1;
+    min-width: 0;
+    background-color: #E5E5E5;
+    border: none;
+    border-radius: 7px;
+    padding: 0 4px;
+    color: #000000;
+    font-size: 10px;
+    cursor: pointer;
+    overflow: hidden;
+    box-sizing: border-box;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.notes-tabs span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notes-tabs-exit {
+    position: absolute;
+    right: 4px;
+    background: none;
+    border: none;
+    color: #000000;
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0;
+    width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.notes-tabs:hover {
+    background-color: #eff2f3;
+    border-end-end-radius: 0px;
+    border-end-start-radius: 0px;
+}
+
+.notes-tabs:hover .notes-tabs-exit {
+    opacity: 1;
     display: block;
-    color: black;
-    text-decoration: none;
-    padding: 5px 10px;
+    opacity: 1;
+}
+
+.notes-tab-active {
+    background-color: #B0B0B0;
+    color: #000000;
+    border-end-end-radius: 0px;
+    border-end-start-radius: 0px;
+}
+
+/* Ensure hovering the same (active) tab doesn't apply the generic hover color */
+.notes-tab-active:hover {
+    background-color: #B0B0B0;
+    color: #000000;
+}
+
+.notes-tab-input {
+    background: #FFFFFF;
+    border: 1px solid #000000;
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 10px;
+    color: #000000;
+    width: 80%;
+    max-width: 100px;
+    box-sizing: border-box;
+}
+
+.notes-new-tabs {
+    flex-shrink: 0;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    background-color: #E5E5E5;
+    color: #000000;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.notes-new-tabs:hover {
+    background-color: #B0B0B0;
 }
