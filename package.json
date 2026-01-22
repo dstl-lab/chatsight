@@ -15,6 +15,7 @@
     "start-both": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.9",
     "better-sqlite3": "^12.5.0",
     "concurrently": "^9.2.1",
     "cors": "^2.8.5",
