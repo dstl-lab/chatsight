@@ -75,7 +75,7 @@ erDiagram
 
 ```sql
 -- file: corresponds to existing `files` table; use `file` here to match ERD entity.
-CREATE TABLE IF NOT EXISTS file (
+CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL,
     content TEXT NOT NULL,
