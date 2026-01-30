@@ -147,8 +147,8 @@ export function Code({
                                     {diffLine.type === 'added'
                                         ? '+'
                                         : diffLine.type === 'removed'
-                                          ? diffLine.originalLine
-                                          : diffLine.originalLine ?? diffLine.line}
+                                        ? diffLine.originalLine
+                                        : diffLine.originalLine ?? diffLine.line}
                                 </span>
                                 <span className="line-number line-number-current">
                                     {diffLine.type === 'removed'
