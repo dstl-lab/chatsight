@@ -148,8 +148,8 @@ app.post('/api/files', async (req, res) => {
                     const { content: standardized } = (await r.json()) as { content: string };
                     contentToSave = standardized;
                 }
-            } catch {
-                /* Python service unavailable or error: save original content */
+            } catch (standardizationError) {
+                console.error('Text standardization failed; saving original content instead:', standardizationError);
             }
         }
 

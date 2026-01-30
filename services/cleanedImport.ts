@@ -69,6 +69,10 @@ function dumpParsedIntoFile(
     parsed: { conversations: Array<{ student: string; assignment: string; messages: Array<{ role: string | null; timestamp: string | null; content: string }> }> }
 ): { assignmentCount: number; conversationCount: number; messageCount: number } {
     const db = getDatabase();
+    const existingFile = db.getFile(fileId);
+    if (!existingFile) {
+        throw new Error(`Cannot dump parsed content: file with id ${fileId} does not exist.`);
+    }
     let assignmentCount = 0;
     let conversationCount = 0;
     let messageCount = 0;
