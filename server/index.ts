@@ -159,7 +159,10 @@ app.post('/api/files', async (req, res) => {
             try {
                 dumpCleanedContentIntoFile(fileData.id, contentToSave);
             } catch (dumpError) {
-                console.error('Dump cleaned data into DB failed (file saved):', dumpError);
+                console.warn(
+                    'Dump cleaned data into DB failed (file saved):', 
+                    { fileId: fileData.id, filename: sanitizedFilename, error: dumpError }
+                );
             }
         }
 
