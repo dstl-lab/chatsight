@@ -29,3 +29,23 @@ export interface FileData extends FileMetadata {
 }
 
 export interface FileListItem extends FileMetadata {}
+
+export interface FileMessage {
+    id: number;
+    role: string | null;
+    timestamp: string | null;
+    content: string;
+    sortOrder: number;
+}
+
+export interface AssignmentListItem {
+    id: number;
+    fileId: number;
+    assignmentRef: string;
+}
+
+export interface ConversationListItem {
+    id: number;
+    assignmentId: number;
+    student: string;
+}

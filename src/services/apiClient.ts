@@ -1,4 +1,4 @@
-import type { CodeData, DiffData, FileData, FileListItem } from '../../shared/types';
+import type { AssignmentListItem, CodeData, ConversationListItem, DiffData, FileData, FileListItem, FileMessage } from '../../shared/types';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 class ApiClient {
@@ -83,6 +83,38 @@ class ApiClient {
         if (!response.ok) {
             throw new Error(`Failed to delete file ${id}`);
         }
+    }
+
+    async getFileMessages(fileId: number): Promise<FileMessage[]> {
+        const response = await fetch(`${this.baseUrl}/files/${fileId}/messages`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch messages for file ${fileId}`);
+        }
+        return response.json();
+    }
+
+    async getFileAssignments(fileId: number): Promise<AssignmentListItem[]> {
+        const response = await fetch(`${this.baseUrl}/files/${fileId}/assignments`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch assignments for file ${fileId}`);
+        }
+        return response.json();
+    }
+
+    async getAssignmentConversations(assignmentId: number): Promise<ConversationListItem[]> {
+        const response = await fetch(`${this.baseUrl}/assignments/${assignmentId}/conversations`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch conversations for assignment ${assignmentId}`);
+        }
+        return response.json();
+    }
+
+    async getConversationMessages(conversationId: number): Promise<FileMessage[]> {
+        const response = await fetch(`${this.baseUrl}/conversations/${conversationId}/messages`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch messages for conversation ${conversationId}`);
+        }
+        return response.json();
     }
 }
 

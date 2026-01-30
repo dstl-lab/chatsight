@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import { dumpCleanedContentIntoFile } from '../services/cleanedImport';
 import { codeService } from '../services/codeService';
 import { fileService } from '../services/fileService';
 
 const app = express();
 const PORT = 3000;
+const FILE_PARSER_URL = process.env.FILE_PARSER_URL ?? 'http://localhost:8000';
 
 const ALLOWED_FILE_EXTENSIONS = ['txt'];
 function sanitizeFilename(filename: string): string {
@@ -134,7 +136,36 @@ app.post('/api/files', async (req, res) => {
             });
         }
 
-        const fileData = await fileService.saveFile(sanitizedFilename, content, fileType, actualFileSize);
+        let contentToSave = content;
+        if (getFileExtension(filename) === 'txt') {
+            try {
+                const r = await fetch(`${FILE_PARSER_URL}/api/v1/standardize-txt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content }),
+                });
+                if (r.ok) {
+                    const { content: standardized } = (await r.json()) as { content: string };
+                    contentToSave = standardized;
+                }
+            } catch (standardizationError) {
+                console.error('Text standardization failed; saving original content instead:', standardizationError);
+            }
+        }
+
+        const fileData = await fileService.saveFile(sanitizedFilename, contentToSave, fileType, Buffer.byteLength(contentToSave, 'utf8'));
+
+        if (getFileExtension(filename) === 'txt') {
+            try {
+                dumpCleanedContentIntoFile(fileData.id, contentToSave);
+            } catch (dumpError) {
+                console.warn(
+                    'Dump cleaned data into DB failed (file saved):', 
+                    { fileId: fileData.id, filename: sanitizedFilename, error: dumpError }
+                );
+            }
+        }
+
         res.json(fileData);
     } catch (error) {
         res.status(500).json({ error: (error as Error).message });
@@ -147,6 +178,66 @@ app.get('/api/files', async (req, res) => {
         res.json(files);
     } catch (error) {
         res.status(500).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/files/:id/messages', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ error: `Invalid file id: ${req.params.id}. Must be a positive integer.` });
+        }
+        const messages = await fileService.getFileMessages(id);
+        res.json(messages);
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        if (errorMessage.includes('not found')) {
+            res.status(404).json({ error: errorMessage });
+        } else {
+            res.status(500).json({ error: errorMessage });
+        }
+    }
+});
+
+app.get('/api/files/:id/assignments', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ error: `Invalid file id: ${req.params.id}. Must be a positive integer.` });
+        }
+        const assignments = await fileService.getFileAssignments(id);
+        res.json(assignments);
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.get('/api/assignments/:id/conversations', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ error: `Invalid assignment id: ${req.params.id}. Must be a positive integer.` });
+        }
+        const conversations = await fileService.getAssignmentConversations(id);
+        res.json(conversations);
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.get('/api/conversations/:id/messages', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ error: `Invalid conversation id: ${req.params.id}. Must be a positive integer.` });
+        }
+        const messages = await fileService.getConversationMessages(id);
+        res.json(messages);
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
     }
 });
 

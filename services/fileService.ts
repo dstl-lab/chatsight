@@ -1,4 +1,4 @@
-import type { FileData, FileListItem } from '../shared/types';
+import type { AssignmentListItem, ConversationListItem, FileData, FileListItem, FileMessage } from '../shared/types';
 import { getDatabase } from './database';
 
 class LocalFileService {
@@ -49,6 +49,22 @@ class LocalFileService {
             throw new Error(`File with id ${id} not found`);
         }
         this.db.deleteFile(id);
+    }
+
+    async getFileMessages(fileId: number): Promise<FileMessage[]> {
+        return this.db.getMessagesByFileId(fileId);
+    }
+
+    async getFileAssignments(fileId: number): Promise<AssignmentListItem[]> {
+        return this.db.getAssignmentsByFileId(fileId);
+    }
+
+    async getAssignmentConversations(assignmentId: number): Promise<ConversationListItem[]> {
+        return this.db.getConversationsByAssignmentId(assignmentId);
+    }
+
+    async getConversationMessages(conversationId: number): Promise<FileMessage[]> {
+        return this.db.getMessagesByConversationId(conversationId);
     }
 }
 
