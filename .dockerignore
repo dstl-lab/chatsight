@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Environment / secrets
+.env
+.env.*
+*.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Tests and coverage
+test
+tests
+__tests__
+coverage
+
+# Build artifacts
+dist
+build
+tmp
+.cache
+
+# IDE / editor settings
+.vscode
+.idea
+
+# Documentation and miscellaneous
+*.md
+*.markdown
+docs

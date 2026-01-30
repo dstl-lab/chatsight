@@ -4,17 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "server": "concurrently \"npm run tsx-service\" \"npm run python-service\"",
     "tsx-service": "tsx server/index.ts",
     "python-service": "cd server/python && uv run uvicorn app:app --reload --port 8000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "reprocess-files": "tsx scripts/reprocessFiles.ts"
+    "reprocess-files": "tsx scripts/reprocessFiles.ts",
+    "start-both": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
     "better-sqlite3": "^12.5.0",
+    "concurrently": "^9.2.1",
     "cors": "^2.8.5",
     "diff": "^8.0.2",
     "express": "^5.2.1",
