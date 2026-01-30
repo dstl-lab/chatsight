@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "tsx server/index.ts",
+    "server": "concurrently \"npm run tsx-service\" \"npm run python-service\"",
+    "tsx-service": "tsx server/index.ts",
+    "python-service": "cd server/python && uv run uvicorn app:app --reload --port 8000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "reprocess-files": "tsx scripts/reprocessFiles.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.5.0",
@@ -31,6 +34,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.2",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

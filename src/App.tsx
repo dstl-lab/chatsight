@@ -22,6 +22,7 @@ interface Module {
 function App() {
   const [modules, setModules] = useState<Module[]>([]);
   const [files, setFiles] = useState<FileListItem[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
 
   const hasMessages = modules.some(m => m.type === 'messages');
   const hasCode = modules.some(m => m.type === 'code');
@@ -50,12 +51,18 @@ function App() {
             hasMessages={hasMessages} 
             hasCode={hasCode} 
             uploadedFiles={files}
+            selectedConversationId={selectedConversationId}
+            onSelectConversation={setSelectedConversationId}
             onFileUpload={refreshFiles}
             onFileDelete={refreshFiles}
           />
         </aside>
         <div className="vertical-separator" />
-        <Workspace modules={modules} setModules={setModules} />
+        <Workspace
+          modules={modules}
+          setModules={setModules}
+          selectedConversationId={selectedConversationId}
+        />
       </div>
     </>
   );
