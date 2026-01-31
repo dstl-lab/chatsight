@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 .env
 
+# Python
+__pycache__
+
 # Database files
 database/*.db
 database/*.db-wal

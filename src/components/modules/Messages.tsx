@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import './Messages.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
@@ -195,7 +196,9 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
                         <div className="messages-role">
                             {message.role === 'tutor' ? 'TUTOR' : 'STUDENT'}
                         </div>
-                        <div className="messages-text">{message.content}</div>
+                        <div className="messages-text messages-text-markdown">
+                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                        </div>
                         <div className="messages-timestamp">{message.timestamp}</div>
                     </div>
                 ))}
