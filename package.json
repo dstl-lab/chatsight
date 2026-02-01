@@ -25,6 +25,7 @@
     "react-dom": "^19.2.0",
     "react-draggable": "^4.5.0",
     "react-grid-layout": "^2.1.0",
+    "react-markdown": "^10.1.0",
     "react-resizeable": "^0.2.6"
   },
   "devDependencies": {
