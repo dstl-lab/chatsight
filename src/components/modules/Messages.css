@@ -141,6 +141,16 @@
     line-height: 1.5;
 }
 
+.messages-tutor-preview {
+    font-style: italic;
+}
+
+.messages-expand-hint {
+    font-size: 9px;
+    opacity: 0.85;
+    font-style: normal;
+}
+
 /* Markdown inside message bubbles */
 .messages-text-markdown {
     font-size: 10px;
