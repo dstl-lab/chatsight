@@ -217,7 +217,7 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
                             message.content.length > TUTOR_PREVIEW_LENGTH &&
                             !expandedTutorIds.has(message.id) ? (
                                 <span className="messages-tutor-preview">
-                                    {truncateForPreview(message.content, TUTOR_PREVIEW_LENGTH)}
+                                    <ReactMarkdown>{truncateForPreview(message.content, TUTOR_PREVIEW_LENGTH)}</ReactMarkdown>
                                     <span className="messages-expand-hint"> — click to expand</span>
                                 </span>
                             ) : (
