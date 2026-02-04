@@ -2,7 +2,7 @@ import "./Sentiment.css";
 import "./ModuleResize.css";
 import { useModuleResize } from "./useModuleResize";
 import { Chart, type AxisOptions } from 'react-charts';
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiClient } from "../../services/apiClient";
 
 interface FileMessageRow {
@@ -67,18 +67,36 @@ export function Sentiment({
     onResize,
   });
 
-  const fetchSentiment = async (sentences: string[]) => {
+  const [chartData, setChartData] = useState<SentimentSeries[]>(data);
+
+  // Signal here to stop React Strict Mode
+  const fetchSentiment = async (sentences: string[], signal?: AbortSignal) => {
     if (sentences.length === 0) return [];
-    const results = await apiClient.getSentiment(sentences);
-    console.log("Sentiment analysis for all sentences:", results);
-    return results;
+    return apiClient.getSentiment(sentences, signal);
   };
 
   useEffect(() => {
+    const controller = new AbortController();
     const studentContents = sharedMessages
       .filter(msg => msg.role === "STUDENT")
       .map(msg => msg.content);
-    fetchSentiment(studentContents);
+    fetchSentiment(studentContents, controller.signal)
+      .then((results) => {
+        if (results.length === 0) {
+          setChartData(data);
+          return;
+        }
+        const sentimentData: SentimentData[] = results.flatMap((r) =>
+          r.sentiment.map((s) => ({ category: s.label, value: s.score }))
+        );
+        setChartData([
+          { label: "Sentiment", data: sentimentData },
+        ]);
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") console.error(err);
+      });
+    return () => controller.abort();
   }, [sharedMessages])
 
 
@@ -109,7 +127,7 @@ export function Sentiment({
             </div>
             <div className="sentiment-content">
               <div className="sentiment-chart">
-                <Chart options={{data, primaryAxis, secondaryAxes}}/>
+                <Chart options={{ data: chartData, primaryAxis, secondaryAxes }} />
               </div>
             </div>
         </div>;

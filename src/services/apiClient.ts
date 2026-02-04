@@ -117,11 +117,12 @@ class ApiClient {
         return response.json();
     }
 
-    async getSentiment(sentences: string[]): Promise<Array<{ sentence: string; sentiment: Array<{ label: string; score: number }> }>> {
+    async getSentiment(sentences: string[], signal?: AbortSignal): Promise<Array<{ sentence: string; sentiment: Array<{ label: string; score: number }> }>> {
         const response = await fetch(`${this.baseUrl}/sentiment`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sentences }),
+            signal,
         });
         if (!response.ok) {
             throw new Error('Failed to fetch sentiment');
