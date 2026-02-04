@@ -3,7 +3,15 @@ import "./ModuleResize.css";
 import { useModuleResize } from "./useModuleResize";
 import { Chart, type AxisOptions } from 'react-charts';
 import { useEffect, useMemo } from "react";
-import { InferenceClient } from '@huggingface/inference';
+import { apiClient } from "../../services/apiClient";
+
+interface FileMessageRow {
+  id: number;
+  role: string | null;
+  content: string;
+  timestamp: string | null;
+  sortOrder: number;
+}
 
 interface SentimentProps {
   onClose?: () => void;
@@ -11,6 +19,7 @@ interface SentimentProps {
   colSpan?: number;
   rowSpan?: number;
   data?: SentimentSeries[];
+  sharedMessages: FileMessageRow[];
 }
 
 type SentimentData = {category: string, value: number};
@@ -38,6 +47,7 @@ export function Sentiment({
   colSpan = 2,
   rowSpan = 1,
   data = defaultData,
+  sharedMessages,
 }: SentimentProps) {
 
   const primaryAxis = useMemo(() : AxisOptions<SentimentData> => ({
@@ -57,39 +67,19 @@ export function Sentiment({
     onResize,
   });
 
-  const API_KEY = import.meta.env.VITE_HUGGING_FACE_TOKEN;
-  const hf = new InferenceClient(API_KEY);
-  
-  const splitIntoSentences = (text: string): string[] => {
-    return text
-      .split(/(?<=[.!?])\s+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-  };
-  
-  // Analyze sentiment for each sentence individually
-  const fetchSentiment = async (input: string) => {
-    const sentences = splitIntoSentences(input);
-    const results = await Promise.all(
-      sentences.map(async (sentence) => {
-        const output = await hf.textClassification({
-          model: "j-hartmann/emotion-english-distilroberta-base",
-          inputs: sentence,
-        });
-        return {
-          sentence,
-          sentiment: output,
-        };
-      })
-    );
-    
+  const fetchSentiment = async (sentences: string[]) => {
+    if (sentences.length === 0) return [];
+    const results = await apiClient.getSentiment(sentences);
     console.log("Sentiment analysis for all sentences:", results);
     return results;
   };
 
   useEffect(() => {
-    fetchSentiment("This is a very sad test. This is a very happy test.");
-  }, [])
+    const studentContents = sharedMessages
+      .filter(msg => msg.role === "STUDENT")
+      .map(msg => msg.content);
+    fetchSentiment(studentContents);
+  }, [sharedMessages])
 
 
   return <div className="sentiment-module" ref={moduleRef}>

@@ -264,6 +264,7 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
+            sharedMessages={conversationMessages}
           />
         );
         default: 
