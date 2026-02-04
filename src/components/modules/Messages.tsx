@@ -1,14 +1,14 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from 'react-markdown';
-import './Messages.css';
-import './ModuleResize.css';
-import { useModuleResize } from './useModuleResize';
+import "./Messages.css";
+import "/ModuleResize.css";
+import { useModuleResize } from "./useModuleResize";
 
 interface Message {
-    id: string;
-    role: 'tutor' | 'student';
-    content: string;
-    timestamp: string;
+	id: string;
+	role: "tutor" | "student";
+	content: string;
+	timestamp: string;
 }
 
 interface FileMessageRow {
@@ -69,22 +69,23 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-    const scrollToMessage = (index: number) => {
-        const messageElement = messageRefs.current[index];
-        if (messageElement && scrollContainerRef.current) {
-            const container = scrollContainerRef.current;
-            const messageTop = messageElement.offsetTop;
-            const containerHeight = container.clientHeight;
-            const messageHeight = messageElement.offsetHeight;
+	const scrollToMessage = (index: number) => {
+		const messageElement = messageRefs.current[index];
+		if (messageElement && scrollContainerRef.current) {
+			const container = scrollContainerRef.current;
+			const messageTop = messageElement.offsetTop;
+			const containerHeight = container.clientHeight;
+			const messageHeight = messageElement.offsetHeight;
 
-            const scrollPosition = messageTop - (containerHeight / 2) + (messageHeight / 2);
+			const scrollPosition =
+				messageTop - containerHeight / 2 + messageHeight / 2;
 
-            container.scrollTo({
-                top: scrollPosition,
-                behavior: 'smooth',
-            });
-        }
-    };
+			container.scrollTo({
+				top: scrollPosition,
+				behavior: "smooth",
+			});
+		}
+	};
 
     const handleMessageClick = (index: number) => {
         const message = defaultMessages[index];
@@ -98,13 +99,13 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
         }
     };
 
-    const handlePrev = () => {
-        if (currentIndex > 0) {
-            const newIndex = currentIndex - 1;
-            setCurrentIndex(newIndex);
-            scrollToMessage(newIndex);
-        }
-    };
+	const handlePrev = () => {
+		if (currentIndex > 0) {
+			const newIndex = currentIndex - 1;
+			setCurrentIndex(newIndex);
+			scrollToMessage(newIndex);
+		}
+	};
 
     const handleNext = () => {
         if (currentIndex < defaultMessages.length - 1) {
@@ -114,26 +115,26 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
         }
     };
 
-    useEffect(() => {
-        const handleKey = (event: KeyboardEvent) => {
-            if (event.metaKey && event.key == 'j') {
-                event.preventDefault()
-                handlePrev()
-            } else if (event.metaKey && event.key == 'k') {
-                event.preventDefault()
-                handleNext()
-            }
-        }
+	useEffect(() => {
+		const handleKey = (event: KeyboardEvent) => {
+			if (event.metaKey && event.key == "j") {
+				event.preventDefault();
+				handlePrev();
+			} else if (event.metaKey && event.key == "k") {
+				event.preventDefault();
+				handleNext();
+			}
+		};
 
-        window.addEventListener('keydown', handleKey)
-        return () => window.removeEventListener('keydown', handleKey)
-    })
-    
-    const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({ 
-        colSpan, 
-        rowSpan,
-        onResize,
-    });
+		window.addEventListener("keydown", handleKey);
+		return () => window.removeEventListener("keydown", handleKey);
+	});
+
+	const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({
+		colSpan,
+		rowSpan,
+		onResize,
+	});
 
     return (
         <div className="messages-module" ref={moduleRef}>
