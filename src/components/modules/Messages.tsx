@@ -218,10 +218,29 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
                             !expandedTutorIds.has(message.id) ? (
                                 <span className="messages-tutor-preview">
                                     <ReactMarkdown>{truncateForPreview(message.content, TUTOR_PREVIEW_LENGTH)}</ReactMarkdown>
-                                    <span className="messages-expand-hint"> — click to expand</span>
+                                    <span className="messages-expand-hint"> + click to expand</span>
                                 </span>
                             ) : (
-                                <ReactMarkdown>{message.content}</ReactMarkdown>
+                                <>
+                                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                                    {message.role === 'tutor' && message.content.length > TUTOR_PREVIEW_LENGTH && (
+                                        <button
+                                            type="button"
+                                            className="messages-expand-hint messages-minimize-btn"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setExpandedTutorIds((prev) => {
+                                                    const next = new Set(prev);
+                                                    next.delete(message.id);
+                                                    return next;
+                                                });
+                                            }}
+                                            aria-label="Minimize"
+                                        >
+                                            - click to minimize
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
                         <div className="messages-timestamp">{message.timestamp}</div>
