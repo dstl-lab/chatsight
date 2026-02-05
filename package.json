@@ -15,17 +15,21 @@
     "start-both": "concurrently \"npm run dev\" \"npm run server\""
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "better-sqlite3": "^12.5.0",
     "concurrently": "^9.2.1",
     "cors": "^2.8.5",
     "diff": "^8.0.2",
     "express": "^5.2.1",
+    "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
     "react-charts": "^3.0.0-beta.57",
     "react-dom": "^19.2.0",
     "react-draggable": "^4.5.0",
     "react-grid-layout": "^2.1.0",
-    "react-resizeable": "^0.2.6"
+    "react-markdown": "^10.1.0",
+    "react-resizeable": "^0.2.6",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

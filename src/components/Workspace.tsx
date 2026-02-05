@@ -5,6 +5,7 @@ import { Code } from './modules/Code';
 import { Sentiment } from './modules/Sentiment';
 import { apiClient } from '../services/apiClient';
 import type { FileMessage } from '../../shared/types';
+import { Notes } from './modules/Notes';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
@@ -264,6 +265,18 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
+          />
+        );
+      case 'notes':
+        return (
+          <Notes
+            onClose={() => handleClose(module.id)}
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan = {module.colSpan}
+            rowSpan = {module.rowSpan}
+            messageIndex={messageIndex}
+            conversationId={selectedConversationId}
+            sharedMessages={conversationMessages}
           />
         );
         default: 
