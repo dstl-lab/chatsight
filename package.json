@@ -28,6 +28,7 @@
     "react-draggable": "^4.5.0",
     "react-grid-layout": "^2.1.0",
     "react-loader-spinner": "^8.0.2",
+    "react-markdown": "^10.1.0",
     "react-resizeable": "^0.2.6"
   },
   "devDependencies": {

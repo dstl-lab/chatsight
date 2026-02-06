@@ -305,6 +305,9 @@ export function Workspace({ modules, setModules, selectedConversationId, isAggre
       {Array.from({ length: 6 }, (_, index) => {
         const module = positionMap.get(index);
         const isEmpty = !module;
+        
+        const row = Math.floor(index / 3) + 1;
+        const col = (index % 3) + 1;
 
         return (
           <div
@@ -315,7 +318,10 @@ export function Workspace({ modules, setModules, selectedConversationId, isAggre
                     gridColumn: `${module.startIndex % 3 + 1} / span ${module.colSpan}`,
                     gridRow: `${Math.floor(module.startIndex / 3) + 1} / span ${module.rowSpan}`,
                   }
-                : {}
+                : {
+                    gridColumn: col,
+                    gridRow: row,
+                  }
             }
             onDragOver={(e) => handleDragOver(e, index)}
             onDragLeave={handleDropZoneDragLeave}
