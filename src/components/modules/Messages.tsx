@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from 'react-markdown';
 import "./Messages.css";
-import "/ModuleResize.css";
+import "./ModuleResize.css";
 import { useModuleResize } from "./useModuleResize";
 
 interface Message {

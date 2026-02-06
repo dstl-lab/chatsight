@@ -2,11 +2,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from chat_routes import router as chat_router
+from chat.database import create_db_and_tables, seed_db
 from standardize_txt import FormatKind, standardize
 
 app = FastAPI(
-    title="File Parser Service",
-    description="Service for parsing and processing files",
+    title="ChatSight Python Service",
+    description="Unified backend: file parser (DSC10/CSE8A standardize-txt) and Chat API with LLM (conversations, messages).",
     version="0.1.0"
 )
 
@@ -23,6 +25,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+create_db_and_tables()
+seed_db()
+app.include_router(chat_router)
 
 class StandardizeTxtRequest(BaseModel):
     content: str
