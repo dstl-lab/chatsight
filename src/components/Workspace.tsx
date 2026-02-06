@@ -20,6 +20,7 @@ interface WorkspaceProps {
   modules: Module[];
   setModules: React.Dispatch<React.SetStateAction<Module[]>>;
   selectedConversationId: number | null;
+  isAggregate: boolean;
 }
 
 const getModulePositions = (module: Module): number[] => {
@@ -54,7 +55,7 @@ const findModuleAtPosition = (position: number, modules: Module[]): Module | nul
   return modules.find(m => getModulePositions(m).includes(position)) || null;
 };
 
-export function Workspace({ modules, setModules, selectedConversationId }: WorkspaceProps) {
+export function Workspace({ modules, setModules, selectedConversationId, isAggregate }: WorkspaceProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -264,6 +265,8 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
+            sharedMessages={conversationMessages}
+            isAggregate={isAggregate}
           />
         );
         default: 

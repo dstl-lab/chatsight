@@ -27,6 +27,8 @@ function App() {
   const hasMessages = modules.some(m => m.type === 'messages');
   const hasCode = modules.some(m => m.type === 'code');
 
+  const [isAggregate, setIsAggregate] = useState(true);
+
   const fetchFiles = async () => {
     try { 
       const filesList = await apiClient.getFiles();
@@ -56,12 +58,16 @@ function App() {
             onFileUpload={refreshFiles}
             onFileDelete={refreshFiles}
           />
+          <button className="sentiment-chart-button" onClick={() => setIsAggregate(!isAggregate)}>
+            {isAggregate ? 'Aggregate' : 'Per sentence'}
+          </button>
         </aside>
         <div className="vertical-separator" />
         <Workspace
           modules={modules}
           setModules={setModules}
           selectedConversationId={selectedConversationId}
+          isAggregate={isAggregate}
         />
       </div>
     </>

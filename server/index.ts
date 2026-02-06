@@ -1,12 +1,22 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { config } from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import { InferenceClient } from '@huggingface/inference';
 import { dumpCleanedContentIntoFile } from '../services/cleanedImport';
 import { codeService } from '../services/codeService';
 import { fileService } from '../services/fileService';
 
+// Load .env from project root (parent of server/)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+config({ path: path.resolve(__dirname, '../.env') });
+
 const app = express();
 const PORT = 3000;
 const FILE_PARSER_URL = process.env.FILE_PARSER_URL ?? 'http://localhost:8000';
+const HUGGING_FACE_TOKEN = process.env.HUGGING_FACE_TOKEN;
+const hf = HUGGING_FACE_TOKEN ? new InferenceClient(HUGGING_FACE_TOKEN) : null;
 
 const ALLOWED_FILE_EXTENSIONS = ['txt'];
 function sanitizeFilename(filename: string): string {
@@ -288,6 +298,38 @@ app.delete('/api/files/:id', async (req, res) => {
         }    }
 });
 
+app.post('/api/sentiment', async (req, res) => {
+    if (!hf) {
+        return res.status(503).json({ error: 'Sentiment analysis not configured (missing HUGGING_FACE_TOKEN)' });
+    }
+    try {
+        const { sentences } = req.body as { sentences?: string[] };
+        if (!Array.isArray(sentences) || sentences.length === 0) {
+            return res.status(400).json({ error: 'Request body must include a non-empty array: sentences' });
+        }
+        const SENTIMENT_MODEL = 'j-hartmann/emotion-english-distilroberta-base';
+        // Model max length is 512 tokens; ~4 chars/token → truncate to stay under
+        const MAX_INPUT_CHARS = 500;
+        const truncate = (s: string) =>
+            s.length <= MAX_INPUT_CHARS ? s : s.slice(0, MAX_INPUT_CHARS).trim();
+        const results = await Promise.all(
+            sentences.map(async (sentence: string) => {
+                const input = truncate(sentence);
+                const output = await hf.textClassification({
+                    model: SENTIMENT_MODEL,
+                    inputs: input,
+                });
+                return { sentence, sentiment: output };
+            })
+        );
+        res.json(results);
+    } catch (error) {
+        console.error('Sentiment API error:', error);
+        res.status(500).json({ error: (error as Error).message });
+    }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`HUGGING_FACE_TOKEN: ${HUGGING_FACE_TOKEN ? 'set' : 'NOT SET'}`);
 });
