@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "server": "concurrently \"npm run tsx-service\" \"npm run python-service\"",
     "tsx-service": "tsx server/index.ts",
-    "python-service": "cd server/python && uv run uvicorn app:app --reload --port 8000",
+    "python-service": "cd server/python && PYTHONPATH=../.. uv run uvicorn app:app --reload --port 8000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
