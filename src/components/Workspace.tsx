@@ -172,6 +172,8 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
   const [messageIndex, setMessageIndex] = useState(0);
   const [conversationMessages, setConversationMessages] = useState<FileMessage[]>([]);
 
+  const [isAggregate, setIsAggregate] = useState(true);
+
   useEffect(() => {
     setMessageIndex(0);
     setConversationMessages([]);
@@ -265,6 +267,7 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
             sharedMessages={conversationMessages}
+            isAggregate={isAggregate}
           />
         );
         default: 
