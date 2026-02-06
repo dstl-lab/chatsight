@@ -7,7 +7,8 @@ interface Message {
 	id?: number;
 	role: "user" | "assistant";
 	content: string;
-	timestamp: string;
+	timestamp?: string;
+	created_at?: string;
 }
 
 interface ChatProps {
@@ -28,45 +29,101 @@ export function Chat({
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
 	const [input, setInput] = useState("");
+	const [isLoading, setIsLoading] = useState(false);
 	const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({
 		colSpan,
 		rowSpan,
 		onResize,
 	});
 	const [conversationId, setConversationId] = useState<number | null>(null);
+	const CONVERSATION_ID = 2;
 
-	const CONVERSATION_ID = 1;
+	useEffect(() => {
+		const loadMessages = async () => {
+			try {
+				const res = await fetch(
+					`http://localhost:8000/conversations/${CONVERSATION_ID}/messages`,
+				);
+				if (res.ok) {
+					const msgs = await res.json();
+					setMessages(
+						msgs.map((m: any) => ({
+							id: m.id,
+							role: m.role,
+							content: m.content,
+							timestamp: m.created_at,
+						})),
+					);
+				}
+			} catch (error) {
+				console.error("Failed to load messages:", error);
+			}
+		};
+
+		loadMessages();
+	}, []); // Empty dependency array = runs once on mount
 
 	const handleSend = async () => {
 		if (!input.trim()) return;
+
 		const userMessage = {
 			role: "user",
+			content: input,
+		};
+
+		// Add user message to UI immediately (optimistic update)
+		const tempUserMessage = {
+			id: Date.now(), // Temporary ID
+			role: "user" as const,
 			content: input,
 			timestamp: new Date().toISOString(),
 		};
 
-		const res = await fetch(
-			`http://localhost:8000/conversations/${CONVERSATION_ID}/messages`,
-			{
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(userMessage),
-			},
-		);
-
-		const returnedMessages = await res.json();
-
-		setMessages((prev) => [
-			...prev,
-			...returnedMessages.map((m: any) => ({
-				id: m.id,
-				role: m.role,
-				content: m.content,
-				timestamp: m.timestamp,
-			})),
-		]);
-		// setMessages((prev) => [...prev, savedMessage]);
+		setMessages((prev) => [...prev, tempUserMessage]);
 		setInput("");
+		setIsLoading(true);
+
+		try {
+			const res = await fetch(
+				`http://localhost:8000/conversations/${CONVERSATION_ID}/messages`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(userMessage),
+				},
+			);
+
+			if (!res.ok) {
+				console.error("Server error:", await res.text());
+				// Remove the optimistic message on error
+				setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+				return;
+			}
+
+			const returnedMessages = await res.json();
+
+			// Replace temp user message with real ones from backend
+			setMessages((prev) => {
+				// Remove the temporary message
+				const withoutTemp = prev.filter((m) => m.id !== tempUserMessage.id);
+				// Add the real messages from backend
+				return [
+					...withoutTemp,
+					...returnedMessages.map((m: any) => ({
+						id: m.id,
+						role: m.role,
+						content: m.content,
+						timestamp: m.created_at,
+					})),
+				];
+			});
+		} catch (error) {
+			console.error("Failed to send message:", error);
+			// Remove the optimistic message on error
+			setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+		} finally {
+			setIsLoading(false);
+		}
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -74,6 +131,15 @@ export function Chat({
 			e.preventDefault();
 			handleSend();
 		}
+	};
+
+	const formatTimestamp = (timestamp: string): string => {
+		const date = new Date(timestamp);
+		let hours = date.getHours();
+		const minutes = date.getMinutes().toString().padStart(2, "0");
+		const ampm = hours >= 12 ? "PM" : "AM";
+		hours = hours % 12 || 12; // Convert to 12-hour format
+		return `${hours}:${minutes} ${ampm}`;
 	};
 
 	return (
@@ -121,9 +187,17 @@ export function Chat({
 							{message.role === "user" ? "USER" : "CHATSIGHT"}
 						</div>
 						<div className="messages-text">{message.content}</div>
-						<div className="messages-timestamp">{message.timestamp}</div>
+						<div className="messages-timestamp">
+							{message.timestamp ? formatTimestamp(message.timestamp) : ""}
+						</div>
 					</div>
 				))}
+				{isLoading && (
+					<div>
+						<div className="messages-role">CHATSIGHT</div>
+						<div className="messages-text">Typing...</div>
+					</div>
+				)}
 			</div>
 
 			<div className="input-area">
@@ -139,9 +213,9 @@ export function Chat({
 					<button
 						className="send-button"
 						onClick={handleSend}
-						disabled={!input.trim()}
+						disabled={!input.trim() || isLoading}
 					>
-						➤
+						{isLoading ? "..." : "➤"}
 					</button>
 				</div>
 			</div>
