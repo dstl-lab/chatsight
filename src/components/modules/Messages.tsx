@@ -19,39 +19,76 @@ interface FileMessageRow {
 }
 
 interface MessagesProps {
-    conversationId: number | null;
-    sharedMessages?: FileMessageRow[];
-    messages?: Message[];
-    onClose?: () => void;
-    onResize?: (newColSpan: number, newRowSpan: number) => void;
-    colSpan?: number;
-    rowSpan?: number;
-    currentIndex?: number;
-    onIndexChange?: (index: number) => void;
+	messages?: Message[];
+	onClose?: () => void;
+	onResize?: (newColSpan: number, newRowSpan: number) => void;
+	colSpan?: number;
+	rowSpan?: number;
+	currentIndex?: number;
+	onIndexChange?: (index: number) => void;
 }
 
-function dbRoleToMessageRole(role: string | null): 'tutor' | 'student' {
-    if (!role) return 'tutor';
-    const r = role.toLowerCase();
-    if (r === 'student' || r === 'student:' || r === '----student') return 'student';
-    return 'tutor';
-}
-
-export function Messages({ conversationId, sharedMessages, messages: messagesProp, onClose, onResize, colSpan = 1, rowSpan = 1, currentIndex: externalIndex, onIndexChange }: MessagesProps) {
-    // Filter out Code messages; show only Student and Tutor
-    const convertedMessages: Message[] = (sharedMessages ?? [])
-        .filter((row) => row.role?.toLowerCase() !== 'code')
-        .map((row) => ({
-            id: String(row.id),
-            role: dbRoleToMessageRole(row.role),
-            content: row.content,
-            timestamp: row.timestamp ?? '',
-        }));
-
-    const loading = conversationId != null && sharedMessages === undefined;
-
-    const defaultMessages: Message[] =
-        messagesProp ?? convertedMessages;
+export function Messages({
+	messages,
+	onClose,
+	onResize,
+	colSpan = 1,
+	rowSpan = 1,
+	currentIndex: externalIndex,
+	onIndexChange,
+}: MessagesProps) {
+	const defaultMessages: Message[] = messages || [
+		{
+			id: "1",
+			role: "tutor",
+			content: "Hello! How can I help you today?",
+			timestamp: "10:30 AM",
+		},
+		{
+			id: "2",
+			role: "student",
+			content: "I need help understanding this concept.",
+			timestamp: "10:32 AM",
+		},
+		{
+			id: "3",
+			role: "tutor",
+			content: "Of course! Let me explain it step by step.",
+			timestamp: "10:33 AM",
+		},
+		{
+			id: "4",
+			role: "student",
+			content: "Thanks! Could you give me an example?",
+			timestamp: "10:34 AM",
+		},
+		{
+			id: "5",
+			role: "tutor",
+			content: "Absolutely! Let me show you an example that makes it clearer.",
+			timestamp: "10:35 AM",
+		},
+		{
+			id: "6",
+			role: "tutor",
+			content:
+				"Suppose we have a function f(x) = x^2. To find its derivative, we use the power rule.",
+			timestamp: "10:35 AM",
+		},
+		{
+			id: "7",
+			role: "student",
+			content: "Oh, so the derivative would be 2x?",
+			timestamp: "10:36 AM",
+		},
+		{
+			id: "8",
+			role: "tutor",
+			content:
+				"Exactly! Great job. Let me know if you have any more questions.",
+			timestamp: "10:37 AM",
+		},
+	];
 
 	const [localIndex, setLocalIndex] = useState(0);
 	const currentIndex = externalIndex !== undefined ? externalIndex : localIndex;
@@ -90,13 +127,13 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
 		}
 	};
 
-    const handleNext = () => {
-        if (currentIndex < defaultMessages.length - 1) {
-            const newIndex = currentIndex + 1;
-            setCurrentIndex(newIndex);
-            scrollToMessage(newIndex);
-        }
-    };
+	const handleNext = () => {
+		if (currentIndex < defaultMessages.length - 1) {
+			const newIndex = currentIndex + 1;
+			setCurrentIndex(newIndex);
+			scrollToMessage(newIndex);
+		}
+	};
 
 	useEffect(() => {
 		const handleKey = (event: KeyboardEvent) => {
@@ -119,88 +156,79 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
 		onResize,
 	});
 
-    return (
-        <div className="messages-module" ref={moduleRef}>
-            {resizeHandles.right && (
-                <div
-                    className="resize-handle resize-handle-right"
-                    onMouseDown={(e) => handleResizeStart(e, 'right')}
-                />
-            )}
-            {resizeHandles.bottom && (
-                <div
-                    className="resize-handle resize-handle-bottom"
-                    onMouseDown={(e) => handleResizeStart(e, 'down')}
-                />
-            )}
-            {resizeHandles.corner && (
-                <div
-                    className="resize-handle resize-handle-corner"
-                    onMouseDown={(e) => handleResizeStart(e, 'corner')}
-                />
-            )}
-            <div className="module-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <h3 className="module-title">Messages</h3>
-                    {!conversationId && (
-                        <span className="messages-hint">Select a conversation</span>
-                    )}
-                    {conversationId && loading && (
-                        <span className="messages-hint">Loading…</span>
-                    )}
-                    {conversationId && !loading && (
-                        <div className="navigation">
-                            <button 
-                                className="nav-button prev-button"
-                                onClick={handlePrev}
-                                disabled={currentIndex === 0}
-                                aria-label="Previous message"
-                            >
-                                ←
-                            </button>
-                            <span className="message-counter">
-                                {defaultMessages.length === 0
-                                    ? '0'
-                                    : `${currentIndex + 1} / ${defaultMessages.length}`}
-                            </span>
-                            <button
-                                className="nav-button next-button"
-                                onClick={handleNext}
-                                disabled={currentIndex === defaultMessages.length - 1}
-                                aria-label="Next message"
-                            >
-                                →
-                            </button>
-                        </div>
-                    )}
-                </div>
-                <button className="close-button" onClick={onClose} aria-label="Close module">
-                    x
-                </button>
-            </div>
-            <div className="messages-content" ref={scrollContainerRef}>
-                {defaultMessages.length === 0 && !loading && conversationId && (
-                    <div className="messages-empty">No messages in this conversation.</div>
-                )}
-                {defaultMessages.map((message, index) => (
-                    <div
-                        key={message.id}
-                        ref={(el: HTMLDivElement | null) => {
-                            messageRefs.current[index] = el;
-                        }}
-                        onClick={() => handleMessageClick(index)}
-                        className={`message-bubble ${message.role} ${
-                            index === currentIndex ? 'active' : ''
-                        }`}
-                    >
-                        <div className="messages-role">
-                            {message.role === 'tutor' ? 'TUTOR' : 'STUDENT'}
-                        </div>
-                        <div className="messages-text">{message.content}</div>
-                        <div className="messages-timestamp">{message.timestamp}</div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    )
+	return (
+		<div className="messages-module" ref={moduleRef}>
+			{resizeHandles.right && (
+				<div
+					className="resize-handle resize-handle-right"
+					onMouseDown={(e) => handleResizeStart(e, "right")}
+				/>
+			)}
+			{resizeHandles.bottom && (
+				<div
+					className="resize-handle resize-handle-bottom"
+					onMouseDown={(e) => handleResizeStart(e, "down")}
+				/>
+			)}
+			{resizeHandles.corner && (
+				<div
+					className="resize-handle resize-handle-corner"
+					onMouseDown={(e) => handleResizeStart(e, "corner")}
+				/>
+			)}
+			<div className="module-header">
+				<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+					<h3 className="module-title">Messages</h3>
+					<div className="navigation">
+						<button
+							className="nav-button prev-button"
+							onClick={handlePrev}
+							disabled={currentIndex === 0}
+							aria-label="Previous message"
+						>
+							←
+						</button>
+						<span className="message-counter">
+							{currentIndex + 1} / {defaultMessages.length}
+						</span>
+						<button
+							className="nav-button next-button"
+							onClick={handleNext}
+							disabled={currentIndex === defaultMessages.length - 1}
+							aria-label="Next message"
+						>
+							→
+						</button>
+					</div>
+				</div>
+				<button
+					className="close-button"
+					onClick={onClose}
+					aria-label="Close module"
+				>
+					x
+				</button>
+			</div>
+			<div className="messages-content" ref={scrollContainerRef}>
+				{defaultMessages.map((message, index) => (
+					<div
+						key={message.id}
+						ref={(el: HTMLDivElement | null) => {
+							messageRefs.current[index] = el;
+						}}
+						onClick={() => handleMessageClick(index)}
+						className={`message-bubble ${message.role} ${
+							index === currentIndex ? "active" : ""
+						}`}
+					>
+						<div className="messages-role">
+							{message.role === "tutor" ? "TUTOR" : "STUDENT"}
+						</div>
+						<div className="messages-text">{message.content}</div>
+						<div className="messages-timestamp">{message.timestamp}</div>
+					</div>
+				))}
+			</div>
+		</div>
+	);
 }
