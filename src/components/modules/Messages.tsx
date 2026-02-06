@@ -9,6 +9,10 @@ interface Message {
 	role: "tutor" | "student";
 	content: string;
 	timestamp: string;
+	id: string;
+	role: "tutor" | "student";
+	content: string;
+	timestamp: string;
 }
 
 interface FileMessageRow {
@@ -20,15 +24,13 @@ interface FileMessageRow {
 }
 
 interface MessagesProps {
-    conversationId: number | null;
-    sharedMessages?: FileMessageRow[];
-    messages?: Message[];
-    onClose?: () => void;
-    onResize?: (newColSpan: number, newRowSpan: number) => void;
-    colSpan?: number;
-    rowSpan?: number;
-    currentIndex?: number;
-    onIndexChange?: (index: number) => void;
+	messages?: Message[];
+	onClose?: () => void;
+	onResize?: (newColSpan: number, newRowSpan: number) => void;
+	colSpan?: number;
+	rowSpan?: number;
+	currentIndex?: number;
+	onIndexChange?: (index: number) => void;
 }
 
 const TUTOR_PREVIEW_LENGTH = 50;
@@ -76,10 +78,25 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
 			const messageTop = messageElement.offsetTop;
 			const containerHeight = container.clientHeight;
 			const messageHeight = messageElement.offsetHeight;
+	const scrollToMessage = (index: number) => {
+		const messageElement = messageRefs.current[index];
+		if (messageElement && scrollContainerRef.current) {
+			const container = scrollContainerRef.current;
+			const messageTop = messageElement.offsetTop;
+			const containerHeight = container.clientHeight;
+			const messageHeight = messageElement.offsetHeight;
 
 			const scrollPosition =
 				messageTop - containerHeight / 2 + messageHeight / 2;
+			const scrollPosition =
+				messageTop - containerHeight / 2 + messageHeight / 2;
 
+			container.scrollTo({
+				top: scrollPosition,
+				behavior: "smooth",
+			});
+		}
+	};
 			container.scrollTo({
 				top: scrollPosition,
 				behavior: "smooth",
@@ -106,15 +123,42 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
 			scrollToMessage(newIndex);
 		}
 	};
+	const handlePrev = () => {
+		if (currentIndex > 0) {
+			const newIndex = currentIndex - 1;
+			setCurrentIndex(newIndex);
+			scrollToMessage(newIndex);
+		}
+	};
 
-    const handleNext = () => {
-        if (currentIndex < defaultMessages.length - 1) {
-            const newIndex = currentIndex + 1;
-            setCurrentIndex(newIndex);
-            scrollToMessage(newIndex);
-        }
-    };
+	const handleNext = () => {
+		if (currentIndex < defaultMessages.length - 1) {
+			const newIndex = currentIndex + 1;
+			setCurrentIndex(newIndex);
+			scrollToMessage(newIndex);
+		}
+	};
 
+	useEffect(() => {
+		const handleKey = (event: KeyboardEvent) => {
+			if (event.metaKey && event.key == "j") {
+				event.preventDefault();
+				handlePrev();
+			} else if (event.metaKey && event.key == "k") {
+				event.preventDefault();
+				handleNext();
+			}
+		};
+
+		window.addEventListener("keydown", handleKey);
+		return () => window.removeEventListener("keydown", handleKey);
+	});
+
+	const { moduleRef, handleResizeStart, resizeHandles } = useModuleResize({
+		colSpan,
+		rowSpan,
+		onResize,
+	});
 	useEffect(() => {
 		const handleKey = (event: KeyboardEvent) => {
 			if (event.metaKey && event.key == "j") {
@@ -251,3 +295,4 @@ export function Messages({ conversationId, sharedMessages, messages: messagesPro
         </div>
     )
 }
+

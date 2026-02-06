@@ -15,8 +15,21 @@ type ModuleType =
 	| "wordcloud"
 	| "sentiment"
 	| null;
+type ModuleType =
+	| "messages"
+	| "code"
+	| "notes"
+	| "chat"
+	| "wordcloud"
+	| "sentiment"
+	| null;
 
 interface Module {
+	id: string;
+	type: ModuleType;
+	startIndex: number;
+	colSpan: number;
+	rowSpan: number;
 	id: string;
 	type: ModuleType;
 	startIndex: number;
@@ -34,7 +47,17 @@ const getModulePositions = (module: Module): number[] => {
 	const positions: number[] = [];
 	const startRow = Math.floor(module.startIndex / 3);
 	const startCol = module.startIndex % 3;
+	const positions: number[] = [];
+	const startRow = Math.floor(module.startIndex / 3);
+	const startCol = module.startIndex % 3;
 
+	for (let row = 0; row < module.rowSpan; row++) {
+		for (let col = 0; col < module.colSpan; col++) {
+			const pos = (startRow + row) * 3 + (startCol + col);
+			if (pos < 6) positions.push(pos);
+		}
+	}
+	return positions;
 	for (let row = 0; row < module.rowSpan; row++) {
 		for (let col = 0; col < module.colSpan; col++) {
 			const pos = (startRow + row) * 3 + (startCol + col);
@@ -49,6 +72,13 @@ const arePositionsAvailable = (
 	modules: Module[],
 	excludeModuleId?: string,
 ): boolean => {
+	const occupied = new Set<number>();
+	modules.forEach((m) => {
+		if (m.id !== excludeModuleId) {
+			getModulePositions(m).forEach((pos) => occupied.add(pos));
+		}
+	});
+	return positions.every((pos) => !occupied.has(pos) && pos < 6);
 	const occupied = new Set<number>();
 	modules.forEach((m) => {
 		if (m.id !== excludeModuleId) {
@@ -76,6 +106,9 @@ export function Workspace({
 	const handleDragEnter = () => {
 		setIsDragging(true);
 	};
+	const handleDragEnter = () => {
+		setIsDragging(true);
+	};
 
 	const handleDragLeave = (e: React.DragEvent) => {
 		if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -83,7 +116,17 @@ export function Workspace({
 			setDragOverIndex(null);
 		}
 	};
+	const handleDragLeave = (e: React.DragEvent) => {
+		if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+			setIsDragging(false);
+			setDragOverIndex(null);
+		}
+	};
 
+	const handleDragEnd = () => {
+		setIsDragging(false);
+		setDragOverIndex(null);
+	};
 	const handleDragEnd = () => {
 		setIsDragging(false);
 		setDragOverIndex(null);
@@ -98,12 +141,29 @@ export function Workspace({
 			setDragOverIndex(index);
 		}
 	};
+	const handleDragOver = (e: React.DragEvent, index: number) => {
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+
+		const moduleAtPos = findModuleAtPosition(index, modules);
+		if (!moduleAtPos) {
+			setDragOverIndex(index);
+		}
+	};
 
 	const handleDropZoneDragLeave = (e: React.DragEvent) => {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		const x = e.clientX;
 		const y = e.clientY;
+	const handleDropZoneDragLeave = (e: React.DragEvent) => {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = e.clientX;
+		const y = e.clientY;
 
+		if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+			setDragOverIndex(null);
+		}
+	};
 		if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
 			setDragOverIndex(null);
 		}
@@ -167,7 +227,17 @@ export function Workspace({
 			const module = prev[moduleIndex];
 			const startRow = Math.floor(module.startIndex / 3);
 			const startCol = module.startIndex % 3;
+			const module = prev[moduleIndex];
+			const startRow = Math.floor(module.startIndex / 3);
+			const startCol = module.startIndex % 3;
 
+			const newPositions: number[] = [];
+			for (let row = 0; row < newRowSpan; row++) {
+				for (let col = 0; col < newColSpan; col++) {
+					const pos = (startRow + row) * 3 + (startCol + col);
+					if (pos < 6) newPositions.push(pos);
+				}
+			}
 			const newPositions: number[] = [];
 			for (let row = 0; row < newRowSpan; row++) {
 				for (let col = 0; col < newColSpan; col++) {
@@ -189,7 +259,23 @@ export function Workspace({
 				};
 				return newModules;
 			}
+			if (
+				startCol + newColSpan <= 3 &&
+				startRow + newRowSpan <= 2 &&
+				arePositionsAvailable(newPositions, prev, moduleId)
+			) {
+				const newModules = [...prev];
+				newModules[moduleIndex] = {
+					...module,
+					colSpan: newColSpan,
+					rowSpan: newRowSpan,
+				};
+				return newModules;
+			}
 
+			return prev;
+		});
+	};
 			return prev;
 		});
 	};
@@ -320,11 +406,20 @@ export function Workspace({
 	const handleClose = (moduleId: string) => {
 		setModules((prev) => {
 			const moduleToClose = prev.find((m) => m.id === moduleId);
+	const handleClose = (moduleId: string) => {
+		setModules((prev) => {
+			const moduleToClose = prev.find((m) => m.id === moduleId);
 
 			if (moduleToClose?.type === "messages") {
 				return prev.filter((m) => m.type !== "messages" && m.type !== "code");
 			}
+			if (moduleToClose?.type === "messages") {
+				return prev.filter((m) => m.type !== "messages" && m.type !== "code");
+			}
 
+			return prev.filter((m) => m.id !== moduleId);
+		});
+	};
 			return prev.filter((m) => m.id !== moduleId);
 		});
 	};
@@ -382,3 +477,4 @@ export function Workspace({
     </main>
   );
 }
+
