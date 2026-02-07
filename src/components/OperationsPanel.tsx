@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { apiClient } from '../services/apiClient';
-import type { AssignmentListItem, ConversationListItem, FileListItem } from '../shared/types';
+import type { AssignmentListItem, ConversationListItem, FileListItem } from '../../shared/types';
 import './OperationsPanel.css';
 import operations from '../assets/operations.png';
 import filesIcon from '../assets/files.png';
@@ -275,7 +275,6 @@ export function OperationsPanel({
   uploadedFiles,
   selectedConversationId,
   onSelectConversation,
-  onFileUpload,
   onFileDelete,
 }: {
   hasMessages: boolean;
