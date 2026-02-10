@@ -114,6 +114,18 @@ h3 {
 /* #endregion */
 
 /* #region Files */
+.files-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.expand-directory {
+  height: 20px;
+  width: 20px;
+}
+
 .file-item {
   display: flex;
   flex-direction: row;

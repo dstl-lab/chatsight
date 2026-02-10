@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { apiClient } from '../services/apiClient';
-import type { AssignmentListItem, ConversationListItem, FileListItem } from '../../shared/types';
+import type { AssignmentListItem, ConversationListItem, FileListItem, FileTreeProps } from '../../shared/types';
 import './OperationsPanel.css';
 import operations from '../assets/operations.png';
 import filesIcon from '../assets/files.png';
@@ -13,6 +13,8 @@ import sentiment from '../assets/sentiment.png';
 import collapseIcon from '../assets/collapse.png';
 import expandIcon from '../assets/expand.png';
 import txtFile from '../assets/txtfile.png';
+import expandDirectory from '../assets/expand_directory.png';
+import { FileExplorer } from './FileExplorer';
 
 interface OperationItemProps {
   icon: string;
@@ -79,14 +81,7 @@ function OperationItem({ icon, title, isMessagesDisabled, isCodeDisabled }: Oper
   );
 }
 
-interface FileTreeProps {
-  files: FileListItem[];
-  selectedConversationId: number | null;
-  onSelectConversation: (id: number | null) => void;
-  onFileDeleted: () => void;
-}
-
-function FileTree({ files, selectedConversationId, onSelectConversation, onFileDeleted }: FileTreeProps) {
+export function FileTree({ files, selectedConversationId, onSelectConversation, onFileDeleted }: FileTreeProps) {
   const [expandedFileIds, setExpandedFileIds] = useState<Set<number>>(new Set());
   const [expandedAssignmentIds, setExpandedAssignmentIds] = useState<Set<number>>(new Set());
   const [assignmentsByFileId, setAssignmentsByFileId] = useState<Record<number, AssignmentListItem[]>>({});
@@ -285,6 +280,12 @@ export function OperationsPanel({
   onFileUpload?: () => void;
   onFileDelete?: () => void;
 }) {
+  const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(false);
+
+  const openFileExplorer = () =>{
+    setIsFileExplorerOpen(true);
+  };
+
   return (
     <aside className="files-and-notes">
       <div className="operations">
@@ -302,7 +303,15 @@ export function OperationsPanel({
         </CollapsibleSection>
       </div>
       <div className="files">
-        <SectionTitle icon={filesIcon} title="FILES" />
+        <div className="files-header">
+          <SectionTitle icon={filesIcon} title="DIRECTORY" />
+          <button 
+            style={{ background: 'none', border: 'none', 'cursor': 'pointer'}}
+            onClick={openFileExplorer}
+          >
+            <img className='expand-directory' src={expandDirectory} />
+          </button>
+        </div>
         <div className="section-separator"></div>
         <FileTree
           files={uploadedFiles}
@@ -311,6 +320,15 @@ export function OperationsPanel({
           onFileDeleted={onFileDelete ?? (() => {})}
         />
       </div>
+      {isFileExplorerOpen && (
+        <FileExplorer
+          onClose={() => setIsFileExplorerOpen(false)}
+          files={uploadedFiles}
+          selectedConversationId={selectedConversationId}
+          onSelectConversation={onSelectConversation}
+          onFileDeleted={onFileDelete ?? (() => {})}
+        />
+      )}
     </aside>
   );
 }

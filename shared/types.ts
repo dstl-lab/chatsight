@@ -49,3 +49,10 @@ export interface ConversationListItem {
     assignmentId: number;
     student: string;
 }
+
+export interface FileTreeProps {
+    files: FileListItem[];
+    selectedConversationId: number | null;
+    onSelectConversation: (id: number | null) => void;
+    onFileDeleted: () => void;
+}

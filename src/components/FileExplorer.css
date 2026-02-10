@@ -1,0 +1,62 @@
+.file-explorer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.file-explorer {
+    min-height: 0;
+    min-width: 0;
+    height: clamp(0px, 75vh, 960px);
+    width: clamp(0px, 80vw, 1600px);
+    overflow: auto;
+    background: #ffffff;
+    padding: 1rem 2rem;
+}
+
+.file-explorer .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0;
+}
+
+.file-explorer .header .left {
+    display: block;
+}
+
+.file-explorer .header .left img,
+.file-explorer .header .left h1 {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.file-explorer .header .left img {
+    margin-right: 0.5rem;
+}
+
+.file-explorer .header .left img {
+    height: 2rem;
+    width: 2rem;
+}
+
+.file-explorer .header .left h1 {
+    font-size: 2rem;
+    margin: 0;
+    transform: translateY(-0.05em);
+}
+
+.section-separator {
+    width: 100%;
+    height: 0;
+    border-top: 1px solid #000000;
+    display: block;
+    box-sizing: border-box;
+    margin: 8px 0 10px 0;
+    flex-shrink: 0;
+  }
