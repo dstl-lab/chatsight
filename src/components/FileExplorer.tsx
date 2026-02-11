@@ -37,7 +37,7 @@ export function FileExplorer({ onClose, ...fileTreeProps }: FileExplorerProps) {
 
     const handleConversationClick = (conversation: ConversationListItem) => {
         fileTreeProps.onSelectConversation(conversation.id);
-    }
+    };
 
     useEffect(() => {
         if (path.length !== 2 || path[1].type !== 'assignment') {
@@ -72,18 +72,18 @@ export function FileExplorer({ onClose, ...fileTreeProps }: FileExplorerProps) {
             <div className="file-explorer" onClick={(e) => e.stopPropagation()}>
                 <div className="header">
                     <div className="left">
-                        <img src={fileIcon}></img>
+                        <img src={fileIcon} alt="File icon" />
                         <h1>DIRECTORY</h1>
                     </div>
                     <button onClick={onClose} style={{ background: 'none', border: 'none', 'cursor': 'pointer' }}>
-                        <img src={closeIcon} />
+                        <img src={closeIcon} alt="Close button" aria-label="Close file explorer" />
                     </button>
                 </div>
                 <div className="section-separator"></div>
                 {path.length > 0 && (
                     <div className="breadcrumb">
                         <button type="button" onClick={() => setPath(prev => prev.slice(0, -1))} style={{ background: 'none', border: 'none', 'cursor': 'pointer' }}>
-                            <img src={backIcon} />
+                            <img src={backIcon} alt="Back button" aria-label="Return to previous directory"/>
                         </button>
                         <span> {path.map(s => s.label).join(' / ')} </span>
                     </div>

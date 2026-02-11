@@ -306,6 +306,8 @@ export function OperationsPanel({
         <div className="files-header">
           <SectionTitle icon={filesIcon} title="DIRECTORY" />
           <button 
+            type="button"
+            aria-label="Open file explorer"
             style={{ background: 'none', border: 'none', 'cursor': 'pointer' }}
             onClick={openFileExplorer}
           >
