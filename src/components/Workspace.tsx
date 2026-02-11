@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './Workspace.css';
 import { Messages } from './modules/Messages';
 import { Code } from './modules/Code';
+import { Sentiment } from './modules/Sentiment';
+import { apiClient } from '../services/apiClient';
+import type { FileMessage } from '../../shared/types';
 import { Notes } from './modules/Notes';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
@@ -17,6 +20,7 @@ interface Module {
 interface WorkspaceProps {
   modules: Module[];
   setModules: React.Dispatch<React.SetStateAction<Module[]>>;
+  selectedConversationId: number | null;
 }
 
 const getModulePositions = (module: Module): number[] => {
@@ -51,7 +55,7 @@ const findModuleAtPosition = (position: number, modules: Module[]): Module | nul
   return modules.find(m => getModulePositions(m).includes(position)) || null;
 };
 
-export function Workspace({ modules, setModules }: WorkspaceProps) {
+export function Workspace({ modules, setModules, selectedConversationId }: WorkspaceProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -97,20 +101,37 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
     setDragOverIndex(null);
     const moduleType = e.dataTransfer.getData('moduleType') as ModuleType;
 
-    const normalizedType = moduleType === 'messages' ? 'messages' : moduleType;
-
-    if (normalizedType === 'messages' && modules.some(m => m.type === 'messages')) {
+    if (moduleType === 'messages' && modules.some(m => m.type === 'messages')) {
       return;
     }
 
     const moduleAtPos = findModuleAtPosition(slotIndex, modules);
-    if (!moduleAtPos && normalizedType) {
+    if (!moduleAtPos && moduleType) {
+      // Leaving this in for future use with larger grid size
+      const defaultColSpan = 1;
+      const defaultRowSpan = 1;
+      
+      const startRow = Math.floor(slotIndex / 3);
+      const startCol = slotIndex % 3;
+      const defaultPositions: number[] = [];
+      for (let row = 0; row < defaultRowSpan; row++) {
+        for (let col = 0; col < defaultColSpan; col++) {
+          const pos = (startRow + row) * 3 + (startCol + col);
+          if (pos < 6) defaultPositions.push(pos);
+        }
+      }
+      
+      // Later can be split into canRow... and canColFitDefault
+      const canFitDefault = startCol + defaultColSpan <= 3 && 
+                            startRow + defaultRowSpan <= 2 && 
+                            arePositionsAvailable(defaultPositions, modules);
+      
       const newModule: Module = {
-        id: `${normalizedType}-${Date.now()}`,
-        type: normalizedType,
+        id: `${moduleType}-${Date.now()}`,
+        type: moduleType,
         startIndex: slotIndex,
-        colSpan: 1,
-        rowSpan: 1,
+        colSpan: canFitDefault ? defaultColSpan : 1,
+        rowSpan: canFitDefault ? defaultRowSpan : 1,
       };
       setModules(prev => [...prev, newModule]);
     }
@@ -150,16 +171,77 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
   };
 
   const [messageIndex, setMessageIndex] = useState(0);
-  
+  const [conversationMessages, setConversationMessages] = useState<FileMessage[]>([]);
+
+  useEffect(() => {
+    setMessageIndex(0);
+    setConversationMessages([]);
+
+    if (selectedConversationId != null) {
+      apiClient.getConversationMessages(selectedConversationId)
+        .then(setConversationMessages)
+        .catch(() => setConversationMessages([]));
+    }
+  }, [selectedConversationId]);
+
+  // Per display index (Student/Tutor only): student message id and code for that turn
+  const { studentMessageIdByDisplayIndex, codeByDisplayIndex } = useMemo(() => {
+    const studentIds: (number | null)[] = [];
+    const codes: (string | null)[] = [];
+    let currentTurnStudentId: number | null = null;
+    let currentTurnCode: string | null = null;
+
+    for (let i = 0; i < conversationMessages.length; i++) {
+      const msg = conversationMessages[i];
+      const role = msg.role?.toLowerCase() ?? '';
+
+      if (role === 'code') continue;
+
+      if (role === 'student' || role === 'student:') {
+        currentTurnStudentId = msg.id;
+        const next = conversationMessages[i + 1];
+        currentTurnCode = next?.role?.toLowerCase() === 'code' ? next.content : null;
+        studentIds.push(currentTurnStudentId);
+        codes.push(currentTurnCode);
+        continue;
+      }
+
+      if (role.includes('tutor')) {
+        studentIds.push(currentTurnStudentId);
+        codes.push(currentTurnCode);
+      }
+    }
+
+    return {
+      studentMessageIdByDisplayIndex: studentIds,
+      codeByDisplayIndex: codes,
+    };
+  }, [conversationMessages]);
+
+  const selectedStudentMessageId =
+    messageIndex >= 0 && messageIndex < studentMessageIdByDisplayIndex.length
+      ? studentMessageIdByDisplayIndex[messageIndex]
+      : null;
+  const currentCode =
+    messageIndex >= 0 && messageIndex < codeByDisplayIndex.length
+      ? codeByDisplayIndex[messageIndex]
+      : null;
+  const previousCode =
+    messageIndex > 0 && messageIndex - 1 < codeByDisplayIndex.length
+      ? codeByDisplayIndex[messageIndex - 1]
+      : null;
+
   const renderModule = (module: Module) => {
     switch (module.type) {
       case 'messages':
         return (
           <Messages
+            conversationId={selectedConversationId}
+            sharedMessages={conversationMessages}
             onClose={() => handleClose(module.id)}
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
-            colSpan = {module.colSpan}
-            rowSpan = {module.rowSpan}
+            colSpan={module.colSpan}
+            rowSpan={module.rowSpan}
             currentIndex={messageIndex}
             onIndexChange={setMessageIndex}
           />
@@ -169,9 +251,32 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
           <Code
             onClose={() => handleClose(module.id)}
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan={module.colSpan}
+            rowSpan={module.rowSpan}
+            studentMessageId={selectedStudentMessageId}
+            codes={currentCode ?? undefined}
+            previousCodes={previousCode ?? undefined}
+          />
+        );
+      case 'sentiment':
+        return (
+          <Sentiment 
+            onClose={() => handleClose(module.id)}
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan={module.colSpan}
+            rowSpan={module.rowSpan}
+          />
+        );
+      case 'notes':
+        return (
+          <Notes
+            onClose={() => handleClose(module.id)}
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan = {module.colSpan}
             rowSpan = {module.rowSpan}
             messageIndex={messageIndex}
+            conversationId={selectedConversationId}
+            sharedMessages={conversationMessages}
           />
         );
       case 'notes':
@@ -190,7 +295,15 @@ export function Workspace({ modules, setModules }: WorkspaceProps) {
   };
 
   const handleClose = (moduleId: string) => {
-    setModules(prev => prev.filter(m => m.id !== moduleId));
+    setModules(prev => {
+        const moduleToClose = prev.find(m => m.id === moduleId);
+
+        if (moduleToClose?.type === 'messages') {
+          return prev.filter(m => m.type !== 'messages' && m.type !== 'code');
+        }
+
+        return prev.filter(m => m.id !== moduleId);
+      });
   };
 
   const positionMap = new Map<number, Module>();

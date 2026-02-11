@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiClient } from './services/apiClient';
+import type { FileListItem } from '../shared/types';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './App.css';
@@ -19,18 +21,48 @@ interface Module {
 
 function App() {
   const [modules, setModules] = useState<Module[]>([]);
+  const [files, setFiles] = useState<FileListItem[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
 
   const hasMessages = modules.some(m => m.type === 'messages');
+  const hasCode = modules.some(m => m.type === 'code');
+
+  const fetchFiles = async () => {
+    try { 
+      const filesList = await apiClient.getFiles();
+      setFiles(filesList);
+    } catch (error) {
+      console.error('Failed to load files:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  const refreshFiles = () => fetchFiles();
 
   return (
     <>
-      <Header />
+      <Header onFileUpload={refreshFiles}/>
       <div className="body">
         <aside className="sidebar">
-          <OperationsPanel hasMessages={hasMessages} />
+          <OperationsPanel 
+            hasMessages={hasMessages} 
+            hasCode={hasCode} 
+            uploadedFiles={files}
+            selectedConversationId={selectedConversationId}
+            onSelectConversation={setSelectedConversationId}
+            onFileUpload={refreshFiles}
+            onFileDelete={refreshFiles}
+          />
         </aside>
         <div className="vertical-separator" />
-        <Workspace modules={modules} setModules={setModules} />
+        <Workspace
+          modules={modules}
+          setModules={setModules}
+          selectedConversationId={selectedConversationId}
+        />
       </div>
     </>
   );

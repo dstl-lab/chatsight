@@ -79,7 +79,7 @@
 .code-line {
     display: flex;
     min-height: 18px;
-    padding: 0 10px;
+    padding: 0 0;
 }
 
 .code-line-added {
@@ -102,9 +102,10 @@
     background-color: rgba(248, 81, 73, 0.25);
 }
 
-.line-number-original {
+.line-number {
     display: inline-block;
-    width: 50px;
+    width: 5px;
+    padding-left: 10px;
     padding-right: 10px;
     text-align: right;
     color: #6A737D;
@@ -112,24 +113,12 @@
     flex-shrink: 0;
 }
 
-.line-number-current {
-    display: inline-block;
-    width: 50px;
-    padding-right: 15px;
-    text-align: right;
-    color: #6A737D;
-    user-select: none;
-    flex-shrink: 0;
+.line-number-original {
+    padding-left: 20px;
 }
 
-.line-number {
-    display: inline-block;
-    width: 40px;
-    padding-right: 15px;
-    text-align: right;
-    color: #6A737D;
-    user-select: none;
-    flex-shrink: 0;
+.line-number-current {
+    padding-right: 20px;
 }
 
 .line-content {
