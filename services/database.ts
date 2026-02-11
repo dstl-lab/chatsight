@@ -2,6 +2,14 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+export interface NotesTab {
+    id: number;
+    conversationId: number;
+    tabName: string;
+    content: string;
+    sortOrder: number;
+}
+
 export class LocalDatabase {
     private db: Database.Database;
     private dbPath: string;
@@ -66,11 +74,23 @@ export class LocalDatabase {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+                tab_name TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_assignment_file_ref ON assignment(file_id, assignment_ref);
             CREATE INDEX IF NOT EXISTS idx_assignment_file_id ON assignment(file_id);
             CREATE INDEX IF NOT EXISTS idx_conversation_assignment_id ON conversation(assignment_id);
             CREATE INDEX IF NOT EXISTS idx_message_conversation_id ON message(conversation_id);
             CREATE INDEX IF NOT EXISTS idx_message_sort ON message(conversation_id, sort_order);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_conversation_sort ON notes(conversation_id, sort_order);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_conversation_tab ON notes(conversation_id, tab_name);
+            CREATE INDEX IF NOT EXISTS idx_notes_conversation_id ON notes(conversation_id);
         `;
 
         this.db.exec(schema);
@@ -253,6 +273,83 @@ export class LocalDatabase {
 
     close(): void {
         this.db.close();
+    }
+
+    // notes
+    getNotesTabs(conversationId: number): NotesTab[] {
+        const stmt = this.db.prepare(`
+            SELECT
+                id,
+                conversation_id AS conversationId,
+                tab_name AS tabName,
+                content,
+                sort_order AS sortOrder
+            FROM notes
+            WHERE conversation_id = ?
+            ORDER BY sort_order
+        `)
+
+        return stmt.all(conversationId) as NotesTab[];
+    }
+
+    createNotesTab(conversationId: number, tabName: string): number {
+        const maxStmt = this.db.prepare(`
+            SELECT COALESCE(MAX(sort_order), -1) AS maxOrder
+            FROM notes
+            WHERE conversation_id = ?
+        `);
+        const { maxOrder } = maxStmt.get(conversationId) as { maxOrder: number };
+        const nextOrder = maxOrder + 1;
+
+        const insert = this.db.prepare(`
+            INSERT INTO notes (conversation_id, tab_name, sort_order)
+            VALUES (?, ?, ?)
+        `);
+
+        const result = insert.run(conversationId, tabName, nextOrder);
+        return result.lastInsertRowid as number;
+    }
+
+    updateNotesContent(tabId: number, content: string): void {
+        const stmt = this.db.prepare(`
+            UPDATE notes
+            SET content = ?
+            WHERE id = ?
+        `);
+        stmt.run(content, tabId);
+    }
+
+    renameNotesTab(tabId: number, newTabName: string): void {
+        const stmt = this.db.prepare(`
+            UPDATE notes
+            SET tab_name = ?
+            WHERE id = ?
+        `);
+        stmt.run(newTabName, tabId);
+    }
+
+    deleteNotesTab(tabId: number): void {
+        const stmt = this.db.prepare(`
+            DELETE FROM notes
+            WHERE id = ?
+        `);
+        stmt.run(tabId);
+    }
+
+    reorderNotesTabs(conversationId: number, orderedTabIds: number[]): void {
+        const update = this.db.prepare(`
+            UPDATE notes
+            SET sort_order = ?
+            WHERE id = ? AND conversation_id = ?
+        `);
+
+        const transaction = this.db.transaction(() => {
+            orderedTabIds.forEach((id, index) => {
+                update.run(index, id, conversationId);
+            })
+        });
+
+        transaction();
     }
 }
 

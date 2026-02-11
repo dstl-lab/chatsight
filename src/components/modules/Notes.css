@@ -3,27 +3,13 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background-color: #B0B0B0; /*#FFFDCA;*/
-    border: 1px solid #000000;
+    background-color: var(--editor-bg);
+    border: 1px solid var(--editor-fg);
     border-radius: 8px;
     overflow: hidden;
     position: relative;
 }
-/*
-.notes-content-container {
-    position: absolute;
-    top: 65px;
-    left: 5px;
-    right: 5px;
-    bottom: 5px;
-    border: none;
-    background: transparent;
-    color: #000000;
-    font-size: 10px;
-    box-sizing: border-box;
-    line-height: 1.5;
-}
-*/
+
 .notes-textarea::placeholder {
     color: #333333;
 }
@@ -74,7 +60,7 @@
 }
 
 .export-button{
-    padding: 0px 4px;
+    padding: 2px 4px;
     font-size: 10px;
     font-weight: 600;
     color: #FFFFFF;
@@ -82,6 +68,7 @@
     cursor: pointer;
     border-radius: 3px;
     transition: background-color 0.2s;
+    border: none;
 }
 
 .export-img {
@@ -181,7 +168,7 @@
     box-sizing: border-box;
     width: 20px;
     height: 20px;
-    background-color: var(--editor-bg);
+    background-color: var(--editor-nbg);
     color: var(--editor-fg);
     border: none;
     border-radius: 5px;
