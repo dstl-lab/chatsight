@@ -56,3 +56,9 @@ export interface FileTreeProps {
     onSelectConversation: (id: number | null) => void;
     onFileDeleted: () => void;
 }
+
+export interface PathStep {
+    type: 'file' | 'assignment';
+    id: number;
+    label: string;
+}
