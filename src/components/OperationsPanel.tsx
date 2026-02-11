@@ -306,7 +306,7 @@ export function OperationsPanel({
         <div className="files-header">
           <SectionTitle icon={filesIcon} title="DIRECTORY" />
           <button 
-            style={{ background: 'none', border: 'none', 'cursor': 'pointer'}}
+            style={{ background: 'none', border: 'none', 'cursor': 'pointer' }}
             onClick={openFileExplorer}
           >
             <img className='expand-directory' src={expandDirectory} />
