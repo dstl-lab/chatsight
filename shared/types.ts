@@ -49,3 +49,11 @@ export interface ConversationListItem {
     assignmentId: number;
     student: string;
 }
+
+export interface NotesTab {
+    id: number;
+    conversationId: number;
+    tabName: string;
+    content: string;
+    sortOrder: number;
+}

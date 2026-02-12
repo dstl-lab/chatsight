@@ -4,7 +4,8 @@ import { Messages } from './modules/Messages';
 import { Code } from './modules/Code';
 import { Sentiment } from './modules/Sentiment';
 import { apiClient } from '../services/apiClient';
-import type { FileMessage } from '../../shared/types';
+import type { FileMessage, NotesTab } from '../../shared/types';
+import { Notes } from './modules/Notes';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
 
@@ -171,6 +172,7 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
 
   const [messageIndex, setMessageIndex] = useState(0);
   const [conversationMessages, setConversationMessages] = useState<FileMessage[]>([]);
+  const [notesTabs, setNotesTabs] = useState<NotesTab[]>([]);
 
   useEffect(() => {
     setMessageIndex(0);
@@ -180,6 +182,10 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
       apiClient.getConversationMessages(selectedConversationId)
         .then(setConversationMessages)
         .catch(() => setConversationMessages([]));
+
+      apiClient.getNotesTabs(selectedConversationId)
+        .then((notesTabs) => {setNotesTabs(notesTabs);})
+        .catch(() => {setNotesTabs([]);});
     }
   }, [selectedConversationId]);
 
@@ -210,6 +216,10 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
         codes.push(currentTurnCode);
       }
     }
+
+      /* previously this effect was nested inside useMemo which violated
+         the Rules of Hooks. The notes-loading + messages-loading
+         behavior was moved to the top-level useEffect above. */
 
     return {
       studentMessageIdByDisplayIndex: studentIds,
@@ -264,6 +274,18 @@ export function Workspace({ modules, setModules, selectedConversationId }: Works
             onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
+          />
+        );
+      case 'notes':
+        return (
+          <Notes
+            onClose={() => handleClose(module.id)}
+            onResize={(newColSpan, newRowSpan) => handleResize(module.id, newColSpan, newRowSpan)}
+            colSpan = {module.colSpan}
+            rowSpan = {module.rowSpan}
+            messageIndex={messageIndex}
+            conversationId={selectedConversationId}
+            sharedMessages={conversationMessages}
           />
         );
         default: 

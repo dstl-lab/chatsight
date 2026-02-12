@@ -1,4 +1,4 @@
-import type { AssignmentListItem, CodeData, ConversationListItem, DiffData, FileData, FileListItem, FileMessage } from '../../shared/types';
+import type { AssignmentListItem, CodeData, ConversationListItem, DiffData, FileData, FileListItem, FileMessage, NotesTab } from '../../shared/types';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 class ApiClient {
@@ -115,6 +115,77 @@ class ApiClient {
             throw new Error(`Failed to fetch messages for conversation ${conversationId}`);
         }
         return response.json();
+    }
+
+    //notes
+    async getNotesTabs(conversationId: number): Promise<NotesTab[]> {
+        const response = await fetch(`${this.baseUrl}/conversations/${conversationId}/notes`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch notes tabs for conversation ${conversationId}`);
+        }
+        return response.json();
+    }
+
+    async createNotesTab(conversationId: number, tabName: string): Promise<{ id: number; tabName: string }> {
+        const response = await fetch(`${this.baseUrl}/conversations/${conversationId}/notes`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ tabName }),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to create notes tab');
+        }
+        return response.json();
+    }
+
+    async updateNotesContent(tabId: number, content: string): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/notes/${tabId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ content }),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update notes content for ${tabId}`);
+        }
+    }
+
+    async renameNotesTab(tabId: number, tabName: string): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/notes/${tabId}/rename`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ tabName }),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to rename notes tab ${tabId}`);
+        }
+    }
+
+    async deleteNotesTab(tabId: number): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/notes/${tabId}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to delete notes tab ${tabId}`);
+        }
+    }
+
+    async reorderNotesTabs(conversationId: number, orderedTabIds: number[]): Promise<void> {
+        const response = await fetch(`${this.baseUrl}/conversations/${conversationId}/notes/reorder`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ orderedTabIds }),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to reorder notes tabs for conversation ${conversationId}`);
+        }
     }
 }
 
