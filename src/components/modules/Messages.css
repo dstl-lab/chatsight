@@ -141,6 +141,110 @@
     line-height: 1.5;
 }
 
+.messages-tutor-preview {
+    font-style: italic;
+}
+
+.messages-expand-hint {
+    font-size: 9px;
+    opacity: 0.85;
+    font-style: normal;
+}
+
+.messages-minimize-btn {
+    font-size: 9px;
+    opacity: 0.85;
+    font-style: normal;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    font-family: inherit;
+}
+
+.messages-minimize-btn:hover {
+    text-decoration: underline;
+}
+
+/* Markdown inside message bubbles */
+.messages-text-markdown {
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.messages-text-markdown p {
+    margin: 0 0 0.5em;
+}
+
+.messages-text-markdown p:last-child {
+    margin-bottom: 0;
+}
+
+.messages-text-markdown h1,
+.messages-text-markdown h2,
+.messages-text-markdown h3 {
+    margin: 0.5em 0 0.25em;
+    font-weight: 700;
+}
+
+.messages-text-markdown h1 { font-size: 1.2em; }
+.messages-text-markdown h2 { font-size: 1.1em; }
+.messages-text-markdown h3 { font-size: 1em; }
+
+.messages-text-markdown ul,
+.messages-text-markdown ol {
+    margin: 0.25em 0;
+    padding-left: 1.25em;
+}
+
+.messages-text-markdown li {
+    margin: 0.15em 0;
+}
+
+.messages-text-markdown code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.95em;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+}
+
+.messages-text-markdown pre {
+    margin: 0.5em 0;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.messages-text-markdown pre code {
+    background: none;
+    padding: 0;
+}
+
+.messages-text-markdown blockquote {
+    margin: 0.5em 0;
+    padding-left: 0.75em;
+    border-left: 3px solid rgba(0, 0, 0, 0.2);
+    color: #444;
+}
+
+.messages-text-markdown a {
+    color: #0066cc;
+    text-decoration: underline;
+}
+
+.messages-text-markdown strong {
+    font-weight: 700;
+}
+
+.messages-text-markdown hr {
+    margin: 0.5em 0;
+    border: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+}
+
 .messages-timestamp {
     font-size: 8px;
     opacity: 0.8;
