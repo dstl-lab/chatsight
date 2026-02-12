@@ -66,6 +66,31 @@ class LocalFileService {
     async getConversationMessages(conversationId: number): Promise<FileMessage[]> {
         return this.db.getMessagesByConversationId(conversationId);
     }
+
+    //notes
+    async getNotesTabs(conversationId: number): Promise<{ id: number; tabName: string; sortOrder: number }[]> {
+        return this.db.getNotesTabs(conversationId);
+    }
+    
+    async createNotesTab(conversationId: number, tabName: string): Promise<number> {
+        return this.db.createNotesTab(conversationId, tabName);
+    }
+
+    async updateNotesContent(tabId: number, content: string): Promise<void> {
+        return this.db.updateNotesContent(tabId, content);
+    }
+
+    async deleteNotesTab(tabId: number): Promise<void> {
+        return this.db.deleteNotesTab(tabId);
+    }
+
+    async reorderNotesTabs(conversationId: number, orderedTabIds: number[]): Promise<void> {
+        return this.db.reorderNotesTabs(conversationId, orderedTabIds);
+    }
+
+    async renameNotesTab(tabId: number, newTabName: string): Promise<void> {
+        return this.db.renameNotesTab(tabId, newTabName);
+    }
 }
 
 export const fileService = new LocalFileService();

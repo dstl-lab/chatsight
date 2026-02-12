@@ -291,3 +291,123 @@ app.delete('/api/files/:id', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
+
+// notes
+app.get('/api/conversations/:id/notes', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id) || id <= 0) {
+            return res.status(400).json({ error: `Invalid conversation id: ${req.params.id}. Must be a positive integer.` });
+        }
+        const tabs = await fileService.getNotesTabs(id);
+        res.json(tabs);
+    } catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.post('/api/conversations/:id/notes', async (req, res) => {
+    try {
+        const conversationId = parseInt(req.params.id, 10);
+        const { tabName } = req.body;
+
+        if (isNaN(conversationId) || conversationId <= 0) {
+            return res.status(400).json({ error: `Invalid conversation id: ${req.params.id}. Must be a positive integer.` });
+        }
+
+        if (typeof tabName !== 'string' || tabName.trim() === '') {
+            return res.status(400).json({ error: 'Tab name must be a non-empty string' });
+        }
+
+        const newTabId = await fileService.createNotesTab(conversationId, tabName.trim());
+        res.json({ id: newTabId, tabName: tabName.trim() });
+    }
+    catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.patch('/api/notes/:id', async (req, res) => {
+    try {
+        const tabId = parseInt(req.params.id, 10);
+        const { content } = req.body;
+
+        if (isNaN(tabId) || tabId <= 0) {
+            return res.status(400).json({ error: `Invalid tab id: ${req.params.id}. Must be a positive integer.` });
+        }
+
+        if (typeof content !== 'string') {
+            return res.status(400).json({ error: 'Content must be a string' });
+        }
+
+        await fileService.updateNotesContent(tabId, content);
+        res.json({ success: true });
+    }
+    catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.delete('/api/notes/:id', async (req, res) => {
+    try {
+        const tabId = parseInt(req.params.id, 10);
+
+        if (isNaN(tabId) || tabId <= 0) {
+            return res.status(400).json({ error: `Invalid tab id: ${req.params.id}. Must be a positive integer.` });
+        }
+
+        await fileService.deleteNotesTab(tabId);
+        res.json({ success: true });
+    }
+    catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.post('/api/notes/:id/rename', async (req, res) => {
+    try {
+        const tabId = parseInt(req.params.id, 10);
+        const { tabName } = req.body;
+
+        if (isNaN(tabId) || tabId <= 0) {
+            return res.status(400).json({ error: `Invalid tab id: ${req.params.id}. Must be a positive integer.` });
+        }
+
+        if (typeof tabName !== 'string' || tabName.trim() === '') {
+            return res.status(400).json({ error: 'Tab name must be a non-empty string' });
+        }
+
+        await fileService.renameNotesTab(tabId, tabName.trim());
+        res.json({ success: true });
+    }
+    catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});
+
+app.post('/api/conversations/:id/notes/reorder', async (req, res) => {
+    try {
+        const conversationId = parseInt(req.params.id, 10);
+        const { orderedTabIds } = req.body;
+
+        if (isNaN(conversationId) || conversationId <= 0) {
+            return res.status(400).json({ error: `Invalid conversation id: ${req.params.id}. Must be a positive integer.` });
+        }
+
+        if (!Array.isArray(orderedTabIds) || !orderedTabIds.every((id: any) => Number.isInteger(id) && id > 0)) {
+            return res.status(400).json({ error: 'orderedTabIds must be an array of positive integers' });
+        }
+
+        await fileService.reorderNotesTabs(conversationId, orderedTabIds);
+        res.json({ success: true });
+    }
+    catch (error) {
+        const errorMessage = (error as Error).message;
+        res.status(errorMessage.includes('not found') ? 404 : 500).json({ error: errorMessage });
+    }
+});

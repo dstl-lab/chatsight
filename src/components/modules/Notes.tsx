@@ -1,12 +1,12 @@
 // export file into Markdown file (look back to onboarding-chat)
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import './Notes.css';
 import './ModuleResize.css';
 import { useModuleResize } from './useModuleResize';
 import Editor from "@monaco-editor/react";
-import { getDatabase } from '../../../services/database';
-import type { NotesTab } from '../../../services/database';
+import { apiClient } from '../../services/apiClient';
+import type { NotesTab } from '../../../shared/types';
 
 interface FileMessageRow {
     id: number;
@@ -33,31 +33,12 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
         onResize,
     });
 
-    const [tabs, setTabs] = useState<NotesTab[]>([]);
-
+    const [notesTabs, setNotesTabs] = useState<NotesTab[]>([]);
+    const [activeTabIndex, setActiveTabIndex] = useState(0);
     const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
-    const [activeTabIndex, setActiveTabIndex] = useState(0);
-
-    useEffect(() => {
-        if (!conversationId) {
-            setTabs([]);
-            setActiveTabIndex(0);
-            return;
-        }
-
-        const db = getDatabase();
-        let tabsFromDb = db.getNotesTabs(conversationId);
-
-        if (tabsFromDb.length === 0) {
-            db.createNotesTab(conversationId, 'tab1');
-            tabsFromDb = db.getNotesTabs(conversationId);
-        }
-
-        setTabs(tabsFromDb);
-        setActiveTabIndex(0);
-    }, [conversationId]);
 
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     const lightEditorBg = "#ffffff";
@@ -65,10 +46,40 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
 
     const loading = conversationId != null && sharedMessages === undefined;
 
+    useEffect(() => {
+        if (!conversationId) {
+            setNotesTabs([]);
+            setActiveTabIndex(0);
+            return;
+        }
+
+        setIsLoading(true);
+        apiClient.getNotesTabs(conversationId)
+            .then((tabs) => {
+                if (tabs.length === 0) {
+                    apiClient.createNotesTab(conversationId, 'tab1')
+                        .then((newTab) => {
+                            setNotesTabs([{
+                                id: newTab.id,
+                                conversationId,
+                                tabName: newTab.tabName,
+                                content: '',
+                                sortOrder: 0
+                            }])
+                        }
+                    );
+                } else {
+                    setNotesTabs(tabs);
+                    setActiveTabIndex(0);
+                }
+            })
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
+    }, [conversationId]);
+
     const handleTabDoubleClick = (index: number) => {
         setEditingTabIndex(index);
-        // Start editing with the current tab name
-        setEditingTabName(tabs[index]?.tabName ?? '');
+        setEditingTabName(notesTabs[index]?.tabName ?? '');
     };
 
     const handleTabNameChange = (newName: string) => {
@@ -77,35 +88,26 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
 
     const handleTabNameSubmit = (index: number) => {
         const newName = editingTabName.trim();
-        if (!newName) {
+        if (!newName || !notesTabs[index]) return;
+        
+        const nameExists = notesTabs.some((t, i) => i !== index && t.tabName === newName);
+        if (nameExists) {  // <-- Fixed: removed the "!"
             setEditingTabIndex(null);
             return;
         }
-
-        const nameExists = tabs.some((t, i) => i !== index && t.tabName === newName);
-        if (nameExists) {
-            setEditingTabIndex(null);
-            return;
-        }
-
-        const updatedTabs = [...tabs];
-        const currentTab = updatedTabs[index];
-
-        updatedTabs[index] = {
-            ...currentTab,
-            tabName: newName
-        };
-
-        setTabs(updatedTabs);
-
-        if (conversationId) {
-            const db = getDatabase();
-            db.renameNotesTab(currentTab.id, newName);
-        }
-
-        setEditingTabIndex(null);
+        
+        const tabId = notesTabs[index].id;
+        apiClient.renameNotesTab(tabId, newName)
+            .then(() => {
+                setNotesTabs(prev => {
+                    const updated = [...prev];
+                    updated[index] = { ...updated[index], tabName: newName };
+                    return updated;
+                });
+            })
+            .catch(console.error)
+            .finally(() => setEditingTabIndex(null));
     };
-
 
     const handleTabNameKeyDown = (e: React.KeyboardEvent, index: number) => {
         if (e.key === 'Enter') {
@@ -116,56 +118,65 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
     };
 
     const handleTabDelete = (index: number) => {
-        if (tabs.length === 1) return;
+        if (notesTabs.length === 1 || !notesTabs[index] || !conversationId) return;
 
-        const tabToDelete = tabs[index];
-
-        if (conversationId) {
-            const db = getDatabase();
-            db.deleteNotesTab(tabToDelete.id);
-        }
-
-        const updatedTabs = tabs.filter((_, i) => i !== index);
-
-        setTabs(updatedTabs);
-
-        setActiveTabIndex(prev => {
-            if (index < prev) return prev - 1;
-            if (index === prev) return Math.max(0, prev - 1);
-            return prev;
-        });
+        const tabId = notesTabs[index].id;
+        apiClient.deleteNotesTab(tabId)
+            .then(() => {
+                setNotesTabs(prev => prev.filter((_, i) => i !== index));
+                setActiveTabIndex(prev => {
+                    if (index < prev) return prev - 1;
+                    if (index === prev) return Math.max(0, prev - 1);
+                    return prev;
+                });
+            })
+            .catch(console.error);
     };
 
     const handleTabAdd = () => {
         if (!conversationId) return;
 
-        const db = getDatabase();
-        const newName = `tab${tabs.length + 1}`;
-
-        const newId = db.createNotesTab(conversationId, newName);
-
-        const newTab: NotesTab = {
-            id: newId,
-            conversationId,
-            tabName: newName,
-            content: '',
-            sortOrder: tabs.length
-        };
-
-        setTabs([...tabs, newTab]);
-        setActiveTabIndex(tabs.length);
+        const newTabName = `tab${notesTabs.length + 1}`;
+        apiClient.createNotesTab(conversationId, newTabName)
+            .then((newTab) => {
+                const fullTab: NotesTab = {
+                    id: newTab.id,
+                    conversationId,
+                    tabName: newTab.tabName,
+                    content: '',
+                    sortOrder: notesTabs.length
+                };
+                setNotesTabs(prev => [...prev, fullTab]);
+                setActiveTabIndex(notesTabs.length);
+            })
+            .catch(console.error);
     };
-
-
 
     const handleTabClick = (index: number) => {
         setActiveTabIndex(index);
     }
 
-    const handleExport = () => {
-        const content = tabs[activeTabIndex]?.content ?? '';
+    const handleContentChange = (value: string | undefined) => {
+        const val = value ?? '';
+        const currentTab = notesTabs[activeTabIndex];
+        if (!currentTab) return;
 
-        const rawName = tabs[activeTabIndex]?.tabName ?? 'notes';
+        setNotesTabs(prev => {
+            const updated = [...prev];
+            updated[activeTabIndex] = { ...updated[activeTabIndex], content: val };
+            return updated;
+        });
+
+        apiClient.updateNotesContent(currentTab.id, val)
+            .catch(console.error);
+    };
+
+    const handleExport = () => {
+        const currentTab = notesTabs[activeTabIndex] || '';
+        if (!currentTab) return;
+
+        const content = currentTab.content || '';
+        const rawName = currentTab.tabName || 'notes';
         const filenameBase = rawName
             .trim()
             .replace(/[^\w\s-]/g, '')
@@ -176,11 +187,9 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
 
         const mdContent = `# ${rawName}\n\n${content}`;
 
-        // Create a blob with the notes content
         const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         
-        // Create a download link and trigger it
         const link = document.createElement('a');
         link.href = url;
         link.download = `${filenameBase}-${date}.md`;
@@ -189,7 +198,6 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
         link.click();
         document.body.removeChild(link);
         
-        // Clean up
         URL.revokeObjectURL(url);
     };
 
@@ -219,7 +227,7 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                 />
             )}
             <div className="module-header">
-                <div style={{display: 'flex', alignItems: 'center', gap: '10px', position: 'relative'}}>
+                <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                     <h3 className="module-title">Notes</h3>
                     {!conversationId && (
                         <span className="messages-hint">Select a conversation</span>
@@ -235,7 +243,7 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                         onClick={handleExport}
                     >
                         Export 
-                        <img className="export-img" src={require('../assets/export.png')} alt="export" width="10px" />
+                        <img className="export-img" src="src/assets/ExportButton.png" width="10px"></img>
                     </button>
                     <button className="close-button" onClick={onClose} aria-label="Close module" >
                         x
@@ -245,12 +253,18 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
 
             <div className="notes-tabs-header">
                 <div className="notes-tabs-container">
-                    {tabs.map((tab, index) => (
+                    {notesTabs.map((tab, index) => (
                         <button 
                             key={index}
                             className={`notes-tabs ${activeTabIndex === index ? 'notes-tab-active' : ''}`} 
                             onClick={() => handleTabClick(index)}
                             onDoubleClick={() => handleTabDoubleClick(index)}
+                            style={{
+                                ["--editor-bg" as any]: prefersDark ? darkEditorBg : lightEditorBg,
+                                ["--editor-fg" as any]: prefersDark ? "#ffffff" : "#000000",
+                                ["--editor-nbg" as any]: prefersDark ? "#333333" : "#E5E5E5",
+                                ["--editor-hbg" as any]: prefersDark ? "#4b4d51ff" : "#eff2f3",
+                            }}
                         >
                             {editingTabIndex === index ? (
                                 <input
@@ -276,31 +290,28 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                         </button>
 
                     ))}
-                    <button className="notes-new-tabs" onClick={() => handleTabAdd()} aria-label="Close module">
-                            +
-                    </button>
+                    {conversationId && !loading && !isLoading && notesTabs[activeTabIndex] && (
+                        <button className="notes-new-tabs" onClick={() => handleTabAdd()} aria-label="Close module"
+                            style={{
+                                ["--editor-bg" as any]: prefersDark ? darkEditorBg : lightEditorBg,
+                                ["--editor-fg" as any]: prefersDark ? "#ffffff" : "#000000",
+                                ["--editor-nbg" as any]: prefersDark ? "#333333" : "#E5E5E5",
+                                ["--editor-hbg" as any]: prefersDark ? "#4b4d51ff" : "#eff2f3",
+                            }}
+                        >
+                                +
+                        </button>
+                    )}
                 </div>
-                <button className="notes-new-tabs" onClick={() => handleTabAdd()} aria-label="Close module">
-                    +
-                </button>
             </div>
             <div className="notes-content-container" style={{ height: "100%" }}>
-                {conversationId && !loading && (
+                {conversationId && !loading && !isLoading && notesTabs[activeTabIndex] && (
                     <Editor
                         height="100%"
                         language="markdown"
                         theme={prefersDark ? 'vs-dark' : 'vs'}
-                        value={tabs[activeTabIndex]?.content ?? ''}
-                        onChange={(value) => {
-                            const val = value ?? '';
-                            const updatedTabs = [...tabs];
-                            const currentTab = updatedTabs[activeTabIndex];
-                            updatedTabs[activeTabIndex] = {
-                                ...currentTab,
-                                content: val
-                            };
-                            setTabs(updatedTabs);
-                        }}
+                        value={notesTabs[activeTabIndex].content}
+                        onChange={handleContentChange}
                         options={{
                             wordWrap: "on",
                             minimap: { enabled: false },
@@ -309,8 +320,7 @@ export function Notes({ onClose, onResize, colSpan = 1, rowSpan = 1, messageInde
                         }}
                     />
                 )}
-
-                </div>
+            </div>
         </div>
     )
 }

@@ -3,29 +3,15 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background-color: #B0B0B0; /*#FFFDCA;*/
-    border: 1px solid #000000;
+    background-color: var(--editor-bg);
+    border: 1px solid var(--editor-fg);
     border-radius: 8px;
     overflow: hidden;
     position: relative;
 }
 
-.notes-textarea {
-    position: absolute;
-    top: 65px;
-    left: 5px;
-    right: 5px;
-    bottom: 5px;
-    border: none;
-    background: transparent;
-    color: #000000;
-    font-size: 10px;
-    box-sizing: border-box;
-    line-height: 1.5;
-}
-
 .notes-textarea::placeholder {
-    color: #333333;
+    color: var(--editor-fg);
 }
 
 .module-header {
@@ -88,17 +74,7 @@
     margin-left: 4px;
     vertical-align: middle;
 }
-/*
-.notes-line {
-    position: relative;
-    border: .5px solid #000000;
-    height: 0px;
-    margin-right: 5px;
-    margin-left: 5px;
-    top: 20px;
-    margin-bottom: 14px;
-}
-*/
+
 .notes-tabs-header {
     display: flex;
     flex-direction: row;
@@ -119,11 +95,12 @@
 .notes-tabs {
     flex: 1;
     min-width: 0;
-    background-color: #E5E5E5;
+    background-color: var(--editor-nbg);
     border: none;
-    border-radius: 7px;
+    border-top-left-radius: 7px;
+    border-top-right-radius: 7px;
     padding: 0 4px;
-    color: #000000;
+    color: var(--editor-fg);
     font-size: 10px;
     cursor: pointer;
     overflow: hidden;
@@ -148,7 +125,7 @@
     right: 4px;
     background: none;
     border: none;
-    color: #000000;
+    color: var(--editor-fg);
     cursor: pointer;
     font-size: 10px;
     padding: 0;
@@ -162,7 +139,7 @@
 }
 
 .notes-tabs:hover {
-    background-color: #eff2f3;
+    background-color: var(--editor-hbg);
     border-end-end-radius: 0px;
     border-end-start-radius: 0px;
 }
@@ -174,39 +151,27 @@
 }
 
 .notes-tab-active {
-    background-color: #B0B0B0;
-    color: #000000;
+    background-color: var(--editor-bg);
+    color: var(--editor-fg);
     border-end-end-radius: 0px;
     border-end-start-radius: 0px;
 }
 
-/* Ensure hovering the same (active) tab doesn't apply the generic hover color */
 .notes-tab-active:hover {
-    background-color: #B0B0B0;
-    color: #000000;
-}
-
-.notes-tab-input {
-    background: #FFFFFF;
-    border: 1px solid #000000;
-    border-radius: 3px;
-    padding: 2px 4px;
-    font-size: 10px;
-    color: #000000;
-    width: 80%;
-    max-width: 100px;
-    box-sizing: border-box;
+    background-color: var(--editor-bg);
+    color: var(--editor-fg);
 }
 
 .notes-new-tabs {
     flex-shrink: 0;
+    margin-left: auto;
     box-sizing: border-box;
     width: 20px;
     height: 20px;
-    background-color: #E5E5E5;
-    color: #000000;
+    background-color: var(--editor-bg);
+    color: var(--editor-fg);
     border: none;
-    border-radius: 7px;
+    border-radius: 5px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -214,5 +179,5 @@
 }
 
 .notes-new-tabs:hover {
-    background-color: #B0B0B0;
+    background-color: var(--editor-hbg);
 }
