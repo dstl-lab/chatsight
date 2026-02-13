@@ -107,7 +107,7 @@ export function Sentiment({
   >(null);
 
   const chartData = useMemo((): SentimentSeries[] | undefined => {
-    if (!sentimentResults || sentimentResults.length < 2) return data;
+    if (!sentimentResults || sentimentResults.length <= 2) return data;
 
     if (mode === "time") {
       // Indices in sharedMessages where role === STUDENT (same order as sentimentResults)
