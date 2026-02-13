@@ -70,6 +70,94 @@
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+/* Settings dropdown opens below the Settings button */
+.header-settings-panels {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+  z-index: 1000;
+}
+
+/* First panel: fixed size, does not expand when submenu opens */
+.header-settings-main {
+  position: relative;
+  margin: 0;
+  min-width: 160px;
+}
+
+/* Checkbox submenu flies out to the right; does not affect first panel size */
+.header-settings-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 2px;
+  min-width: 180px;
+}
+
+.header-dropdown-item-with-submenu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-dropdown-chevron {
+  font-size: 16px;
+  color: #666;
+}
+
+.header-dropdown-section-title {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  border-bottom: 1px solid #eee;
+}
+
+.header-dropdown-sentiment-options {
+  padding: 6px 0;
+}
+
+.header-dropdown-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #000;
+  user-select: none;
+}
+
+.header-dropdown-checkbox-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.header-dropdown-checkbox-item input {
+  cursor: pointer;
+}
+
+.header-settings-submenu .header-dropdown-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  background: #f1f1f1;
+  color: #000;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.header-settings-submenu .header-dropdown-button:hover {
+  background: #e8e8e8;
+}
+
 .header-center {
   justify-content: center;
   display: flex;

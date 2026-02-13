@@ -20,7 +20,8 @@ interface WorkspaceProps {
   modules: Module[];
   setModules: React.Dispatch<React.SetStateAction<Module[]>>;
   selectedConversationId: number | null;
-  isAggregate: boolean;
+  mode: "aggregate" | "per-sentence" | "time";
+  visibleSentiments?: Set<string>;
 }
 
 const getModulePositions = (module: Module): number[] => {
@@ -55,7 +56,7 @@ const findModuleAtPosition = (position: number, modules: Module[]): Module | nul
   return modules.find(m => getModulePositions(m).includes(position)) || null;
 };
 
-export function Workspace({ modules, setModules, selectedConversationId, isAggregate }: WorkspaceProps) {
+export function Workspace({ modules, setModules, selectedConversationId, mode, visibleSentiments }: WorkspaceProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -266,7 +267,8 @@ export function Workspace({ modules, setModules, selectedConversationId, isAggre
             colSpan={module.colSpan}
             rowSpan={module.rowSpan}
             sharedMessages={conversationMessages}
-            isAggregate={isAggregate}
+            mode={mode}
+            visibleSentiments={visibleSentiments}
           />
         );
         default: 

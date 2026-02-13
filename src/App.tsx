@@ -10,6 +10,18 @@ import { OperationsPanel } from './components/OperationsPanel';
 import { Workspace } from './components/Workspace';
 
 type ModuleType = 'messages' | 'code' | 'notes' | 'chat' | 'wordcloud' | 'sentiment' | null;
+type SentimentMode = 'time' | 'aggregate' | 'per-sentence';
+
+export const SENTIMENT_LABELS = [
+  'anger',
+  'surprise',
+  'joy',
+  'sadness',
+  'fear',
+  'disgust',
+  'neutral',
+] as const;
+export type SentimentLabel = (typeof SENTIMENT_LABELS)[number];
 
 interface Module {
   id: string;
@@ -27,7 +39,25 @@ function App() {
   const hasMessages = modules.some(m => m.type === 'messages');
   const hasCode = modules.some(m => m.type === 'code');
 
-  const [isAggregate, setIsAggregate] = useState(true);
+  const [mode, setMode] = useState<SentimentMode>('time');
+  const [visibleSentiments, setVisibleSentiments] = useState<Set<string>>(
+    () => new Set(SENTIMENT_LABELS),
+  );
+  const toggleSentiment = (label: string) => {
+    setVisibleSentiments((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+  const nextMode = new Map<SentimentMode, SentimentMode>([
+    ['time', 'aggregate'],
+    ['aggregate', 'per-sentence'],
+    ['per-sentence', 'time'],
+  ]);
+  const cycleMode = () => setMode(nextMode.get(mode) ?? 'time');
+
 
   const fetchFiles = async () => {
     try { 
@@ -46,7 +76,14 @@ function App() {
 
   return (
     <>
-      <Header onFileUpload={refreshFiles}/>
+      <Header
+        onFileUpload={refreshFiles}
+        sentimentLabels={SENTIMENT_LABELS}
+        visibleSentiments={visibleSentiments}
+        onToggleSentiment={toggleSentiment}
+        mode={mode}
+        cycleMode={cycleMode}
+      />
       <div className="body">
         <aside className="sidebar">
           <OperationsPanel 
@@ -58,16 +95,14 @@ function App() {
             onFileUpload={refreshFiles}
             onFileDelete={refreshFiles}
           />
-          <button className="sentiment-chart-button" onClick={() => setIsAggregate(!isAggregate)}>
-            {isAggregate ? 'Aggregate' : 'Per sentence'}
-          </button>
         </aside>
         <div className="vertical-separator" />
         <Workspace
           modules={modules}
           setModules={setModules}
           selectedConversationId={selectedConversationId}
-          isAggregate={isAggregate}
+          mode={mode}
+          visibleSentiments={visibleSentiments}
         />
       </div>
     </>

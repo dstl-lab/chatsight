@@ -1,26 +1,66 @@
-import { useState, useRef, useEffect } from 'react';
-import { apiClient } from '../services/apiClient';
-import dstlLogo from '../assets/dstl-logo.png';
-import './Header.css';
+import { useState, useRef, useEffect } from "react";
+import { apiClient } from "../services/apiClient";
+import dstlLogo from "../assets/dstl-logo.png";
+import "./Header.css";
 
-export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
+interface HeaderProps {
+  onFileUpload?: () => void;
+  sentimentLabels?: readonly string[];
+  visibleSentiments?: Set<string>;
+  onToggleSentiment?: (label: string) => void;
+  mode: string;
+  cycleMode: () => void;
+}
+
+export function Header({
+  onFileUpload,
+  sentimentLabels = [],
+  visibleSentiments = new Set(),
+  onToggleSentiment,
+  mode,
+  cycleMode,
+}: HeaderProps) {
+  const [isSettingOpen, setIsSettingOpen] = useState(false);
+  const [isSentimentSubmenuOpen, setIsSentimentSubmenuOpen] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const settingMenuRef = useRef<HTMLDivElement>(null);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (fileMenuRef.current && !fileMenuRef.current.contains(event.target as Node)) {
+      if (
+        settingMenuRef.current &&
+        !settingMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsSettingOpen(false);
+        setIsSentimentSubmenuOpen(false);
+      }
+    };
+    if (isSettingOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isSettingOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        fileMenuRef.current &&
+        !fileMenuRef.current.contains(event.target as Node)
+      ) {
         setIsFileMenuOpen(false);
       }
     };
 
     if (isFileMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isFileMenuOpen]);
 
@@ -31,33 +71,37 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
   const handleMenuItemClick = (action: string) => {
     setIsFileMenuOpen(false);
 
-    if (action === 'add-new-file') {
+    if (action === "add-new-file") {
       fileInputRef.current?.click();
-    } else if (action === 'export-template') {
-      console.log('Export template'); // PLACEHOLDER
+    } else if (action === "export-template") {
+      console.log("Export template"); // PLACEHOLDER
     }
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const files = event.target.files;
     if (files && files.length > 0) {
       const file = files[0];
-  
+
       const MAX_FILE_SIZE = 10 * 1024 * 1024;
       if (file.size > MAX_FILE_SIZE) {
-        alert(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds the maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB. Please choose a smaller file.`);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        alert(
+          `File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds the maximum allowed size of ${MAX_FILE_SIZE / 1024 / 1024}MB. Please choose a smaller file.`,
+        );
+        if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
-      
+
       try {
         await apiClient.uploadFile(file);
       } catch (error) {
-        console.error('Failed to upload file:', error);
-        alert('Failed to upload file. Please try again.');
+        console.error("Failed to upload file:", error);
+        alert("Failed to upload file. Please try again.");
       } finally {
         onFileUpload?.();
-        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     }
   };
@@ -68,7 +112,7 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
         <div className="header-left">
           <div className="header-menu-item" ref={fileMenuRef}>
             <p
-              className={`header-menu-trigger ${isFileMenuOpen ? 'active' : ''}`}
+              className={`header-menu-trigger ${isFileMenuOpen ? "active" : ""}`}
               onClick={handleFileClick}
             >
               File
@@ -77,20 +121,69 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
               <div className="header-dropdown">
                 <div
                   className="header-dropdown-item"
-                  onClick={() => handleMenuItemClick('add-new-file')}
+                  onClick={() => handleMenuItemClick("add-new-file")}
                 >
                   add new file
                 </div>
                 <div
                   className="header-dropdown-item"
-                  onClick={() => handleMenuItemClick('export-template')}
+                  onClick={() => handleMenuItemClick("export-template")}
                 >
                   export current template
                 </div>
               </div>
             )}
           </div>
-          <p>Help</p>
+          <div className="header-menu-item" ref={settingMenuRef}>
+            <p
+              className={`header-menu-trigger ${isSettingOpen ? "active" : ""}`}
+              onClick={() => setIsSettingOpen((open) => !open)}
+            >
+              Settings
+            </p>
+            {isSettingOpen && (
+              <div className="header-settings-panels">
+                <div className="header-dropdown header-settings-main">
+                  <div
+                    className="header-dropdown-item header-dropdown-item-with-submenu"
+                    onClick={() => setIsSentimentSubmenuOpen((open) => !open)}
+                  >
+                    <span>Sentiment</span>
+                    <span className="header-dropdown-chevron">›</span>
+                  </div>
+                </div>
+                {isSentimentSubmenuOpen && (
+                  <div className="header-dropdown header-settings-submenu">
+                    <div className="header-dropdown-section-title">
+                      Sentiment chart
+                    </div>
+                    <div className="header-dropdown-sentiment-options">
+                      {sentimentLabels.map((label) => (
+                        <label
+                          key={label}
+                          className="header-dropdown-checkbox-item"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={visibleSentiments.has(label)}
+                            onChange={() => onToggleSentiment?.(label)}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      className="header-dropdown-button"
+                      onClick={cycleMode}
+                    >
+                      {mode.toUpperCase()}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <p>Documentation</p>
           <p>Save</p>
         </div>
@@ -105,11 +198,10 @@ export function Header({ onFileUpload }: { onFileUpload?: () => void }) {
       <input
         ref={fileInputRef}
         type="file"
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
         onChange={handleFileChange}
         accept=".txt"
       />
     </>
   );
 }
-
