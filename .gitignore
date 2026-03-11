@@ -1,33 +1,21 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-.env
+# Node
+node_modules/
+dist/
 
 # Python
-__pycache__
+server/python/.venv/
+server/python/__pycache__/
+server/python/*.db
+server/python/*.pyc
+**/__pycache__/
+*.pyc
 
-# Database files
-database/*.db
-database/*.db-wal
-database/*.db-shm
+# Env
+.env
+.env.local
+
+# Vite
+.vite/
+
+# OS
+.DS_Store

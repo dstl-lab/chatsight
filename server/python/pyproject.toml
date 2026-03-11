@@ -1,11 +1,14 @@
 [project]
-name = "python-service"
+name = "chatsight-server"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.128.0",
-    "pydantic>=2.12.5",
-    "python-multipart>=0.0.21",
-    "uvicorn[standard]>=0.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlmodel>=0.0.21",
+    "python-multipart>=0.0.12",
+    "pydantic>=2.0.0",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.2.2",
+    "google-genai>=1.66.0",
 ]
