@@ -23,16 +23,16 @@ npx tsc --noEmit   # type-check only
 
 - `GEMINI_API_KEY` — used by `label_service.py`
 - `PG_PASSWORD` — password for the `dsc10_tutor` PostgreSQL user (read from `.env` at repo root via `python-dotenv`)
-- `kubectl port-forward` to `localhost:5432` must be running before starting the backend (external DB is `dsc10_tutor_logs`)
+- `kubectl port-forward` to `localhost:5433` must be running before starting the backend (external DB is `dsc10_tutor_logs`)
 
 ## Architecture
 
 ### Data flow
-External PostgreSQL → backend reads chatlog content → `POST /api/label` calls Anthropic tool-use → `LabelSet`/`Label` rows saved in local SQLite → frontend renders transcript + label cards in sync.
+External PostgreSQL → backend reads chatlog content → `POST /api/label` calls Gemini function-calling → `LabelSet`/`Label` rows saved in local SQLite → frontend renders transcript + label cards in sync.
 
 ### Two database connections (`server/python/database.py`)
 - **Local SQLite** (`chatsight.db`) — stores `LabelSet` and `Label` rows only. Created at startup via `SQLModel.metadata.create_all`.
-- **External PostgreSQL** (`dsc10_tutor_logs` on `localhost:5432`) — read-only source of chatlog data. Accessed via `ext_engine` (psycopg2 driver).
+- **External PostgreSQL** (`dsc10_tutor_logs` on `localhost:5433`) — read-only source of chatlog data. Accessed via `ext_engine` (psycopg2 driver).
 
 The external DB has a single `events` table with columns `id`, `event_type`, `user_email`, `payload` (JSONB), `created_at`. Conversations are grouped by `payload->>'conversation_id'`. Relevant event types are `tutor_query` (payload has `question`) and `tutor_response` (payload has `response`). The stable integer chatlog ID used throughout the API is `MIN(event.id)` per conversation.
 

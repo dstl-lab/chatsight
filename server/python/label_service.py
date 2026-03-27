@@ -35,6 +35,7 @@ TOOL = types.Tool(function_declarations=[
 
 GENERATE_CONFIG = types.GenerateContentConfig(
     system_instruction="You are an education researcher analyzing student-AI chatlogs. Your goal is to identify pedagogically meaningful patterns in how students interact with AI tutoring systems. Be precise, evidence-based, and consistent.",
+    temperature=0,
     tools=[TOOL],
     tool_config=types.ToolConfig(
         function_calling_config=types.FunctionCallingConfig(
