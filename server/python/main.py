@@ -175,3 +175,73 @@ def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(g
         id=label.id, name=label.name, description=label.description,
         created_at=label.created_at, count=count,
     )
+
+
+# ── Session routes ────────────────────────────────────────────────────────────
+
+@app.post("/api/session/start", response_model=SessionResponse)
+def start_session(db: Session = Depends(get_session)):
+    labeling_session = LabelingSession()
+    db.add(labeling_session)
+    db.commit()
+    db.refresh(labeling_session)
+    return SessionResponse(
+        id=labeling_session.id,
+        started_at=labeling_session.started_at,
+        last_active=labeling_session.last_active,
+        labeled_count=labeling_session.labeled_count,
+    )
+
+
+@app.get("/api/session", response_model=SessionResponse)
+def get_session_state(db: Session = Depends(get_session)):
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+    if not labeling_session:
+        raise HTTPException(status_code=404, detail="No active session")
+    return SessionResponse(
+        id=labeling_session.id,
+        started_at=labeling_session.started_at,
+        last_active=labeling_session.last_active,
+        labeled_count=labeling_session.labeled_count,
+    )
+
+
+# ── Queue action routes ───────────────────────────────────────────────────────
+
+@app.post("/api/queue/apply")
+def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, req.label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    application = LabelApplication(
+        label_id=req.label_id,
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+        applied_by="human",
+    )
+    db.add(application)
+
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+    if labeling_session:
+        labeling_session.labeled_count += 1
+        labeling_session.last_active = datetime.utcnow()
+        db.add(labeling_session)
+
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/queue/skip")
+def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
+    skipped = SkippedMessage(
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+    )
+    db.add(skipped)
+    db.commit()
+    return {"ok": True}
