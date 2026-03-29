@@ -245,3 +245,111 @@ def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
     db.add(skipped)
     db.commit()
     return {"ok": True}
+
+
+# ── Queue fetch route ─────────────────────────────────────────────────────────
+
+@app.get("/api/queue", response_model=List[QueueItemResponse])
+def get_queue(limit: int = 20, db: Session = Depends(get_session)):
+    labeled = {
+        (r.chatlog_id, r.message_index)
+        for r in db.exec(select(LabelApplication)).all()
+    }
+    skipped = {
+        (r.chatlog_id, r.message_index)
+        for r in db.exec(select(SkippedMessage)).all()
+    }
+    excluded = labeled | skipped
+
+    with ext_engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH student AS (
+                SELECT id,
+                       payload->>'conversation_id' AS conv_id,
+                       payload->>'question'        AS message_text,
+                       (ROW_NUMBER() OVER (
+                           PARTITION BY payload->>'conversation_id'
+                           ORDER BY id
+                       )) - 1 AS message_index
+                FROM events WHERE event_type = 'tutor_query'
+            ),
+            chatlog_ids AS (
+                SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                FROM events GROUP BY payload->>'conversation_id'
+            )
+            SELECT s.message_text, s.message_index, ci.chatlog_id,
+                (SELECT e2.payload->>'response' FROM events e2
+                 WHERE e2.payload->>'conversation_id' = s.conv_id
+                   AND e2.event_type = 'tutor_response' AND e2.id < s.id
+                 ORDER BY e2.id DESC LIMIT 1) AS context_before,
+                (SELECT e3.payload->>'response' FROM events e3
+                 WHERE e3.payload->>'conversation_id' = s.conv_id
+                   AND e3.event_type = 'tutor_response' AND e3.id > s.id
+                 ORDER BY e3.id ASC LIMIT 1) AS context_after
+            FROM student s
+            JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+            ORDER BY RANDOM()
+        """)).mappings().all()
+
+    queue = [
+        QueueItemResponse(
+            chatlog_id=r["chatlog_id"],
+            message_index=r["message_index"],
+            message_text=r["message_text"],
+            context_before=r["context_before"],
+            context_after=r["context_after"],
+        )
+        for r in rows
+        if (r["chatlog_id"], r["message_index"]) not in excluded
+    ][:limit]
+
+    return queue
+
+
+# ── Stub routes (feature tracks implement these) ──────────────────────────────
+
+@app.post("/api/queue/suggest")
+def suggest_label(_req: SuggestRequest):
+    return {
+        "label_name": "Concept Question",
+        "evidence": "explain what a DataFrame is",
+        "rationale": "Student asks for a definition of a new concept, not debugging help.",
+    }
+
+
+@app.post("/api/labels/merge")
+def merge_labels(_req: MergeLabelRequest):
+    return {"ok": True}
+
+
+@app.post("/api/labels/split")
+def split_label(_req: SplitLabelRequest):
+    return {"ok": True}
+
+
+@app.get("/api/analysis/summary")
+def get_analysis_summary():
+    return {
+        "label_counts": {"Concept Question": 22, "Clarification": 18},
+        "notebook_breakdown": {"lab01": {"Concept Question": 10}},
+        "coverage": {"human_labeled": 40, "ai_labeled": 0, "unlabeled": 260, "total": 300},
+    }
+
+
+@app.get("/api/export/csv")
+def export_csv():
+    return Response(
+        content="chatlog_id,message_index,label,applied_by\n",
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=labels.csv"},
+    )
+
+
+@app.get("/api/session/recalibration")
+def get_recalibration():
+    return []
+
+
+@app.get("/api/queue/sample")
+def get_sample():
+    return {"message": "Sampling strategy not yet implemented"}
