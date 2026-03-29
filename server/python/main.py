@@ -1,15 +1,20 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+from datetime import datetime
+from typing import List, Optional
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.engine import Connection
-from typing import List
 
-from database import create_db_and_tables, ext_engine
+from database import create_db_and_tables, get_session, ext_engine
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage
 from schemas import (
-    ChatlogResponse, ChatlogSummary,
+    CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
+    SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
+    LabelDefinitionResponse, QueueItemResponse, SessionResponse,
+    ChatlogSummary, ChatlogResponse,
 )
+from sqlmodel import Session, select
 
 
 @asynccontextmanager
@@ -117,4 +122,56 @@ def get_chatlog(
         filename=filename,
         content=content,
         created_at=first["started_at"],
+    )
+
+
+# ── Label routes ──────────────────────────────────────────────────────────────
+
+@app.get("/api/labels", response_model=List[LabelDefinitionResponse])
+def get_labels(db: Session = Depends(get_session)):
+    labels = db.exec(select(LabelDefinition)).all()
+    result = []
+    for label in labels:
+        count = db.exec(
+            select(func.count(LabelApplication.id)).where(
+                LabelApplication.label_id == label.id
+            )
+        ).one()
+        result.append(LabelDefinitionResponse(
+            id=label.id, name=label.name, description=label.description,
+            created_at=label.created_at, count=count,
+        ))
+    return result
+
+
+@app.post("/api/labels", response_model=LabelDefinitionResponse)
+def create_label(req: CreateLabelRequest, db: Session = Depends(get_session)):
+    label = LabelDefinition(name=req.name, description=req.description)
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return LabelDefinitionResponse(
+        id=label.id, name=label.name, description=label.description,
+        created_at=label.created_at, count=0,
+    )
+
+
+@app.put("/api/labels/{label_id}", response_model=LabelDefinitionResponse)
+def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+    if req.name is not None:
+        label.name = req.name
+    if req.description is not None:
+        label.description = req.description
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    count = db.exec(
+        select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+    ).one()
+    return LabelDefinitionResponse(
+        id=label.id, name=label.name, description=label.description,
+        created_at=label.created_at, count=count,
     )
