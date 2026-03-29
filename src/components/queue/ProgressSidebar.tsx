@@ -70,7 +70,6 @@ export function ProgressSidebar({
           {labels.map(label => (
             <div
               key={label.id}
-              className="relative"
               onMouseEnter={() => { if (editingLabelId !== label.id) setHoveredLabelId(label.id) }}
               onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
             >
@@ -93,7 +92,7 @@ export function ProgressSidebar({
 
               {(hoveredLabelId === label.id || editingLabelId === label.id) && (
                 <div
-                  className="absolute left-full top-0 ml-2 z-20 bg-neutral-800 border border-neutral-700 rounded-lg p-3 w-52 shadow-lg"
+                  className="bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 mt-1"
                   onMouseEnter={() => setHoveredLabelId(label.id)}
                   onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
                 >
@@ -104,7 +103,7 @@ export function ProgressSidebar({
                         value={editDesc}
                         onChange={e => setEditDesc(e.target.value)}
                         placeholder="Description..."
-                        rows={3}
+                        rows={2}
                         className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-[11px] text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600 resize-none"
                       />
                       <div className="flex gap-2 justify-end">
@@ -124,12 +123,12 @@ export function ProgressSidebar({
                     </>
                   ) : (
                     <>
-                      <p className="text-[11px] text-neutral-300 leading-relaxed">
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
                         {label.description || 'No description'}
                       </p>
                       <button
                         onClick={() => { setEditingLabelId(label.id); setEditDesc(label.description || '') }}
-                        className="text-[10px] text-blue-400 mt-1.5 hover:text-blue-300"
+                        className="text-[10px] text-blue-400 mt-1 hover:text-blue-300"
                       >
                         {label.description ? 'Edit' : 'Add description'}
                       </button>
