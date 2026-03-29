@@ -1,31 +1,57 @@
-import type { ChatlogSummary, ChatlogDetail, LabelSet } from '../types';
+// src/services/api.ts
+import type {
+  LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
+  ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+} from '../types'
+import { mockApi } from '../mocks'
 
-const BASE = '/api';
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
-export async function listChatlogs(): Promise<ChatlogSummary[]> {
-  const res = await fetch(`${BASE}/chatlogs`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(path, options)
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  return res.json() as Promise<T>
 }
 
-export async function getChatlog(id: number): Promise<ChatlogDetail> {
-  const res = await fetch(`${BASE}/chatlogs/${id}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+const json = (body: unknown) => ({
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
 
-export async function generateLabels(chatlogId: number, steeringNotes: string): Promise<{ label_set_id: number; labels: LabelSet['labels'] }> {
-  const res = await fetch(`${BASE}/label`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatlog_id: chatlogId, steering_notes: steeringNotes }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const api = {
+  getQueue: (limit = 20): Promise<QueueItem[]> =>
+    USE_MOCK ? Promise.resolve(mockApi.queue)
+             : req(`/api/queue?limit=${limit}`),
 
-export async function getLabelSets(chatlogId: number): Promise<LabelSet[]> {
-  const res = await fetch(`${BASE}/chatlogs/${chatlogId}/label-sets`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  applyLabel: (body: ApplyLabelRequest): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req('/api/queue/apply', { method: 'POST', ...json(body) }),
+
+  skipMessage: (chatlog_id: number, message_index: number): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req('/api/queue/skip', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  suggestLabel: (chatlog_id: number, message_index: number): Promise<SuggestResponse> =>
+    USE_MOCK ? Promise.resolve(mockApi.suggestion)
+             : req('/api/queue/suggest', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  getLabels: (): Promise<LabelDefinition[]> =>
+    USE_MOCK ? Promise.resolve(mockApi.labels)
+             : req('/api/labels'),
+
+  createLabel: (body: CreateLabelRequest): Promise<LabelDefinition> =>
+    USE_MOCK ? Promise.resolve({ ...body, id: Date.now(), description: body.description ?? null, created_at: new Date().toISOString(), count: 0 })
+             : req('/api/labels', { method: 'POST', ...json(body) }),
+
+  updateLabel: (id: number, body: UpdateLabelRequest): Promise<LabelDefinition> =>
+    USE_MOCK ? Promise.resolve(mockApi.labels[0])
+             : req(`/api/labels/${id}`, { method: 'PUT', ...json(body) }),
+
+  getSession: (): Promise<LabelingSession> =>
+    USE_MOCK ? Promise.resolve(mockApi.session)
+             : req('/api/session'),
+
+  startSession: (): Promise<LabelingSession> =>
+    USE_MOCK ? Promise.resolve(mockApi.session)
+             : req('/api/session/start', { method: 'POST' }),
 }

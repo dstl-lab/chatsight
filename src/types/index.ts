@@ -1,33 +1,57 @@
-export interface ChatlogSummary {
-  id: number;
-  filename: string;
-  notebook: string | null;
-  user_email: string | null;
-  created_at: string;
+// src/types/index.ts
+
+export interface LabelDefinition {
+  id: number
+  name: string
+  description: string | null
+  created_at: string
+  count: number
 }
 
-export interface LabelItem {
-  id: number;
-  label_set_id: number;
-  message_index: number;
-  label: string;
-  evidence: string;
-  rationale: string;
-  granularity: 'high' | 'mid' | 'low';
+export interface QueueItem {
+  chatlog_id: number
+  message_index: number
+  message_text: string
+  context_before: string | null
+  context_after: string | null
 }
 
-export interface LabelSet {
-  id: number;
-  chatlog_id: number;
-  steering_notes: string;
-  created_at: string;
-  labels: LabelItem[];
+export interface LabelingSession {
+  id: number
+  started_at: string
+  last_active: string
+  labeled_count: number
 }
 
-export interface ChatlogDetail {
-  id: number;
-  filename: string;
-  content: string;
-  created_at: string;
-  latest_label_set: LabelSet | null;
+export interface SuggestResponse {
+  label_name: string
+  evidence: string
+  rationale: string
+}
+
+export interface AnalysisSummary {
+  label_counts: Record<string, number>
+  notebook_breakdown: Record<string, Record<string, number>>
+  coverage: {
+    human_labeled: number
+    ai_labeled: number
+    unlabeled: number
+    total: number
+  }
+}
+
+export interface ApplyLabelRequest {
+  chatlog_id: number
+  message_index: number
+  label_id: number
+}
+
+export interface CreateLabelRequest {
+  name: string
+  description?: string
+}
+
+export interface UpdateLabelRequest {
+  name?: string
+  description?: string
 }
