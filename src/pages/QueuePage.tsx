@@ -106,6 +106,8 @@ export function QueuePage() {
           labels={labels}
           stats={stats}
           skippedCount={skippedCount}
+          onApply={handleApplyLabel}
+          onCreateAndApply={handleCreateAndApply}
         />
         <MessageCard
           key={`${currentMessage.chatlog_id}-${currentMessage.message_index}`}
@@ -115,11 +117,7 @@ export function QueuePage() {
           onSkip={handleSkip}
         />
       </div>
-      <LabelStrip
-        labels={labels}
-        onApply={handleApplyLabel}
-        onCreateAndApply={handleCreateAndApply}
-      />
+      <LabelStrip labels={labels} />
     </div>
   )
 }

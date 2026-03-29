@@ -62,7 +62,7 @@ test('shows label chips', async () => {
 test('advances to next message when label chip clicked', async () => {
   renderQueue()
   await waitFor(() => screen.getByText(mockApi.queue[0].message_text))
-  // click the button chip in the LabelStrip (not the span in ProgressSidebar)
+  // click the label button in the sidebar
   const chips = screen.getAllByRole('button', { name: 'Concept Question' })
   fireEvent.click(chips[0])
   await waitFor(() => {
