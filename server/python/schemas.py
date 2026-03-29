@@ -9,7 +9,6 @@ class LabelResponse(BaseModel):
     label: str
     evidence: str
     rationale: str
-    granularity: str
 
 class LabelSetResponse(BaseModel):
     id: int

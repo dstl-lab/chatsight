@@ -15,4 +15,3 @@ class Label(SQLModel, table=True):
     label: str
     evidence: str
     rationale: str
-    granularity: str  # "high" | "mid" | "low"

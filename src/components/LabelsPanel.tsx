@@ -9,12 +9,6 @@ interface Props {
   onHighlight: (index: number | null) => void;
 }
 
-const GRANULARITY_COLORS = {
-  high: 'bg-purple-100 text-purple-800 border border-purple-200',
-  mid: 'bg-blue-100 text-blue-800 border border-blue-200',
-  low: 'bg-gray-100 text-gray-700 border border-gray-200',
-};
-
 export default function LabelsPanel({ labels, isProcessing, hasLabelSet, onGenerateLabels, highlightedIndex, onHighlight }: Props) {
   return (
     <div className="h-full flex flex-col">
@@ -66,9 +60,6 @@ export default function LabelsPanel({ labels, isProcessing, hasLabelSet, onGener
               >
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <span className="text-sm font-semibold text-gray-800">{label.label}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${GRANULARITY_COLORS[label.granularity as keyof typeof GRANULARITY_COLORS] ?? GRANULARITY_COLORS.mid}`}>
-                    {label.granularity}
-                  </span>
                 </div>
                 <p className="text-xs text-gray-400 mb-1">Turn #{label.message_index + 1}</p>
                 <blockquote className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-1.5">

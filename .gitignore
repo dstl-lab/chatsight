@@ -19,3 +19,7 @@ server/python/*.pyc
 
 # OS
 .DS_Store
+
+# Claude
+CLAUDE.md
+WORKFLOW.md
