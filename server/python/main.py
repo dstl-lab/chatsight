@@ -1,12 +1,13 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Response
+import threading
+from fastapi import FastAPI, Depends, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, text
 from sqlalchemy.engine import Connection
 
-from database import create_db_and_tables, get_session, ext_engine
+from database import create_db_and_tables, get_session, ext_engine, engine
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage
 from schemas import (
     CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
@@ -424,6 +425,158 @@ def get_queue_stats(db: Session = Depends(get_session)):
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
     }
+
+
+# ── Auto-labeling ────────────────────────────────────────────────────────────
+
+_autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None}
+
+
+def _run_autolabel():
+    """Background task: classify all unlabeled messages using Gemini."""
+    from autolabel_service import classify_batch
+
+    global _autolabel_status
+    _autolabel_status = {"running": True, "processed": 0, "total": 0, "error": None}
+
+    try:
+        with Session(engine) as db:
+            # Get label definitions
+            labels = db.exec(select(LabelDefinition)).all()
+            if not labels:
+                _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": "No labels defined"}
+                return
+
+            label_map = {l.name: l.id for l in labels}
+            label_defs = [{"name": l.name, "description": l.description} for l in labels]
+
+            # Get human-labeled examples for each label
+            examples_by_label: dict[str, list[str]] = {}
+            for label in labels:
+                apps = db.exec(
+                    select(LabelApplication).where(
+                        LabelApplication.label_id == label.id,
+                        LabelApplication.applied_by == "human",
+                    )
+                ).all()
+                # We need message text — fetch from external DB
+                if apps:
+                    pairs = [(a.chatlog_id, a.message_index) for a in apps[:10]]
+                    with ext_engine.connect() as conn:
+                        for cid, midx in pairs:
+                            row = conn.execute(text("""
+                                WITH student AS (
+                                    SELECT payload->>'question' AS msg,
+                                           (ROW_NUMBER() OVER (
+                                               PARTITION BY payload->>'conversation_id' ORDER BY id
+                                           )) - 1 AS idx
+                                    FROM events
+                                    WHERE event_type = 'tutor_query'
+                                      AND payload->>'conversation_id' = (
+                                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                                      )
+                                )
+                                SELECT msg FROM student WHERE idx = :midx
+                            """), {"cid": cid, "midx": midx}).first()
+                            if row and row[0]:
+                                examples_by_label.setdefault(label.name, []).append(row[0])
+
+            # Get unlabeled messages
+            labeled_set = {
+                (r.chatlog_id, r.message_index)
+                for r in db.exec(select(LabelApplication)).all()
+            }
+            skipped_set = {
+                (r.chatlog_id, r.message_index)
+                for r in db.exec(select(SkippedMessage)).all()
+            }
+            excluded = labeled_set | skipped_set
+
+        # Fetch all student messages from external DB
+        with ext_engine.connect() as conn:
+            rows = conn.execute(text("""
+                WITH student AS (
+                    SELECT id,
+                           payload->>'conversation_id' AS conv_id,
+                           payload->>'question' AS message_text,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id' ORDER BY id
+                           )) - 1 AS message_index
+                    FROM events WHERE event_type = 'tutor_query'
+                ),
+                chatlog_ids AS (
+                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                    FROM events GROUP BY payload->>'conversation_id'
+                )
+                SELECT s.message_text, s.message_index, ci.chatlog_id,
+                    (SELECT e2.payload->>'response' FROM events e2
+                     WHERE e2.payload->>'conversation_id' = s.conv_id
+                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
+                     ORDER BY e2.id DESC LIMIT 1) AS context_before
+                FROM student s
+                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+            """)).mappings().all()
+
+        unlabeled = [
+            dict(r) for r in rows
+            if (r["chatlog_id"], r["message_index"]) not in excluded
+        ]
+        _autolabel_status["total"] = len(unlabeled)
+
+        # Process in batches of 30
+        BATCH_SIZE = 30
+        for i in range(0, len(unlabeled), BATCH_SIZE):
+            batch = unlabeled[i:i + BATCH_SIZE]
+            try:
+                results = classify_batch(label_defs, examples_by_label, batch)
+            except Exception as e:
+                _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
+                continue
+
+            with Session(engine) as db:
+                for r in results:
+                    idx = r.get("index")
+                    label_name = r.get("label")
+                    if idx is None or idx >= len(batch) or label_name not in label_map:
+                        continue
+                    msg = batch[idx]
+                    # Check for duplicate
+                    existing = db.exec(
+                        select(LabelApplication).where(
+                            LabelApplication.label_id == label_map[label_name],
+                            LabelApplication.chatlog_id == msg["chatlog_id"],
+                            LabelApplication.message_index == msg["message_index"],
+                        )
+                    ).first()
+                    if not existing:
+                        db.add(LabelApplication(
+                            label_id=label_map[label_name],
+                            chatlog_id=msg["chatlog_id"],
+                            message_index=msg["message_index"],
+                            applied_by="ai",
+                        ))
+                db.commit()
+
+            _autolabel_status["processed"] = min(i + BATCH_SIZE, len(unlabeled))
+
+        _autolabel_status["running"] = False
+
+    except Exception as e:
+        _autolabel_status = {"running": False, "processed": _autolabel_status["processed"], "total": _autolabel_status["total"], "error": str(e)}
+
+
+@app.post("/api/queue/autolabel")
+def start_autolabel(db: Session = Depends(get_session)):
+    if _autolabel_status["running"]:
+        raise HTTPException(status_code=409, detail="Auto-labeling already in progress")
+    thread = threading.Thread(target=_run_autolabel, daemon=True)
+    thread.start()
+    return {"ok": True, "message": "Auto-labeling started"}
+
+
+@app.get("/api/queue/autolabel/status")
+def get_autolabel_status():
+    return _autolabel_status
 
 
 # ── Stub routes (feature tracks implement these) ──────────────────────────────

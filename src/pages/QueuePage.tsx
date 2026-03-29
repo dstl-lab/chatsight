@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
@@ -19,9 +19,13 @@ export function QueuePage() {
   const [loading, setLoading] = useState(true)
   const [appliedLabelIds, setAppliedLabelIds] = useState<Set<number>>(new Set())
   const [undoState, setUndoState] = useState<UndoState | null>(null)
+  const [autolabelStatus, setAutolabelStatus] = useState<{
+    running: boolean; processed: number; total: number; error: string | null
+  } | null>(null)
+  const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentMessage = queue[currentIdx] ?? null
-  const aiUnlocked = (session?.labeled_count ?? 0) >= 50
+  const aiUnlocked = (session?.labeled_count ?? 0) >= 20
 
   const loadQueue = useCallback(async () => {
     const q = await api.getQueue(20)
@@ -133,6 +137,23 @@ export function QueuePage() {
     setLabels(prev => prev.map(l => l.id === id ? updated : l))
   }
 
+  const handleStartAutolabel = async () => {
+    await api.startAutolabel()
+    setAutolabelStatus({ running: true, processed: 0, total: 0, error: null })
+    // Poll status every 2 seconds
+    autolabelPollRef.current = setInterval(async () => {
+      const status = await api.getAutolabelStatus()
+      setAutolabelStatus(status)
+      if (!status.running) {
+        if (autolabelPollRef.current) clearInterval(autolabelPollRef.current)
+        autolabelPollRef.current = null
+        // Refresh stats and labels
+        api.getQueueStats().then(setStats)
+        api.getLabels().then(setLabels)
+      }
+    }, 2000)
+  }
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
@@ -160,6 +181,8 @@ export function QueuePage() {
         onToggleLabel={handleToggleLabel}
         onCreateAndApply={handleCreateAndApply}
         onUpdateLabel={handleUpdateLabel}
+        onStartAutolabel={handleStartAutolabel}
+        autolabelStatus={autolabelStatus}
       />
       <div className="flex-1 flex flex-col min-h-0">
         {undoState && (

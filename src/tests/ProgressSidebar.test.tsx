@@ -14,6 +14,8 @@ const defaultProps = {
   onToggleLabel: noop,
   onCreateAndApply: noop,
   onUpdateLabel: noop as (id: number, body: { description?: string }) => void,
+  onStartAutolabel: noop,
+  autolabelStatus: null,
 }
 
 test('shows labeled count and total', () => {
@@ -27,9 +29,9 @@ test('shows skipped count when non-zero', () => {
   expect(screen.getByText('Skipped: 5')).toBeInTheDocument()
 })
 
-test('shows AI unlock progress when under 50', () => {
+test('shows AI suggestions unlock progress', () => {
   render(<ProgressSidebar {...defaultProps} />)
-  expect(screen.getByText('14 / 50 to unlock')).toBeInTheDocument()
+  expect(screen.getByText('14 / 20 to unlock')).toBeInTheDocument()
 })
 
 test('renders clickable label buttons', () => {

@@ -2,6 +2,13 @@ import { useState, useRef, useCallback } from 'react'
 import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 
+interface AutolabelStatus {
+  running: boolean
+  processed: number
+  total: number
+  error: string | null
+}
+
 interface Props {
   session: LabelingSession | null
   labels: LabelDefinition[]
@@ -11,11 +18,14 @@ interface Props {
   onToggleLabel: (labelId: number) => void
   onCreateAndApply: (name: string, description?: string) => void
   onUpdateLabel: (id: number, body: UpdateLabelRequest) => void
+  onStartAutolabel: () => void
+  autolabelStatus: AutolabelStatus | null
 }
 
 export function ProgressSidebar({
   session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
+  onStartAutolabel, autolabelStatus,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -36,9 +46,14 @@ export function ProgressSidebar({
   const labeled = session?.labeled_count ?? 0
   const total = stats?.total_messages ?? 0
   const pct = total > 0 ? Math.round((labeled / total) * 100) : 0
-  const aiThreshold = 50
-  const aiPct = Math.min(100, Math.round((labeled / aiThreshold) * 100))
-  const aiUnlocked = labeled >= aiThreshold
+
+  const suggestThreshold = 20
+  const suggestPct = Math.min(100, Math.round((labeled / suggestThreshold) * 100))
+  const suggestUnlocked = labeled >= suggestThreshold
+
+  const autolabelThreshold = Math.min(Math.ceil(total * 0.4), 100)
+  const autolabelPct = autolabelThreshold > 0 ? Math.min(100, Math.round((labeled / autolabelThreshold) * 100)) : 0
+  const autolabelUnlocked = labeled >= autolabelThreshold && autolabelThreshold > 0
 
   const handleSaveDescription = (labelId: number) => {
     onUpdateLabel(labelId, { description: editDesc })
@@ -59,20 +74,55 @@ export function ProgressSidebar({
         )}
       </div>
 
-      <div>
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
-          {aiUnlocked ? 'AI suggestions active' : 'AI suggestions'}
-        </p>
-        {aiUnlocked ? (
-          <p className="text-[10px] text-green-400">Unlocked</p>
-        ) : (
-          <>
-            <div className="h-1 bg-neutral-800 rounded-full mb-1.5">
-              <div className="h-1 bg-amber-500/70 rounded-full transition-all" style={{ width: `${aiPct}%` }} />
-            </div>
-            <p className="text-[10px] text-neutral-400">{labeled} / {aiThreshold} to unlock</p>
-          </>
-        )}
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">AI suggestions</p>
+          {suggestUnlocked ? (
+            <p className="text-[10px] text-green-400">Active</p>
+          ) : (
+            <>
+              <div className="h-1 bg-neutral-800 rounded-full mb-1">
+                <div className="h-1 bg-amber-500/70 rounded-full transition-all" style={{ width: `${suggestPct}%` }} />
+              </div>
+              <p className="text-[10px] text-neutral-400">{labeled} / {suggestThreshold} to unlock</p>
+            </>
+          )}
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">Auto-labeling</p>
+          {autolabelStatus?.running ? (
+            <>
+              <div className="h-1 bg-neutral-800 rounded-full mb-1">
+                <div
+                  className="h-1 bg-purple-500 rounded-full transition-all"
+                  style={{ width: `${autolabelStatus.total > 0 ? Math.round((autolabelStatus.processed / autolabelStatus.total) * 100) : 0}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-purple-300">
+                Labeling... {autolabelStatus.processed.toLocaleString()} / {autolabelStatus.total.toLocaleString()}
+              </p>
+            </>
+          ) : autolabelUnlocked ? (
+            <>
+              <button
+                onClick={onStartAutolabel}
+                className="w-full text-[10px] bg-purple-600 text-white rounded px-2 py-1.5 hover:bg-purple-500 transition-colors"
+              >
+                Auto-label {(total - labeled).toLocaleString()} remaining
+              </button>
+              {autolabelStatus?.error && (
+                <p className="text-[10px] text-red-400 mt-1">{autolabelStatus.error}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="h-1 bg-neutral-800 rounded-full mb-1">
+                <div className="h-1 bg-purple-500/50 rounded-full transition-all" style={{ width: `${autolabelPct}%` }} />
+              </div>
+              <p className="text-[10px] text-neutral-400">{labeled} / {autolabelThreshold} to unlock</p>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">

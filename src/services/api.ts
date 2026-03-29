@@ -74,4 +74,12 @@ export const api = {
   undoLabels: (chatlog_id: number, message_index: number): Promise<{ ok: boolean; removed_count: number }> =>
     USE_MOCK ? Promise.resolve({ ok: true, removed_count: 0 })
              : req('/api/queue/undo', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  startAutolabel: (): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req('/api/queue/autolabel', { method: 'POST' }),
+
+  getAutolabelStatus: (): Promise<{ running: boolean; processed: number; total: number; error: string | null }> =>
+    USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
+             : req('/api/queue/autolabel/status'),
 }
