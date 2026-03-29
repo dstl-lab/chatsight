@@ -32,7 +32,7 @@ test('renders student message text', () => {
 
 test('shows AI lock indicator when not unlocked', () => {
   render(<MessageCard {...defaultProps} />)
-  expect(screen.getByText(/AI unlocks at 50/i)).toBeInTheDocument()
+  expect(screen.getByText(/AI unlocks at 20/i)).toBeInTheDocument()
 })
 
 test('shows ghost tag when AI unlocked with suggestion', () => {

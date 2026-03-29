@@ -91,7 +91,7 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
             </button>
           ) : !aiUnlocked ? (
             <span className="text-[8px] text-neutral-600 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-0.5">
-              AI unlocks at 50
+              AI unlocks at 20
             </span>
           ) : null}
         </div>
