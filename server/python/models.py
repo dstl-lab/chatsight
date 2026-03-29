@@ -1,18 +1,34 @@
+# server/python/models.py
 from datetime import datetime
 from typing import Optional
 from sqlmodel import Field, SQLModel
 
-class LabelSet(SQLModel, table=True):
+
+class LabelDefinition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    chatlog_id: int
-    steering_notes: str = ""
+    name: str
+    description: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Label(SQLModel, table=True):
+
+class LabelApplication(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    label_set_id: int = Field(foreign_key="labelset.id")
+    label_id: int = Field(foreign_key="labeldefinition.id")
+    chatlog_id: int
     message_index: int
-    label: str
-    evidence: str
-    rationale: str
-    granularity: str  # "high" | "mid" | "low"
+    applied_by: str = "human"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LabelingSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    last_active: datetime = Field(default_factory=datetime.utcnow)
+    labeled_count: int = 0
+
+
+class SkippedMessage(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    created_at: datetime = Field(default_factory=datetime.utcnow)
