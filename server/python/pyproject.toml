@@ -12,3 +12,8 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "google-genai>=1.66.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
