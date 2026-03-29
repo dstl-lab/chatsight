@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats } from '../../types'
+import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 
 interface Props {
@@ -7,12 +7,20 @@ interface Props {
   labels: LabelDefinition[]
   stats: QueueStats | null
   skippedCount: number
-  onApply: (labelId: number) => void
+  appliedLabelIds: Set<number>
+  onToggleLabel: (labelId: number) => void
   onCreateAndApply: (name: string, description?: string) => void
+  onUpdateLabel: (id: number, body: UpdateLabelRequest) => void
 }
 
-export function ProgressSidebar({ session, labels, stats, skippedCount, onApply, onCreateAndApply }: Props) {
+export function ProgressSidebar({
+  session, labels, stats, skippedCount,
+  appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
+}: Props) {
   const [showPopover, setShowPopover] = useState(false)
+  const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
+  const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
+  const [editDesc, setEditDesc] = useState('')
 
   const labeled = session?.labeled_count ?? 0
   const total = stats?.total_messages ?? 0
@@ -20,6 +28,12 @@ export function ProgressSidebar({ session, labels, stats, skippedCount, onApply,
   const aiThreshold = 50
   const aiPct = Math.min(100, Math.round((labeled / aiThreshold) * 100))
   const aiUnlocked = labeled >= aiThreshold
+
+  const handleSaveDescription = (labelId: number) => {
+    onUpdateLabel(labelId, { description: editDesc })
+    setEditingLabelId(null)
+    setHoveredLabelId(null)
+  }
 
   return (
     <aside className="w-52 shrink-0 border-r border-neutral-800 p-4 flex flex-col gap-5 overflow-y-auto">
@@ -51,17 +65,79 @@ export function ProgressSidebar({ session, labels, stats, skippedCount, onApply,
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Apply label</p>
+        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labels</p>
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           {labels.map(label => (
-            <button
+            <div
               key={label.id}
-              onClick={() => onApply(label.id)}
-              className="w-full text-left bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-neutral-200 hover:bg-neutral-800 hover:border-blue-600 transition-colors truncate"
-              title={label.name}
+              className="relative"
+              onMouseEnter={() => { if (editingLabelId !== label.id) setHoveredLabelId(label.id) }}
+              onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
             >
-              {label.name}
-            </button>
+              <button
+                onClick={() => onToggleLabel(label.id)}
+                className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
+                  appliedLabelIds.has(label.id)
+                    ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
+                    : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
+                }`}
+                title={label.name}
+              >
+                <span className="truncate flex-1">{label.name}</span>
+                {label.count > 0 && (
+                  <span className="ml-1.5 text-[9px] text-neutral-500 bg-neutral-800 rounded-full px-1.5 shrink-0">
+                    {label.count}
+                  </span>
+                )}
+              </button>
+
+              {(hoveredLabelId === label.id || editingLabelId === label.id) && (
+                <div
+                  className="absolute left-full top-0 ml-2 z-20 bg-neutral-800 border border-neutral-700 rounded-lg p-3 w-52 shadow-lg"
+                  onMouseEnter={() => setHoveredLabelId(label.id)}
+                  onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
+                >
+                  {editingLabelId === label.id ? (
+                    <>
+                      <textarea
+                        autoFocus
+                        value={editDesc}
+                        onChange={e => setEditDesc(e.target.value)}
+                        placeholder="Description..."
+                        rows={3}
+                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-[11px] text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600 resize-none"
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => { setEditingLabelId(null); setHoveredLabelId(null) }}
+                          className="text-[10px] text-neutral-500 hover:text-neutral-300"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleSaveDescription(label.id)}
+                          className="text-[10px] text-blue-400 hover:text-blue-300"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-neutral-300 leading-relaxed">
+                        {label.description || 'No description'}
+                      </p>
+                      <button
+                        onClick={() => { setEditingLabelId(label.id); setEditDesc(label.description || '') }}
+                        className="text-[10px] text-blue-400 mt-1.5 hover:text-blue-300"
+                      >
+                        {label.description ? 'Edit' : 'Add description'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
           {showPopover ? (
             <NewLabelPopover

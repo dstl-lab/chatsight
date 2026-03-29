@@ -39,9 +39,11 @@ interface Props {
   aiUnlocked: boolean
   suggestion: SuggestResponse | null
   onSkip: () => void
+  onNext: () => void
+  hasLabelsApplied: boolean
 }
 
-export function MessageCard({ item, aiUnlocked, suggestion, onSkip }: Props) {
+export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasLabelsApplied }: Props) {
   const [showRationale, setShowRationale] = useState(false)
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [afterExpanded, setAfterExpanded] = useState(false)
@@ -129,12 +131,19 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip }: Props) {
         </div>
       )}
 
-      <div className="flex justify-end pt-1">
+      <div className="flex justify-end gap-2 pt-1">
         <button
           onClick={onSkip}
           className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
         >
-          Skip →
+          Skip
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!hasLabelsApplied}
+          className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Next →
         </button>
       </div>
     </div>

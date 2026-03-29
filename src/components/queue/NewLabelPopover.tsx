@@ -45,7 +45,7 @@ export function NewLabelPopover({ onConfirm, onCancel }: Props) {
           disabled={!name.trim()}
           className="text-xs bg-blue-600 text-white rounded px-2.5 py-1 disabled:opacity-40 hover:bg-blue-500 transition-colors"
         >
-          Create & apply
+          Create & select
         </button>
       </div>
     </div>

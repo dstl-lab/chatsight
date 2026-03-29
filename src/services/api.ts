@@ -58,4 +58,20 @@ export const api = {
   getQueueStats: (): Promise<QueueStats> =>
     USE_MOCK ? Promise.resolve({ total_messages: 100, labeled_count: 14, skipped_count: 3 })
              : req('/api/queue/stats'),
+
+  unapplyLabel: (chatlog_id: number, message_index: number, label_id: number): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req(`/api/queue/apply?chatlog_id=${chatlog_id}&message_index=${message_index}&label_id=${label_id}`, { method: 'DELETE' }),
+
+  getAppliedLabels: (chatlog_id: number, message_index: number): Promise<number[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req<{ label_ids: number[] }>(`/api/queue/applied?chatlog_id=${chatlog_id}&message_index=${message_index}`).then(r => r.label_ids),
+
+  advanceMessage: (chatlog_id: number, message_index: number): Promise<{ ok: boolean; counted: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, counted: true })
+             : req('/api/queue/advance', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  undoLabels: (chatlog_id: number, message_index: number): Promise<{ ok: boolean; removed_count: number }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, removed_count: 0 })
+             : req('/api/queue/undo', { method: 'POST', ...json({ chatlog_id, message_index }) }),
 }
