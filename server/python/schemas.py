@@ -1,6 +1,6 @@
 # server/python/schemas.py
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -43,6 +43,16 @@ class SplitLabelRequest(BaseModel):
     name_b: str
 
 
+class AdvanceRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class UndoRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
 # ── Response shapes ───────────────────────────────────────────────────────────
 
 class LabelDefinitionResponse(BaseModel):
@@ -66,6 +76,15 @@ class SessionResponse(BaseModel):
     started_at: datetime
     last_active: datetime
     labeled_count: int
+
+
+class LabelApplicationResponse(BaseModel):
+    id: int
+    label_id: int
+    chatlog_id: int
+    message_index: int
+    applied_by: str
+    created_at: datetime
 
 
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────

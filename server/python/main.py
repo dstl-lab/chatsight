@@ -11,8 +11,9 @@ from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMe
 from schemas import (
     CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
     SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
+    AdvanceRequest, UndoRequest,
     LabelDefinitionResponse, QueueItemResponse, SessionResponse,
-    ChatlogSummary, ChatlogResponse,
+    LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
 )
 from sqlmodel import Session, select
 
@@ -216,6 +217,17 @@ def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
 
+    # Idempotent: don't create duplicate
+    existing = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == req.label_id,
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+        )
+    ).first()
+    if existing:
+        return {"ok": True, "already_applied": True}
+
     application = LabelApplication(
         label_id=req.label_id,
         chatlog_id=req.chatlog_id,
@@ -223,17 +235,104 @@ def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
         applied_by="human",
     )
     db.add(application)
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/queue/apply")
+def unapply_label(
+    chatlog_id: int, message_index: int, label_id: int,
+    db: Session = Depends(get_session),
+):
+    application = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.chatlog_id == chatlog_id,
+            LabelApplication.message_index == message_index,
+        )
+    ).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Label application not found")
+    db.delete(application)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/queue/applied")
+def get_applied_labels(chatlog_id: int, message_index: int, db: Session = Depends(get_session)):
+    rows = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.chatlog_id == chatlog_id,
+            LabelApplication.message_index == message_index,
+        )
+    ).all()
+    return {"label_ids": [r.label_id for r in rows]}
+
+
+@app.post("/api/queue/advance")
+def advance_message(req: AdvanceRequest, db: Session = Depends(get_session)):
+    has_labels = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+        )
+    ).first()
 
     labeling_session = db.exec(
         select(LabelingSession).order_by(LabelingSession.id.desc())
     ).first()
-    if labeling_session:
+
+    counted = False
+    if has_labels and labeling_session:
         labeling_session.labeled_count += 1
         labeling_session.last_active = datetime.utcnow()
         db.add(labeling_session)
+        counted = True
 
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "counted": counted}
+
+
+@app.post("/api/queue/undo")
+def undo_labels(req: UndoRequest, db: Session = Depends(get_session)):
+    rows = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+        )
+    ).all()
+    removed = len(rows)
+    for r in rows:
+        db.delete(r)
+
+    if removed > 0:
+        labeling_session = db.exec(
+            select(LabelingSession).order_by(LabelingSession.id.desc())
+        ).first()
+        if labeling_session and labeling_session.labeled_count > 0:
+            labeling_session.labeled_count -= 1
+            db.add(labeling_session)
+
+    db.commit()
+    return {"ok": True, "removed_count": removed}
+
+
+@app.get("/api/labels/{label_id}/messages", response_model=List[LabelApplicationResponse])
+def get_label_messages(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+    rows = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == label_id)
+    ).all()
+    return [
+        LabelApplicationResponse(
+            id=r.id, label_id=r.label_id, chatlog_id=r.chatlog_id,
+            message_index=r.message_index, applied_by=r.applied_by,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
 
 
 @app.post("/api/queue/skip")
@@ -308,7 +407,13 @@ def get_queue(limit: int = 20, db: Session = Depends(get_session)):
 
 @app.get("/api/queue/stats")
 def get_queue_stats(db: Session = Depends(get_session)):
-    labeled_count = db.exec(select(func.count(LabelApplication.id))).one()
+    labeled_count = db.exec(
+        select(func.count()).select_from(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .distinct()
+            .subquery()
+        )
+    ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
     with ext_engine.connect() as conn:
         total = conn.execute(
