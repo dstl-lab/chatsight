@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import type { QueueItem, SuggestResponse } from '../../types'
 
 function stripMarkdown(md: string): string {
@@ -63,7 +65,7 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
           </span>
           {beforeExpanded ? (
             <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
-              <ReactMarkdown>{item.context_before}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{item.context_before}</ReactMarkdown>
             </div>
           ) : (
             <p className="text-sm text-neutral-400 leading-relaxed italic">
@@ -121,7 +123,7 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
           </span>
           {afterExpanded ? (
             <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
-              <ReactMarkdown>{item.context_after}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>{item.context_after}</ReactMarkdown>
             </div>
           ) : (
             <p className="text-sm text-neutral-400 leading-relaxed italic">
