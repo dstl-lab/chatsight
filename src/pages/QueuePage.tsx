@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -18,6 +18,7 @@ export function QueuePage() {
   const [skippedCount, setSkippedCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [appliedLabelIds, setAppliedLabelIds] = useState<Set<number>>(new Set())
+  const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null)
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [autolabelStatus, setAutolabelStatus] = useState<{
     running: boolean; processed: number; total: number; error: string | null
@@ -48,12 +49,18 @@ export function QueuePage() {
     })
   }, [])
 
-  // Load applied labels when current message changes
+  // Load applied labels and AI suggestion when current message changes
   useEffect(() => {
     if (!currentMessage) return
     api.getAppliedLabels(currentMessage.chatlog_id, currentMessage.message_index)
       .then(ids => setAppliedLabelIds(new Set(ids)))
-  }, [currentMessage?.chatlog_id, currentMessage?.message_index])
+    setSuggestion(null)
+    if (aiUnlocked) {
+      api.suggestLabel(currentMessage.chatlog_id, currentMessage.message_index)
+        .then(s => { if (s.label_name) setSuggestion(s) })
+        .catch(() => {})
+    }
+  }, [currentMessage?.chatlog_id, currentMessage?.message_index, aiUnlocked])
 
   const advance = useCallback(() => {
     setCurrentIdx(i => {
@@ -199,7 +206,7 @@ export function QueuePage() {
           key={`${currentMessage.chatlog_id}-${currentMessage.message_index}`}
           item={currentMessage}
           aiUnlocked={aiUnlocked}
-          suggestion={null}
+          suggestion={suggestion}
           onSkip={handleSkip}
           onNext={handleNext}
           hasLabelsApplied={appliedLabelIds.size > 0}

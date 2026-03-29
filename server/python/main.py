@@ -582,12 +582,79 @@ def get_autolabel_status():
 # ── Stub routes (feature tracks implement these) ──────────────────────────────
 
 @app.post("/api/queue/suggest")
-def suggest_label(_req: SuggestRequest):
-    return {
-        "label_name": "Concept Question",
-        "evidence": "explain what a DataFrame is",
-        "rationale": "Student asks for a definition of a new concept, not debugging help.",
-    }
+def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
+    labels = db.exec(select(LabelDefinition)).all()
+    if not labels:
+        return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
+
+    # Build examples for each label
+    examples_by_label: dict[str, list[str]] = {}
+    for label in labels:
+        apps = db.exec(
+            select(LabelApplication).where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "human",
+            ).limit(5)
+        ).all()
+        if apps:
+            with ext_engine.connect() as conn:
+                for a in apps:
+                    row = conn.execute(text("""
+                        WITH student AS (
+                            SELECT payload->>'question' AS msg,
+                                   (ROW_NUMBER() OVER (
+                                       PARTITION BY payload->>'conversation_id' ORDER BY id
+                                   )) - 1 AS idx
+                            FROM events
+                            WHERE event_type = 'tutor_query'
+                              AND payload->>'conversation_id' = (
+                                  SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                              )
+                        )
+                        SELECT msg FROM student WHERE idx = :midx
+                    """), {"cid": a.chatlog_id, "midx": a.message_index}).first()
+                    if row and row[0]:
+                        examples_by_label.setdefault(label.name, []).append(row[0][:200])
+
+    # Get the message text to classify
+    with ext_engine.connect() as conn:
+        row = conn.execute(text("""
+            WITH student AS (
+                SELECT payload->>'question' AS msg,
+                       (ROW_NUMBER() OVER (
+                           PARTITION BY payload->>'conversation_id' ORDER BY id
+                       )) - 1 AS idx
+                FROM events
+                WHERE event_type = 'tutor_query'
+                  AND payload->>'conversation_id' = (
+                      SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                  )
+            )
+            SELECT msg FROM student WHERE idx = :midx
+        """), {"cid": req.chatlog_id, "midx": req.message_index}).first()
+
+    if not row or not row[0]:
+        return {"label_name": "", "evidence": "", "rationale": "Could not find message."}
+
+    message_text = row[0]
+
+    # Call Gemini for suggestion
+    try:
+        from autolabel_service import classify_batch
+        label_defs = [{"name": l.name, "description": l.description} for l in labels]
+        messages = [{"message_text": message_text, "context_before": None}]
+        results = classify_batch(label_defs, examples_by_label, messages)
+        if results:
+            label_name = results[0].get("label", "")
+            return {
+                "label_name": label_name,
+                "evidence": message_text[:100],
+                "rationale": f"AI classified this as '{label_name}' based on {len(examples_by_label.get(label_name, []))} human-labeled examples.",
+            }
+    except Exception:
+        pass
+
+    return {"label_name": labels[0].name, "evidence": message_text[:100], "rationale": "Fallback suggestion."}
 
 
 @app.post("/api/labels/merge")
