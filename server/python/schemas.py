@@ -1,29 +1,74 @@
+# server/python/schemas.py
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel
 
-class LabelResponse(BaseModel):
-    id: int
-    label_set_id: int
-    message_index: int
-    label: str
-    evidence: str
-    rationale: str
-    granularity: str
 
-class LabelSetResponse(BaseModel):
-    id: int
+# ── Request shapes ────────────────────────────────────────────────────────────
+
+class CreateLabelRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class UpdateLabelRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ApplyLabelRequest(BaseModel):
     chatlog_id: int
-    steering_notes: str
-    created_at: datetime
-    labels: List[LabelResponse]
+    message_index: int
+    label_id: int
 
-class ChatlogResponse(BaseModel):
+
+class SkipMessageRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class SuggestRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class MergeLabelRequest(BaseModel):
+    source_label_id: int
+    target_label_id: int
+
+
+class SplitLabelRequest(BaseModel):
+    label_id: int
+    name_a: str
+    name_b: str
+
+
+# ── Response shapes ───────────────────────────────────────────────────────────
+
+class LabelDefinitionResponse(BaseModel):
     id: int
-    filename: str
-    content: str
+    name: str
+    description: Optional[str]
     created_at: datetime
-    latest_label_set: Optional[LabelSetResponse] = None
+    count: int
+
+
+class QueueItemResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    context_before: Optional[str]
+    context_after: Optional[str]
+
+
+class SessionResponse(BaseModel):
+    id: int
+    started_at: datetime
+    last_active: datetime
+    labeled_count: int
+
+
+# ── Kept from old code (chatlog read routes) ──────────────────────────────────
 
 class ChatlogSummary(BaseModel):
     id: int
@@ -32,6 +77,9 @@ class ChatlogSummary(BaseModel):
     user_email: Optional[str]
     created_at: datetime
 
-class GenerateLabelsRequest(BaseModel):
-    chatlog_id: int
-    steering_notes: str = ""
+
+class ChatlogResponse(BaseModel):
+    id: int
+    filename: str
+    content: str
+    created_at: datetime
