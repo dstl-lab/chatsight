@@ -1,18 +1,20 @@
-// src/tests/ProgressSidebar.test.tsx
 import { render, screen } from '@testing-library/react'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { mockApi } from '../mocks'
+
+const mockStats = { total_messages: 100, labeled_count: 14, skipped_count: 0 }
 
 test('shows labeled count and total', () => {
   render(
     <ProgressSidebar
       session={mockApi.session}
       labels={mockApi.labels}
-      totalMessages={100}
+      stats={mockStats}
       skippedCount={0}
     />
   )
-  expect(screen.getByText('14 / 100')).toBeInTheDocument()
+  expect(screen.getByText('14')).toBeInTheDocument()
+  expect(screen.getByText(/100/)).toBeInTheDocument()
 })
 
 test('shows skipped count when non-zero', () => {
@@ -20,7 +22,7 @@ test('shows skipped count when non-zero', () => {
     <ProgressSidebar
       session={mockApi.session}
       labels={mockApi.labels}
-      totalMessages={100}
+      stats={mockStats}
       skippedCount={5}
     />
   )
@@ -32,10 +34,22 @@ test('renders all label names', () => {
     <ProgressSidebar
       session={mockApi.session}
       labels={mockApi.labels}
-      totalMessages={100}
+      stats={mockStats}
       skippedCount={0}
     />
   )
   expect(screen.getByText('Concept Question')).toBeInTheDocument()
   expect(screen.getByText('Clarification')).toBeInTheDocument()
+})
+
+test('shows AI unlock progress when under 50', () => {
+  render(
+    <ProgressSidebar
+      session={mockApi.session}
+      labels={mockApi.labels}
+      stats={mockStats}
+      skippedCount={0}
+    />
+  )
+  expect(screen.getByText('14 / 50 to unlock')).toBeInTheDocument()
 })

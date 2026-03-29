@@ -1,6 +1,5 @@
-// src/pages/QueuePage.tsx
 import { useState, useEffect, useCallback } from 'react'
-import type { QueueItem, LabelDefinition, LabelingSession } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -11,6 +10,7 @@ export function QueuePage() {
   const [currentIdx, setCurrentIdx] = useState(0)
   const [labels, setLabels] = useState<LabelDefinition[]>([])
   const [session, setSession] = useState<LabelingSession | null>(null)
+  const [stats, setStats] = useState<QueueStats | null>(null)
   const [skippedCount, setSkippedCount] = useState(0)
   const [loading, setLoading] = useState(true)
 
@@ -20,16 +20,22 @@ export function QueuePage() {
   const loadQueue = useCallback(async () => {
     const q = await api.getQueue(20)
     setQueue(q)
+    setCurrentIdx(0)
   }, [])
 
   useEffect(() => {
-    Promise.all([api.startSession(), api.getLabels(), api.getQueue(20)])
-      .then(([sess, lbls, q]) => {
-        setSession(sess)
-        setLabels(lbls)
-        setQueue(q)
-        setLoading(false)
-      })
+    Promise.all([
+      api.startSession(),
+      api.getLabels(),
+      api.getQueue(20),
+      api.getQueueStats(),
+    ]).then(([sess, lbls, q, st]) => {
+      setSession(sess)
+      setLabels(lbls)
+      setQueue(q)
+      setStats(st)
+      setLoading(false)
+    })
   }, [])
 
   const advance = useCallback(() => {
@@ -49,6 +55,7 @@ export function QueuePage() {
       label_id: labelId,
     })
     setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
+    setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
     api.getLabels().then(setLabels)
     advance()
   }
@@ -63,6 +70,7 @@ export function QueuePage() {
       label_id: newLabel.id,
     })
     setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
+    setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
     advance()
   }
 
@@ -70,6 +78,7 @@ export function QueuePage() {
     if (!currentMessage) return
     await api.skipMessage(currentMessage.chatlog_id, currentMessage.message_index)
     setSkippedCount(s => s + 1)
+    setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
     advance()
   }
 
@@ -95,7 +104,7 @@ export function QueuePage() {
         <ProgressSidebar
           session={session}
           labels={labels}
-          totalMessages={queue.length}
+          stats={stats}
           skippedCount={skippedCount}
         />
         <MessageCard

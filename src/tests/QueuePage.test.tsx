@@ -38,6 +38,7 @@ vi.mock('../services/api', () => ({
     applyLabel: vi.fn().mockResolvedValue(undefined),
     skipMessage: vi.fn().mockResolvedValue(undefined),
     createLabel: vi.fn().mockResolvedValue({ id: 99, name: 'New', description: null, created_at: '', count: 0 }),
+    getQueueStats: vi.fn().mockResolvedValue({ total_messages: 100, labeled_count: 14, skipped_count: 0 }),
   },
 }))
 

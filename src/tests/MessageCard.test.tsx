@@ -1,4 +1,3 @@
-// src/tests/MessageCard.test.tsx
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageCard } from '../components/queue/MessageCard'
 import { mockApi } from '../mocks'
@@ -32,4 +31,10 @@ test('calls onSkip when skip button clicked', () => {
   render(<MessageCard item={item} aiUnlocked={false} suggestion={null} onSkip={onSkip} />)
   fireEvent.click(screen.getByText(/skip/i))
   expect(onSkip).toHaveBeenCalledOnce()
+})
+
+test('renders context with markdown support', () => {
+  render(<MessageCard item={item} aiUnlocked={false} suggestion={null} onSkip={() => {}} />)
+  // Context text should be rendered (ReactMarkdown processes it)
+  expect(screen.getByText(/spreadsheet with rows and columns/)).toBeInTheDocument()
 })

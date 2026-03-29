@@ -1,7 +1,7 @@
 // src/services/api.ts
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
-  ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+  QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -54,4 +54,8 @@ export const api = {
   startSession: (): Promise<LabelingSession> =>
     USE_MOCK ? Promise.resolve(mockApi.session)
              : req('/api/session/start', { method: 'POST' }),
+
+  getQueueStats: (): Promise<QueueStats> =>
+    USE_MOCK ? Promise.resolve({ total_messages: 100, labeled_count: 14, skipped_count: 3 })
+             : req('/api/queue/stats'),
 }

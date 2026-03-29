@@ -306,6 +306,21 @@ def get_queue(limit: int = 20, db: Session = Depends(get_session)):
     return queue
 
 
+@app.get("/api/queue/stats")
+def get_queue_stats(db: Session = Depends(get_session)):
+    labeled_count = db.exec(select(func.count(LabelApplication.id))).one()
+    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
+    with ext_engine.connect() as conn:
+        total = conn.execute(
+            text("SELECT COUNT(*) FROM events WHERE event_type = 'tutor_query'")
+        ).scalar()
+    return {
+        "total_messages": total,
+        "labeled_count": labeled_count,
+        "skipped_count": skipped_count,
+    }
+
+
 # ── Stub routes (feature tracks implement these) ──────────────────────────────
 
 @app.post("/api/queue/suggest")
