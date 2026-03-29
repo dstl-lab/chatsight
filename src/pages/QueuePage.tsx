@@ -108,6 +108,7 @@ export function QueuePage() {
           skippedCount={skippedCount}
         />
         <MessageCard
+          key={`${currentMessage.chatlog_id}-${currentMessage.message_index}`}
           item={currentMessage}
           aiUnlocked={aiUnlocked}
           suggestion={null}

@@ -2,6 +2,38 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { QueueItem, SuggestResponse } from '../../types'
 
+function stripMarkdown(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/^\s*>\s+/gm, '')
+    .replace(/\n{2,}/g, ' ')
+    .replace(/\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function truncateAtWord(text: string, maxLen: number, end: 'head' | 'tail'): string {
+  if (text.length <= maxLen) return text
+
+  if (end === 'head') {
+    const slice = text.slice(0, maxLen)
+    const lastSpace = slice.lastIndexOf(' ')
+    return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice) + '...'
+  } else {
+    const slice = text.slice(-maxLen)
+    const firstSpace = slice.indexOf(' ')
+    return '...' + (firstSpace >= 0 ? slice.slice(firstSpace + 1) : slice)
+  }
+}
+
 interface Props {
   item: QueueItem
   aiUnlocked: boolean
@@ -11,15 +43,31 @@ interface Props {
 
 export function MessageCard({ item, aiUnlocked, suggestion, onSkip }: Props) {
   const [showRationale, setShowRationale] = useState(false)
+  const [beforeExpanded, setBeforeExpanded] = useState(false)
+  const [afterExpanded, setAfterExpanded] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
       {item.context_before && (
-        <div className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3">
-          <span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">Preceding AI response</span>
-          <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
-            <ReactMarkdown>{item.context_before}</ReactMarkdown>
-          </div>
+        <div
+          className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3 cursor-pointer group"
+          onClick={() => setBeforeExpanded(v => !v)}
+        >
+          <span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">
+            Preceding AI response
+            <span className="ml-2 text-neutral-600 group-hover:text-neutral-400 transition-colors">
+              {beforeExpanded ? '▾ collapse' : '▸ expand'}
+            </span>
+          </span>
+          {beforeExpanded ? (
+            <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
+              <ReactMarkdown>{item.context_before}</ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400 leading-relaxed italic">
+              {truncateAtWord(stripMarkdown(item.context_before), 200, 'tail')}
+            </p>
+          )}
         </div>
       )}
 
@@ -59,11 +107,25 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip }: Props) {
       )}
 
       {item.context_after && (
-        <div className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3">
-          <span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">Following AI response</span>
-          <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
-            <ReactMarkdown>{item.context_after}</ReactMarkdown>
-          </div>
+        <div
+          className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3 cursor-pointer group"
+          onClick={() => setAfterExpanded(v => !v)}
+        >
+          <span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">
+            Following AI response
+            <span className="ml-2 text-neutral-600 group-hover:text-neutral-400 transition-colors">
+              {afterExpanded ? '▾ collapse' : '▸ expand'}
+            </span>
+          </span>
+          {afterExpanded ? (
+            <div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
+              <ReactMarkdown>{item.context_after}</ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-400 leading-relaxed italic">
+              {truncateAtWord(stripMarkdown(item.context_after), 200, 'head')}
+            </p>
+          )}
         </div>
       )}
 
