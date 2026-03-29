@@ -22,9 +22,8 @@ TOOL = types.Tool(function_declarations=[
                             "label": {"type": "string"},
                             "evidence": {"type": "string"},
                             "rationale": {"type": "string"},
-                            "granularity": {"type": "string", "enum": ["high", "mid", "low"]},
                         },
-                        "required": ["message_index", "label", "evidence", "rationale", "granularity"],
+                        "required": ["message_index", "label", "evidence", "rationale"],
                     },
                 },
             },
@@ -60,7 +59,6 @@ For each student-AI interaction turn, identify:
 - A short descriptive label (e.g. "Concept Probe", "Clarification Request", "Misconception", "Procedural Help")
 - Evidence: a brief quote from the transcript
 - Rationale: explanation of why this label applies
-- Granularity: "high" (broad behavior), "mid" (specific skill), or "low" (surface-level detail)
 {steering_block}
 
 Call the `generate_labels` tool with a JSON array of label objects. Label every meaningful interaction turn (typically every 1-3 message pairs)."""

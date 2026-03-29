@@ -13,7 +13,6 @@ export interface LabelItem {
   label: string;
   evidence: string;
   rationale: string;
-  granularity: 'high' | 'mid' | 'low';
 }
 
 export interface LabelSet {

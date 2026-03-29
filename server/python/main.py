@@ -133,7 +133,6 @@ def get_chatlog(
                 id=l.id, label_set_id=l.label_set_id,
                 message_index=l.message_index, label=l.label,
                 evidence=l.evidence, rationale=l.rationale,
-                granularity=l.granularity
             ) for l in labels]
         )
 
@@ -172,7 +171,6 @@ def label_chatlog(
             label=item.get("label", ""),
             evidence=item.get("evidence", ""),
             rationale=item.get("rationale", ""),
-            granularity=item.get("granularity", "mid"),
         )
         session.add(label)
         labels.append(label)
@@ -190,7 +188,6 @@ def label_chatlog(
                 "label": l.label,
                 "evidence": l.evidence,
                 "rationale": l.rationale,
-                "granularity": l.granularity,
             }
             for l in labels
         ]
@@ -223,7 +220,6 @@ def get_label_sets(
                 id=l.id, label_set_id=l.label_set_id,
                 message_index=l.message_index, label=l.label,
                 evidence=l.evidence, rationale=l.rationale,
-                granularity=l.granularity
             ) for l in labels]
         ))
 
