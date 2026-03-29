@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Purpose
+
+Chatsight is an HCI + CS Education research tool that helps instructors efficiently label student-AI tutoring conversations. The AI tutor being studied is fine-tuned to reference course material (homeworks, labs, projects) for an undergraduate data science course.
+
+The core research problem: manual labeling of chatlog data is inefficient and inconsistent — rubrics defined upfront need revision mid-process, and team members interpret criteria differently. Chatsight solves this by supporting a **hybrid, instructor-first labeling pipeline**:
+
+1. Instructors read through messages and create label categories bottom-up (no fixed rubric required upfront)
+2. Gemini suggests labels and candidate categories to assist the instructor
+3. A label management view lets instructors refine: merge overlapping labels, split overly broad ones, rename/redefine after seeing real examples
+4. Once a sufficient sample is labeled, Gemini auto-labels the remaining data
+
+The full research context and open design questions are documented in Claude Code memory.
+
 ## Commands
 
 **Backend**
@@ -27,19 +40,30 @@ npx tsc --noEmit   # type-check only
 
 ## Architecture
 
-### Data flow
+### Data flow (current implementation)
 External PostgreSQL → backend reads chatlog content → `POST /api/label` calls Gemini function-calling → `LabelSet`/`Label` rows saved in local SQLite → frontend renders transcript + label cards in sync.
+
+> **Note**: The intended pipeline (see `WORKFLOW.md`) is instructor-first: instructors manually create/apply labels, Gemini assists with suggestions, and AI auto-labels remaining data after a sufficient sample is labeled. The current implementation is an earlier iteration being refactored toward this goal.
 
 ### Two database connections (`server/python/database.py`)
 - **Local SQLite** (`chatsight.db`) — stores `LabelSet` and `Label` rows only. Created at startup via `SQLModel.metadata.create_all`.
 - **External PostgreSQL** (`dsc10_tutor_logs` on `localhost:5433`) — read-only source of chatlog data. Accessed via `ext_engine` (psycopg2 driver).
 
-The external DB has a single `events` table with columns `id`, `event_type`, `user_email`, `payload` (JSONB), `created_at`. Conversations are grouped by `payload->>'conversation_id'`. Relevant event types are `tutor_query` (payload has `question`) and `tutor_response` (payload has `response`). The stable integer chatlog ID used throughout the API is `MIN(event.id)` per conversation.
+The external DB has a single `events` table with columns `id`, `event_type`, `user_email`, `payload` (JSONB), `created_at`. Conversations are grouped by `payload->>'conversation_id'`. Relevant event types are `tutor_query` (payload has `question`) and `tutor_response` (payload has `response`). The `payload` also has a `notebook` field used to display which notebook the conversation is about. The stable integer chatlog ID used throughout the API is `MIN(event.id)` per conversation.
+
+### API routes (`server/python/main.py`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/chatlogs` | List all conversations (from ext DB); returns `ChatlogSummary[]` |
+| `GET` | `/api/chatlogs/{id}` | Full transcript + latest `LabelSet`; returns `ChatlogResponse` |
+| `POST` | `/api/label` | Run Gemini labeling; creates a new `LabelSet` row |
+| `GET` | `/api/chatlogs/{id}/label-sets` | All historical `LabelSet` rows for a chatlog |
 
 ### Backend (`server/python/`)
 - All routes in `main.py`. No routers or sub-apps.
 - `models.py` defines two SQLModel tables: `LabelSet` (one row per labeling run, including re-runs with steering) and `Label` (individual label within a set). `LabelSet.chatlog_id` is a plain `int` referencing the external DB's min-event-id — no SQLModel FK constraint.
-- `label_service.py` calls `gemini-2.0-flash` with a `generate_labels` tool, forcing structured JSON output. Steering notes are injected as a block in the user message.
+- `label_service.py` calls `gemini-2.0-flash` with a `generate_labels` tool (forced function-calling, `temperature=0`). Each label has: `message_index` (int), `label` (short string), `evidence` (quote), `rationale` (explanation). Steering notes are injected as a `## Steering Instructions` block in the user message; if empty, a default "use best judgment" line is used.
 - `schemas.py` holds Pydantic response shapes separate from ORM models.
 
 ### Frontend (`src/`)
@@ -48,6 +72,7 @@ The external DB has a single `events` table with columns `id`, `event_type`, `us
 - `highlightedIndex` (`message_index`) is shared between `TranscriptPanel` and `LabelsPanel`: clicking a label card scrolls the transcript, and vice versa.
 - All fetch calls in `src/services/api.ts` use `/api/...` — Vite proxies to `http://localhost:8000`.
 - Tailwind v4 is configured purely via the `@tailwindcss/vite` plugin — no `tailwind.config.ts`.
+- TypeScript types for all API shapes live in `src/types/index.ts`.
 
 ### Key design decisions
 - Each "Re-process with Feedback" call creates a **new** `LabelSet` row (preserves history). `GET /api/chatlogs/{id}` returns only the latest label set; `GET /api/chatlogs/{id}/label-sets` returns all.
