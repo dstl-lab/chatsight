@@ -50,7 +50,7 @@ export function ProgressSidebar({ session, labels, stats, skippedCount, onApply,
         )}
       </div>
 
-      <div className="relative flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col">
         <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Apply label</p>
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           {labels.map(label => (
@@ -63,23 +63,23 @@ export function ProgressSidebar({ session, labels, stats, skippedCount, onApply,
               {label.name}
             </button>
           ))}
-          <button
-            onClick={() => setShowPopover(true)}
-            className="w-full text-left bg-transparent border border-dashed border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-blue-400 hover:border-blue-500 transition-colors"
-          >
-            + New label
-          </button>
+          {showPopover ? (
+            <NewLabelPopover
+              onConfirm={(name, description) => {
+                onCreateAndApply(name, description)
+                setShowPopover(false)
+              }}
+              onCancel={() => setShowPopover(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setShowPopover(true)}
+              className="w-full text-left bg-transparent border border-dashed border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-blue-400 hover:border-blue-500 transition-colors"
+            >
+              + New label
+            </button>
+          )}
         </div>
-
-        {showPopover && (
-          <NewLabelPopover
-            onConfirm={(name, description) => {
-              onCreateAndApply(name, description)
-              setShowPopover(false)
-            }}
-            onCancel={() => setShowPopover(false)}
-          />
-        )}
       </div>
     </aside>
   )
