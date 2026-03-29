@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 
@@ -21,6 +21,17 @@ export function ProgressSidebar({
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
   const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
   const [editDesc, setEditDesc] = useState('')
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const startHover = useCallback((labelId: number) => {
+    if (editingLabelId === labelId) return
+    hoverTimer.current = setTimeout(() => setHoveredLabelId(labelId), 2000)
+  }, [editingLabelId])
+
+  const cancelHover = useCallback((labelId: number) => {
+    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null }
+    if (editingLabelId !== labelId) setHoveredLabelId(null)
+  }, [editingLabelId])
 
   const labeled = session?.labeled_count ?? 0
   const total = stats?.total_messages ?? 0
@@ -70,8 +81,8 @@ export function ProgressSidebar({
           {labels.map(label => (
             <div
               key={label.id}
-              onMouseEnter={() => { if (editingLabelId !== label.id) setHoveredLabelId(label.id) }}
-              onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
+              onMouseEnter={() => startHover(label.id)}
+              onMouseLeave={() => cancelHover(label.id)}
             >
               <button
                 onClick={() => onToggleLabel(label.id)}
@@ -93,8 +104,8 @@ export function ProgressSidebar({
               {(hoveredLabelId === label.id || editingLabelId === label.id) && (
                 <div
                   className="bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 mt-1"
-                  onMouseEnter={() => setHoveredLabelId(label.id)}
-                  onMouseLeave={() => { if (editingLabelId !== label.id) setHoveredLabelId(null) }}
+                  onMouseEnter={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
+                  onMouseLeave={() => cancelHover(label.id)}
                 >
                   {editingLabelId === label.id ? (
                     <>
