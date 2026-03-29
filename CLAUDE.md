@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Purpose
+
+Chatsight is an HCI + CS Education research tool that helps instructors efficiently label student-AI tutoring conversations. The AI tutor being studied is fine-tuned to reference course material for an undergraduate data science course.
+
+The core research problem: manual labeling of chatlog data is inefficient and inconsistent. Chatsight supports a **hybrid, instructor-first labeling pipeline**: instructors create labels bottom-up as they read, Gemini assists with suggestions, a label management view lets instructors merge/split/refine labels, and Gemini auto-labels remaining data once a sufficient sample is done. Full context and open design questions are in `WORKFLOW.md`.
+
 ## Commands
 
 **Backend**
