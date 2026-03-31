@@ -43,7 +43,7 @@ export function ProgressSidebar({
     if (editingLabelId !== labelId) setHoveredLabelId(null)
   }, [editingLabelId])
 
-  const labeled = session?.labeled_count ?? 0
+  const labeled = stats?.labeled_count ?? 0
   const total = stats?.total_messages ?? 0
   const pct = total > 0 ? Math.round((labeled / total) * 100) : 0
 

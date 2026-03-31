@@ -26,7 +26,7 @@ export function QueuePage() {
   const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentMessage = queue[currentIdx] ?? null
-  const aiUnlocked = (session?.labeled_count ?? 0) >= 20
+  const aiUnlocked = (stats?.labeled_count ?? 0) >= 20
 
   const loadQueue = useCallback(async () => {
     const q = await api.getQueue(20)
