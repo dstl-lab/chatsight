@@ -26,7 +26,7 @@ interface Props {
 }
 
 export function ProgressSidebar({
-  session, labels, stats, skippedCount,
+  session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history,
 }: Props) {

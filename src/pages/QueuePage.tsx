@@ -200,8 +200,31 @@ export function QueuePage() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
-        Loading...
+      <div className="flex-1 flex min-h-0" data-testid="loading-skeleton">
+        {/* Sidebar skeleton */}
+        <div className="w-52 shrink-0 border-r border-neutral-800 p-4 flex flex-col gap-5">
+          <div>
+            <div className="h-2 bg-neutral-800 rounded animate-pulse w-16 mb-3" />
+            <div className="h-1.5 bg-neutral-800 rounded-full mb-2 animate-pulse" />
+            <div className="h-3 bg-neutral-800 rounded animate-pulse w-20" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-7 bg-neutral-800 rounded animate-pulse" />
+            ))}
+          </div>
+        </div>
+        {/* Message card skeleton */}
+        <div className="flex-1 p-6 flex flex-col gap-4 min-h-0">
+          <div className="h-3 bg-neutral-800 rounded animate-pulse w-1/4" />
+          <div className="h-36 bg-neutral-800 rounded-lg animate-pulse" />
+          <div className="h-3 bg-neutral-800 rounded animate-pulse w-3/4" />
+          <div className="h-3 bg-neutral-800 rounded animate-pulse w-1/2" />
+          <div className="mt-auto flex gap-2">
+            <div className="h-8 w-16 bg-neutral-800 rounded animate-pulse" />
+            <div className="h-8 w-16 bg-neutral-800 rounded animate-pulse" />
+          </div>
+        </div>
       </div>
     )
   }

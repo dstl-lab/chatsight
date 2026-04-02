@@ -89,3 +89,11 @@ test('skips message when skip clicked', async () => {
   fireEvent.click(screen.getByText(/^skip$/i))
   expect(apiModule.api.skipMessage).toHaveBeenCalled()
 })
+
+test('shows loading skeleton while data is loading', () => {
+  // Make getQueue hang so loading state persists
+  vi.mocked(apiModule.api.getQueue).mockReturnValueOnce(new Promise(() => {}))
+  render(<MemoryRouter><QueuePage /></MemoryRouter>)
+  expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+  expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument()
+})
