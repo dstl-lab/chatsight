@@ -559,7 +559,6 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
 
 # ── Queue fetch route ─────────────────────────────────────────────────────────
 
-
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
     # Only count applications of active (non-archived) labels
@@ -1152,9 +1151,6 @@ def delete_label(
         raise HTTPException(
             status_code=400, detail="Label has applications, use force=true to delete"
         )
-    for app in apps:
-        db.delete(app)
-
     db.delete(label)
     db.commit()
     return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
@@ -1295,6 +1291,7 @@ def get_embed_status(db: Session = Depends(get_session)):
         "running": _discover_status["running"],
         "error": _discover_status.get("error"),
     }
+
 
 
 @app.get("/api/analysis/summary")
