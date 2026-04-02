@@ -4,7 +4,7 @@ from typing import List, Optional
 import threading
 from fastapi import FastAPI, Depends, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, text
+from sqlalchemy import func, text, update
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
@@ -658,8 +658,40 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
 
 
 @app.post("/api/labels/merge")
-def merge_labels(_req: MergeLabelRequest):
-    return {"ok": True}
+def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):  
+    source_label = db.get(LabelDefinition, req.source_label_id)                
+    target_label = db.get(LabelDefinition, req.target_label_id)                
+    
+    if not source_label: 
+        raise HTTPException(status_code=404, detail="Source label not found")
+    if not target_label:
+        raise HTTPException(status_code=404, detail="Target label not found")
+    
+    
+    db.exec(
+        update(LabelApplication)
+        .where(LabelApplication.label_id == req.source_label_id)
+        .values(label_id=req.target_label_id)
+    )
+    
+    # Delete source
+    db.delete(source_label)
+    db.commit()
+    db.refresh(target_label)
+
+    count = db.exec(
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == target_label.id
+        )
+    ).one()
+
+    return LabelDefinitionResponse(
+        id=target_label.id,
+        name=target_label.name,
+        description=target_label.description,
+        created_at=target_label.created_at,
+        count=count,
+    )
 
 
 @app.post("/api/labels/split")
