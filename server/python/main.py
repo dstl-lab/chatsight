@@ -453,6 +453,70 @@ def get_queue_position(db: Session = Depends(get_session)):
     return {"position": position, "total_remaining": total_remaining}
 
 
+@app.get("/api/queue/history")
+def get_queue_history(limit: int = 20, db: Session = Depends(get_session)):
+    rows = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            func.max(LabelApplication.created_at).label("labeled_at"),
+        )
+        .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .order_by(func.max(LabelApplication.created_at).desc())
+        .limit(limit)
+    ).all()
+
+    if not rows:
+        return []
+
+    result = []
+    with ext_engine.connect() as conn:
+        for chatlog_id, message_index, labeled_at in rows:
+            msg_row = conn.execute(text("""
+                WITH student AS (
+                    SELECT id,
+                           payload->>'conversation_id' AS conv_id,
+                           payload->>'question' AS message_text,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id'
+                               ORDER BY id
+                           )) - 1 AS message_index
+                    FROM events 
+                    WHERE event_type = 'tutor_query'
+                ),
+                chatlog_ids AS (
+                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                    FROM events 
+                    GROUP BY payload->>'conversation_id'
+                )
+                SELECT s.message_text
+                FROM student s
+                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+                WHERE ci.chatlog_id = :chatlog_id AND s.message_index = :message_index
+            """), {"chatlog_id": chatlog_id, "message_index": message_index}).mappings().first()
+
+            message_text = msg_row["message_text"] if msg_row else ""
+
+            label_names = db.exec(
+                select(LabelDefinition.name)
+                .join(LabelApplication, LabelDefinition.id == LabelApplication.label_id)
+                .where(
+                    LabelApplication.chatlog_id == chatlog_id,
+                    LabelApplication.message_index == message_index,
+                )
+            ).all()
+
+            result.append({
+                "chatlog_id": chatlog_id,
+                "message_index": message_index,
+                "message_text": message_text,
+                "labels": list(label_names),
+                "labeled_at": labeled_at.isoformat() if labeled_at else "",
+            })
+
+    return result
+
+
 # ── Auto-labeling ────────────────────────────────────────────────────────────
 
 _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None}
