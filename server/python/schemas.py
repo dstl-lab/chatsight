@@ -86,6 +86,10 @@ class LabelApplicationResponse(BaseModel):
     applied_by: str
     created_at: datetime
 
+class DeleteLabelResponse(BaseModel):
+    ok: bool
+    deleted_applications: Optional[int] = None
+
 
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────
 

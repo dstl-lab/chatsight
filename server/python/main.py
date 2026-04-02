@@ -10,11 +10,22 @@ from sqlalchemy.engine import Connection
 from database import create_db_and_tables, get_session, ext_engine, engine
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage
 from schemas import (
-    CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
-    SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
-    AdvanceRequest, UndoRequest,
-    LabelDefinitionResponse, QueueItemResponse, SessionResponse,
-    LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
+    CreateLabelRequest,
+    DeleteLabelResponse,
+    UpdateLabelRequest,
+    ApplyLabelRequest,
+    SkipMessageRequest,
+    SuggestRequest,
+    MergeLabelRequest,
+    SplitLabelRequest,
+    AdvanceRequest,
+    UndoRequest,
+    LabelDefinitionResponse,
+    QueueItemResponse,
+    SessionResponse,
+    LabelApplicationResponse,
+    ChatlogSummary,
+    ChatlogResponse,
 )
 from sqlmodel import Session, select
 
@@ -43,7 +54,9 @@ def get_ext_conn():
 
 def _fetch_conversation_events(conn: Connection, chatlog_id: int):
     """Return all tutor events for the conversation whose first event has the given id."""
-    rows = conn.execute(text("""
+    rows = (
+        conn.execute(
+            text("""
         WITH conv AS (
             SELECT payload->>'conversation_id' AS conv_id,
                    user_email,
@@ -64,7 +77,12 @@ def _fetch_conversation_events(conn: Connection, chatlog_id: int):
         JOIN conv c ON e.payload->>'conversation_id' = c.conv_id
         WHERE e.event_type IN ('tutor_query', 'tutor_response')
         ORDER BY e.created_at
-    """), {"chatlog_id": chatlog_id}).mappings().all()
+    """),
+            {"chatlog_id": chatlog_id},
+        )
+        .mappings()
+        .all()
+    )
     return rows
 
 
@@ -82,7 +100,9 @@ def _build_content(rows) -> str:
 
 @app.get("/api/chatlogs", response_model=List[ChatlogSummary])
 def list_chatlogs(conn: Connection = Depends(get_ext_conn)):
-    rows = conn.execute(text("""
+    rows = (
+        conn.execute(
+            text("""
         SELECT MIN(id)          AS id,
                MAX(user_email)  AS user_email,
                MAX(payload->>'notebook') AS notebook,
@@ -92,7 +112,11 @@ def list_chatlogs(conn: Connection = Depends(get_ext_conn)):
           AND payload->>'conversation_id' IS NOT NULL
         GROUP BY payload->>'conversation_id'
         ORDER BY MIN(created_at) DESC
-    """)).mappings().all()
+    """)
+        )
+        .mappings()
+        .all()
+    )
 
     return [
         ChatlogSummary(
@@ -129,6 +153,7 @@ def get_chatlog(
 
 # ── Label routes ──────────────────────────────────────────────────────────────
 
+
 @app.get("/api/labels", response_model=List[LabelDefinitionResponse])
 def get_labels(db: Session = Depends(get_session)):
     labels = db.exec(select(LabelDefinition)).all()
@@ -139,10 +164,15 @@ def get_labels(db: Session = Depends(get_session)):
                 LabelApplication.label_id == label.id
             )
         ).one()
-        result.append(LabelDefinitionResponse(
-            id=label.id, name=label.name, description=label.description,
-            created_at=label.created_at, count=count,
-        ))
+        result.append(
+            LabelDefinitionResponse(
+                id=label.id,
+                name=label.name,
+                description=label.description,
+                created_at=label.created_at,
+                count=count,
+            )
+        )
     return result
 
 
@@ -153,13 +183,18 @@ def create_label(req: CreateLabelRequest, db: Session = Depends(get_session)):
     db.commit()
     db.refresh(label)
     return LabelDefinitionResponse(
-        id=label.id, name=label.name, description=label.description,
-        created_at=label.created_at, count=0,
+        id=label.id,
+        name=label.name,
+        description=label.description,
+        created_at=label.created_at,
+        count=0,
     )
 
 
 @app.put("/api/labels/{label_id}", response_model=LabelDefinitionResponse)
-def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(get_session)):
+def update_label(
+    label_id: int, req: UpdateLabelRequest, db: Session = Depends(get_session)
+):
     label = db.get(LabelDefinition, label_id)
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
@@ -180,6 +215,7 @@ def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(g
 
 
 # ── Session routes ────────────────────────────────────────────────────────────
+
 
 @app.post("/api/session/start", response_model=SessionResponse)
 def start_session(db: Session = Depends(get_session)):
@@ -212,6 +248,7 @@ def get_session_state(db: Session = Depends(get_session)):
 
 # ── Queue action routes ───────────────────────────────────────────────────────
 
+
 @app.post("/api/queue/apply")
 def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, req.label_id)
@@ -242,7 +279,9 @@ def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
 
 @app.delete("/api/queue/apply")
 def unapply_label(
-    chatlog_id: int, message_index: int, label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    label_id: int,
     db: Session = Depends(get_session),
 ):
     application = db.exec(
@@ -260,7 +299,9 @@ def unapply_label(
 
 
 @app.get("/api/queue/applied")
-def get_applied_labels(chatlog_id: int, message_index: int, db: Session = Depends(get_session)):
+def get_applied_labels(
+    chatlog_id: int, message_index: int, db: Session = Depends(get_session)
+):
     rows = db.exec(
         select(LabelApplication).where(
             LabelApplication.chatlog_id == chatlog_id,
@@ -318,7 +359,9 @@ def undo_labels(req: UndoRequest, db: Session = Depends(get_session)):
     return {"ok": True, "removed_count": removed}
 
 
-@app.get("/api/labels/{label_id}/messages", response_model=List[LabelApplicationResponse])
+@app.get(
+    "/api/labels/{label_id}/messages", response_model=List[LabelApplicationResponse]
+)
 def get_label_messages(label_id: int, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, label_id)
     if not label:
@@ -328,8 +371,11 @@ def get_label_messages(label_id: int, db: Session = Depends(get_session)):
     ).all()
     return [
         LabelApplicationResponse(
-            id=r.id, label_id=r.label_id, chatlog_id=r.chatlog_id,
-            message_index=r.message_index, applied_by=r.applied_by,
+            id=r.id,
+            label_id=r.label_id,
+            chatlog_id=r.chatlog_id,
+            message_index=r.message_index,
+            applied_by=r.applied_by,
             created_at=r.created_at,
         )
         for r in rows
@@ -349,20 +395,21 @@ def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
 
 # ── Queue fetch route ─────────────────────────────────────────────────────────
 
+
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, db: Session = Depends(get_session)):
     labeled = {
-        (r.chatlog_id, r.message_index)
-        for r in db.exec(select(LabelApplication)).all()
+        (r.chatlog_id, r.message_index) for r in db.exec(select(LabelApplication)).all()
     }
     skipped = {
-        (r.chatlog_id, r.message_index)
-        for r in db.exec(select(SkippedMessage)).all()
+        (r.chatlog_id, r.message_index) for r in db.exec(select(SkippedMessage)).all()
     }
     excluded = labeled | skipped
 
     with ext_engine.connect() as conn:
-        rows = conn.execute(text("""
+        rows = (
+            conn.execute(
+                text("""
             WITH student AS (
                 SELECT id,
                        payload->>'conversation_id' AS conv_id,
@@ -389,7 +436,11 @@ def get_queue(limit: int = 20, db: Session = Depends(get_session)):
             FROM student s
             JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
             ORDER BY RANDOM()
-        """)).mappings().all()
+        """)
+            )
+            .mappings()
+            .all()
+        )
 
     queue = [
         QueueItemResponse(
@@ -444,11 +495,18 @@ def _run_autolabel():
             # Get label definitions
             labels = db.exec(select(LabelDefinition)).all()
             if not labels:
-                _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": "No labels defined"}
+                _autolabel_status = {
+                    "running": False,
+                    "processed": 0,
+                    "total": 0,
+                    "error": "No labels defined",
+                }
                 return
 
             label_map = {l.name: l.id for l in labels}
-            label_defs = [{"name": l.name, "description": l.description} for l in labels]
+            label_defs = [
+                {"name": l.name, "description": l.description} for l in labels
+            ]
 
             # Get human-labeled examples for each label
             examples_by_label: dict[str, list[str]] = {}
@@ -464,7 +522,8 @@ def _run_autolabel():
                     pairs = [(a.chatlog_id, a.message_index) for a in apps[:10]]
                     with ext_engine.connect() as conn:
                         for cid, midx in pairs:
-                            row = conn.execute(text("""
+                            row = conn.execute(
+                                text("""
                                 WITH student AS (
                                     SELECT payload->>'question' AS msg,
                                            (ROW_NUMBER() OVER (
@@ -477,9 +536,13 @@ def _run_autolabel():
                                       )
                                 )
                                 SELECT msg FROM student WHERE idx = :midx
-                            """), {"cid": cid, "midx": midx}).first()
+                            """),
+                                {"cid": cid, "midx": midx},
+                            ).first()
                             if row and row[0]:
-                                examples_by_label.setdefault(label.name, []).append(row[0])
+                                examples_by_label.setdefault(label.name, []).append(
+                                    row[0]
+                                )
 
             # Get unlabeled messages
             labeled_set = {
@@ -494,7 +557,9 @@ def _run_autolabel():
 
         # Fetch all student messages from external DB
         with ext_engine.connect() as conn:
-            rows = conn.execute(text("""
+            rows = (
+                conn.execute(
+                    text("""
                 WITH student AS (
                     SELECT id,
                            payload->>'conversation_id' AS conv_id,
@@ -515,10 +580,15 @@ def _run_autolabel():
                      ORDER BY e2.id DESC LIMIT 1) AS context_before
                 FROM student s
                 JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            """)).mappings().all()
+            """)
+                )
+                .mappings()
+                .all()
+            )
 
         unlabeled = [
-            dict(r) for r in rows
+            dict(r)
+            for r in rows
             if (r["chatlog_id"], r["message_index"]) not in excluded
         ]
         _autolabel_status["total"] = len(unlabeled)
@@ -526,7 +596,7 @@ def _run_autolabel():
         # Process in batches of 30
         BATCH_SIZE = 30
         for i in range(0, len(unlabeled), BATCH_SIZE):
-            batch = unlabeled[i:i + BATCH_SIZE]
+            batch = unlabeled[i : i + BATCH_SIZE]
             try:
                 results = classify_batch(label_defs, examples_by_label, batch)
             except Exception as e:
@@ -549,12 +619,14 @@ def _run_autolabel():
                         )
                     ).first()
                     if not existing:
-                        db.add(LabelApplication(
-                            label_id=label_map[label_name],
-                            chatlog_id=msg["chatlog_id"],
-                            message_index=msg["message_index"],
-                            applied_by="ai",
-                        ))
+                        db.add(
+                            LabelApplication(
+                                label_id=label_map[label_name],
+                                chatlog_id=msg["chatlog_id"],
+                                message_index=msg["message_index"],
+                                applied_by="ai",
+                            )
+                        )
                 db.commit()
 
             _autolabel_status["processed"] = min(i + BATCH_SIZE, len(unlabeled))
@@ -562,7 +634,12 @@ def _run_autolabel():
         _autolabel_status["running"] = False
 
     except Exception as e:
-        _autolabel_status = {"running": False, "processed": _autolabel_status["processed"], "total": _autolabel_status["total"], "error": str(e)}
+        _autolabel_status = {
+            "running": False,
+            "processed": _autolabel_status["processed"],
+            "total": _autolabel_status["total"],
+            "error": str(e),
+        }
 
 
 @app.post("/api/queue/autolabel")
@@ -581,6 +658,7 @@ def get_autolabel_status():
 
 # ── Stub routes (feature tracks implement these) ──────────────────────────────
 
+
 @app.post("/api/queue/suggest")
 def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     labels = db.exec(select(LabelDefinition)).all()
@@ -591,15 +669,18 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     examples_by_label: dict[str, list[str]] = {}
     for label in labels:
         apps = db.exec(
-            select(LabelApplication).where(
+            select(LabelApplication)
+            .where(
                 LabelApplication.label_id == label.id,
                 LabelApplication.applied_by == "human",
-            ).limit(5)
+            )
+            .limit(5)
         ).all()
         if apps:
             with ext_engine.connect() as conn:
                 for a in apps:
-                    row = conn.execute(text("""
+                    row = conn.execute(
+                        text("""
                         WITH student AS (
                             SELECT payload->>'question' AS msg,
                                    (ROW_NUMBER() OVER (
@@ -612,13 +693,18 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
                               )
                         )
                         SELECT msg FROM student WHERE idx = :midx
-                    """), {"cid": a.chatlog_id, "midx": a.message_index}).first()
+                    """),
+                        {"cid": a.chatlog_id, "midx": a.message_index},
+                    ).first()
                     if row and row[0]:
-                        examples_by_label.setdefault(label.name, []).append(row[0][:200])
+                        examples_by_label.setdefault(label.name, []).append(
+                            row[0][:200]
+                        )
 
     # Get the message text to classify
     with ext_engine.connect() as conn:
-        row = conn.execute(text("""
+        row = conn.execute(
+            text("""
             WITH student AS (
                 SELECT payload->>'question' AS msg,
                        (ROW_NUMBER() OVER (
@@ -631,16 +717,23 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
                   )
             )
             SELECT msg FROM student WHERE idx = :midx
-        """), {"cid": req.chatlog_id, "midx": req.message_index}).first()
+        """),
+            {"cid": req.chatlog_id, "midx": req.message_index},
+        ).first()
 
     if not row or not row[0]:
-        return {"label_name": "", "evidence": "", "rationale": "Could not find message."}
+        return {
+            "label_name": "",
+            "evidence": "",
+            "rationale": "Could not find message.",
+        }
 
     message_text = row[0]
 
     # Call Gemini for suggestion
     try:
         from autolabel_service import classify_batch
+
         label_defs = [{"name": l.name, "description": l.description} for l in labels]
         messages = [{"message_text": message_text, "context_before": None}]
         results = classify_batch(label_defs, examples_by_label, messages)
@@ -654,26 +747,29 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     except Exception:
         pass
 
-    return {"label_name": labels[0].name, "evidence": message_text[:100], "rationale": "Fallback suggestion."}
+    return {
+        "label_name": labels[0].name,
+        "evidence": message_text[:100],
+        "rationale": "Fallback suggestion.",
+    }
 
 
 @app.post("/api/labels/merge")
-def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):  
-    source_label = db.get(LabelDefinition, req.source_label_id)                
-    target_label = db.get(LabelDefinition, req.target_label_id)                
-    
-    if not source_label: 
+def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):
+    source_label = db.get(LabelDefinition, req.source_label_id)
+    target_label = db.get(LabelDefinition, req.target_label_id)
+
+    if not source_label:
         raise HTTPException(status_code=404, detail="Source label not found")
     if not target_label:
         raise HTTPException(status_code=404, detail="Target label not found")
-    
-    
+
     db.exec(
         update(LabelApplication)
         .where(LabelApplication.label_id == req.source_label_id)
         .values(label_id=req.target_label_id)
     )
-    
+
     # Delete source
     db.delete(source_label)
     db.commit()
@@ -694,9 +790,67 @@ def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):
     )
 
 
-@app.post("/api/labels/split")
-def split_label(_req: SplitLabelRequest):
-    return {"ok": True}
+@app.post("/api/labels/split", response_model=List[LabelDefinitionResponse])
+def split_label(req: SplitLabelRequest, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, req.label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    label_a = LabelDefinition(name=req.name_a, description=label.description)
+    label_b = LabelDefinition(name=req.name_b, description=label.description)
+    db.add(label_a)
+    db.add(label_b)
+
+    apps = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == req.label_id)
+    ).all()
+    for app_ in apps:
+        db.delete(app_)
+
+    db.delete(label)
+    db.commit()
+    db.refresh(label_a)
+    db.refresh(label_b)
+
+    return [
+        LabelDefinitionResponse(
+            id=label_a.id,
+            name=label_a.name,
+            description=label_a.description,
+            created_at=label_a.created_at,
+            count=0,
+        ),
+        LabelDefinitionResponse(
+            id=label_b.id,
+            name=label_b.name,
+            description=label_b.description,
+            created_at=label_b.created_at,
+            count=0,
+        ),
+    ]
+
+
+@app.delete("/api/labels/{label_id}")
+def delete_label(
+    label_id: int, force: bool = False, db: Session = Depends(get_session)
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    apps = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == label_id)
+    ).all()
+    if apps and not force:
+        raise HTTPException(
+            status_code=400, detail="Label has applications, use force=true to delete"
+        )
+    for app in apps:
+        db.delete(app)
+
+    db.delete(label)
+    db.commit()
+    return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
 
 
 @app.get("/api/analysis/summary")
@@ -704,7 +858,12 @@ def get_analysis_summary():
     return {
         "label_counts": {"Concept Question": 22, "Clarification": 18},
         "notebook_breakdown": {"lab01": {"Concept Question": 10}},
-        "coverage": {"human_labeled": 40, "ai_labeled": 0, "unlabeled": 260, "total": 300},
+        "coverage": {
+            "human_labeled": 40,
+            "ai_labeled": 0,
+            "unlabeled": 260,
+            "total": 300,
+        },
     }
 
 
