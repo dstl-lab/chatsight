@@ -41,6 +41,7 @@ vi.mock('../services/api', () => ({
     getAutolabelStatus: vi.fn().mockResolvedValue({ running: false, processed: 0, total: 0, error: null }),
     getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 86 }),
     getRecentHistory: vi.fn().mockResolvedValue([]),
+    unskipMessage: vi.fn().mockResolvedValue(undefined),
   },
 }))
 

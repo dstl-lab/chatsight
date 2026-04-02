@@ -43,15 +43,21 @@ interface Props {
   onSkip: () => void
   onNext: () => void
   hasLabelsApplied: boolean
+  isReviewing?: boolean
 }
 
-export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasLabelsApplied }: Props) {
+export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasLabelsApplied, isReviewing }: Props) {
   const [showRationale, setShowRationale] = useState(false)
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [afterExpanded, setAfterExpanded] = useState(false)
 
   return (
     <div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
+      {isReviewing && (
+        <div className="bg-amber-900/30 border border-amber-700/40 rounded px-3 py-2">
+          <span className="text-[10px] text-amber-400 uppercase tracking-wide">Reviewing previous message</span>
+        </div>
+      )}
       {item.context_before && (
         <div
           className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3 cursor-pointer group"
@@ -134,18 +140,20 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
       )}
 
       <div className="flex justify-end gap-2 pt-1">
-        <button
-          onClick={onSkip}
-          className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
-        >
-          Skip
-        </button>
+        {!isReviewing && (
+          <button
+            onClick={onSkip}
+            className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+          >
+            Skip
+          </button>
+        )}
         <button
           onClick={onNext}
-          disabled={!hasLabelsApplied}
+          disabled={!isReviewing && !hasLabelsApplied}
           className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          Next →
+          {isReviewing ? 'Back to queue' : 'Next →'}
         </button>
       </div>
     </div>

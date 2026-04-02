@@ -26,8 +26,11 @@ export function QueuePage() {
   const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [remaining, setRemaining] = useState<number | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>([])
+  const [reviewTarget, setReviewTarget] = useState<QueueItem | null>(null)
 
   const currentMessage = queue[currentIdx] ?? null
+  const displayedMessage = reviewTarget ?? currentMessage
+  const isReviewing = reviewTarget !== null
   const aiUnlocked = (stats?.labeled_count ?? 0) >= 20
 
   const loadQueue = useCallback(async () => {
@@ -55,18 +58,18 @@ export function QueuePage() {
     })
   }, [])
 
-  // Load applied labels and AI suggestion when current message changes
+  // Load applied labels and AI suggestion when displayed message changes
   useEffect(() => {
-    if (!currentMessage) return
-    api.getAppliedLabels(currentMessage.chatlog_id, currentMessage.message_index)
+    if (!displayedMessage) return
+    api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
       .then(ids => setAppliedLabelIds(new Set(ids)))
     setSuggestion(null)
     if (aiUnlocked) {
-      api.suggestLabel(currentMessage.chatlog_id, currentMessage.message_index)
+      api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
         .then(s => { if (s.label_name) setSuggestion(s) })
         .catch(() => {})
     }
-  }, [currentMessage?.chatlog_id, currentMessage?.message_index, aiUnlocked])
+  }, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked])
 
   const advance = useCallback(() => {
     setCurrentIdx(i => {
@@ -78,34 +81,44 @@ export function QueuePage() {
   }, [queue.length, loadQueue])
 
   const handleToggleLabel = useCallback(async (labelId: number) => {
-    if (!currentMessage) return
+    if (!displayedMessage) return
     if (appliedLabelIds.has(labelId)) {
-      await api.unapplyLabel(currentMessage.chatlog_id, currentMessage.message_index, labelId)
+      await api.unapplyLabel(displayedMessage.chatlog_id, displayedMessage.message_index, labelId)
       setAppliedLabelIds(prev => { const next = new Set(prev); next.delete(labelId); return next })
     } else {
       await api.applyLabel({
-        chatlog_id: currentMessage.chatlog_id,
-        message_index: currentMessage.message_index,
+        chatlog_id: displayedMessage.chatlog_id,
+        message_index: displayedMessage.message_index,
         label_id: labelId,
       })
       setAppliedLabelIds(prev => new Set(prev).add(labelId))
     }
     api.getLabels().then(setLabels)
-  }, [currentMessage, appliedLabelIds])
+  }, [displayedMessage, appliedLabelIds])
 
   const handleCreateAndApply = async (name: string, description?: string) => {
-    if (!currentMessage) return
+    if (!displayedMessage) return
     const newLabel = await api.createLabel({ name, description })
     setLabels(prev => [...prev, newLabel])
     await api.applyLabel({
-      chatlog_id: currentMessage.chatlog_id,
-      message_index: currentMessage.message_index,
+      chatlog_id: displayedMessage.chatlog_id,
+      message_index: displayedMessage.message_index,
       label_id: newLabel.id,
     })
     setAppliedLabelIds(prev => new Set(prev).add(newLabel.id))
   }
 
   const handleNext = useCallback(async () => {
+    if (isReviewing && reviewTarget) {
+      // Exit review mode — unskip if labels were applied to a previously-skipped message
+      if (appliedLabelIds.size > 0) {
+        await api.unskipMessage(reviewTarget.chatlog_id, reviewTarget.message_index).catch(() => {})
+      }
+      setReviewTarget(null)
+      api.getRecentHistory(5).then(setHistory)
+      api.getLabels().then(setLabels)
+      return
+    }
     if (!currentMessage) return
     if (appliedLabelIds.size > 0) {
       const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
@@ -121,7 +134,7 @@ export function QueuePage() {
     advance()
     api.getQueuePosition().then(p => setRemaining(p.total_remaining))
     api.getRecentHistory(5).then(setHistory)
-  }, [currentMessage, appliedLabelIds, labels, advance])
+  }, [isReviewing, reviewTarget, currentMessage, appliedLabelIds, labels, advance])
 
   const handleUndo = useCallback(async () => {
     if (!undoState) return
@@ -139,13 +152,13 @@ export function QueuePage() {
   }, [undoState, currentIdx])
 
   const handleSkip = useCallback(async () => {
-    if (!currentMessage) return
+    if (isReviewing || !currentMessage) return
     await api.skipMessage(currentMessage.chatlog_id, currentMessage.message_index)
     setSkippedCount(s => s + 1)
     setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
     setAppliedLabelIds(new Set())
     advance()
-  }, [currentMessage, advance])
+  }, [isReviewing, currentMessage, advance])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -160,11 +173,11 @@ export function QueuePage() {
         return
       }
       if (e.key === 'Enter' || e.key === 'n') {
-        if (appliedLabelIds.size > 0) handleNext()
+        if (isReviewing || appliedLabelIds.size > 0) handleNext()
         return
       }
       if (e.key === 's') {
-        handleSkip()
+        if (!isReviewing) handleSkip()
         return
       }
       if (e.key === 'z' || (e.ctrlKey && e.key === 'z')) {
@@ -174,7 +187,7 @@ export function QueuePage() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [labels, appliedLabelIds, handleToggleLabel, handleNext, handleSkip, handleUndo])
+  }, [labels, appliedLabelIds, isReviewing, handleToggleLabel, handleNext, handleSkip, handleUndo])
 
   const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
     const updated = await api.updateLabel(id, body)
@@ -229,7 +242,7 @@ export function QueuePage() {
     )
   }
 
-  if (!currentMessage) {
+  if (!displayedMessage) {
     return (
       <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
         All messages labeled!
@@ -265,13 +278,14 @@ export function QueuePage() {
           </div>
         )}
         <MessageCard
-          key={`${currentMessage.chatlog_id}-${currentMessage.message_index}`}
-          item={currentMessage}
+          key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
+          item={displayedMessage}
           aiUnlocked={aiUnlocked}
           suggestion={suggestion}
           onSkip={handleSkip}
           onNext={handleNext}
           hasLabelsApplied={appliedLabelIds.size > 0}
+          isReviewing={isReviewing}
         />
       </div>
     </div>

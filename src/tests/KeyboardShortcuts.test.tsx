@@ -35,6 +35,7 @@ vi.mock('../services/api', () => ({
     suggestLabel: vi.fn().mockResolvedValue({ label_name: '', evidence: '', rationale: '' }),
     getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 99 }),
     getRecentHistory: vi.fn().mockResolvedValue([]),
+    unskipMessage: vi.fn().mockResolvedValue(undefined),
   },
 }))
 

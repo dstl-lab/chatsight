@@ -91,3 +91,24 @@ test('context_after preview shows head of text', () => {
   const previews = screen.getAllByText(/Great question/)
   expect(previews.length).toBeGreaterThan(0)
 })
+
+test('shows reviewing banner when isReviewing is true', () => {
+  render(<MessageCard {...defaultProps} isReviewing={true} />)
+  expect(screen.getByText(/reviewing previous message/i)).toBeInTheDocument()
+})
+
+test('hides Skip button when reviewing', () => {
+  render(<MessageCard {...defaultProps} isReviewing={true} />)
+  expect(screen.queryByText(/^skip$/i)).not.toBeInTheDocument()
+})
+
+test('shows "Back to queue" instead of "Next" when reviewing', () => {
+  render(<MessageCard {...defaultProps} isReviewing={true} />)
+  expect(screen.getByText('Back to queue')).toBeInTheDocument()
+  expect(screen.queryByText(/next/i)).not.toBeInTheDocument()
+})
+
+test('"Back to queue" is always enabled during review', () => {
+  render(<MessageCard {...defaultProps} isReviewing={true} hasLabelsApplied={false} />)
+  expect(screen.getByText('Back to queue')).not.toBeDisabled()
+})
