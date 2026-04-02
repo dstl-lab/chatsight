@@ -71,7 +71,7 @@ export function QueuePage() {
     })
   }, [queue.length, loadQueue])
 
-  const handleToggleLabel = async (labelId: number) => {
+  const handleToggleLabel = useCallback(async (labelId: number) => {
     if (!currentMessage) return
     if (appliedLabelIds.has(labelId)) {
       await api.unapplyLabel(currentMessage.chatlog_id, currentMessage.message_index, labelId)
@@ -85,7 +85,7 @@ export function QueuePage() {
       setAppliedLabelIds(prev => new Set(prev).add(labelId))
     }
     api.getLabels().then(setLabels)
-  }
+  }, [currentMessage, appliedLabelIds])
 
   const handleCreateAndApply = async (name: string, description?: string) => {
     if (!currentMessage) return
@@ -99,7 +99,7 @@ export function QueuePage() {
     setAppliedLabelIds(prev => new Set(prev).add(newLabel.id))
   }
 
-  const handleNext = async () => {
+  const handleNext = useCallback(async () => {
     if (!currentMessage) return
     if (appliedLabelIds.size > 0) {
       const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
@@ -113,9 +113,9 @@ export function QueuePage() {
     }
     setAppliedLabelIds(new Set())
     advance()
-  }
+  }, [currentMessage, appliedLabelIds, labels, advance])
 
-  const handleUndo = async () => {
+  const handleUndo = useCallback(async () => {
     if (!undoState) return
     await api.undoLabels(undoState.message.chatlog_id, undoState.message.message_index)
     setSession(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
@@ -128,16 +128,45 @@ export function QueuePage() {
     })
     setUndoState(null)
     api.getLabels().then(setLabels)
-  }
+  }, [undoState, currentIdx])
 
-  const handleSkip = async () => {
+  const handleSkip = useCallback(async () => {
     if (!currentMessage) return
     await api.skipMessage(currentMessage.chatlog_id, currentMessage.message_index)
     setSkippedCount(s => s + 1)
     setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
     setAppliedLabelIds(new Set())
     advance()
-  }
+  }, [currentMessage, advance])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      const num = parseInt(e.key)
+      if (num >= 1 && num <= 9) {
+        const label = labels[num - 1]
+        if (label) handleToggleLabel(label.id)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'n') {
+        if (appliedLabelIds.size > 0) handleNext()
+        return
+      }
+      if (e.key === 's') {
+        handleSkip()
+        return
+      }
+      if (e.key === 'z' || (e.ctrlKey && e.key === 'z')) {
+        handleUndo()
+        return
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [labels, appliedLabelIds, handleToggleLabel, handleNext, handleSkip, handleUndo])
 
   const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
     const updated = await api.updateLabel(id, body)
