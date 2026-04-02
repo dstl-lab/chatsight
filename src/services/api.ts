@@ -90,5 +90,9 @@ export const api = {
 
   getRecentHistory: (limit = 20): Promise<HistoryItem[]> =>
     USE_MOCK ? Promise.resolve(mockApi.history)
-             : req(`/api/queue/history?limit=${limit}`),
+             : req<{ items: HistoryItem[]; total: number }>(`/api/queue/history?limit=${limit}`).then(r => r.items),
+
+  unskipMessage: (chatlog_id: number, message_index: number): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req(`/api/queue/skip?chatlog_id=${chatlog_id}&message_index=${message_index}`, { method: 'DELETE' }),
 }

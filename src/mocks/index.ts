@@ -44,14 +44,20 @@ export const mockApi = {
     {
       chatlog_id: 1, message_index: 0,
       message_text: "Can you explain what a DataFrame is and how it's different from a regular Python list?",
+      context_before: "You can think of it like a spreadsheet with rows and columns...",
+      context_after: "Great question! The key difference is that DataFrames are optimized for...",
       labels: ["Concept Question"],
-      labeled_at: "2026-03-28T10:05:00",
+      status: "labeled",
+      processed_at: "2026-03-28T10:05:00",
     },
     {
       chatlog_id: 1, message_index: 2,
       message_text: "How do I filter rows where the grade column is above 90?",
-      labels: ["Concept Question", "Debug Help"],
-      labeled_at: "2026-03-28T10:10:00",
+      context_before: "You can use boolean indexing to filter DataFrames...",
+      context_after: "Exactly. You can also use df.query('grade > 90') for the same result.",
+      labels: [],
+      status: "skipped",
+      processed_at: "2026-03-28T10:10:00",
     },
   ] satisfies HistoryItem[],
 }

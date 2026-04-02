@@ -66,6 +66,9 @@ export interface HistoryItem {
   chatlog_id: number
   message_index: number
   message_text: string
+  context_before: string | null
+  context_after: string | null
   labels: string[]
-  labeled_at: string
+  status: 'labeled' | 'skipped'
+  processed_at: string
 }
