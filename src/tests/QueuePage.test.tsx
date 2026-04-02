@@ -36,6 +36,11 @@ vi.mock('../services/api', () => ({
     undoLabels: vi.fn().mockResolvedValue({ ok: true, removed_count: 1 }),
     createLabel: vi.fn().mockResolvedValue({ id: 99, name: 'New', description: null, created_at: '', count: 0 }),
     updateLabel: vi.fn().mockResolvedValue({ id: 1, name: 'Concept Question', description: 'Updated', created_at: '', count: 5 }),
+    suggestLabel: vi.fn().mockResolvedValue({ label_name: '', evidence: '', rationale: '' }),
+    startAutolabel: vi.fn(),
+    getAutolabelStatus: vi.fn().mockResolvedValue({ running: false, processed: 0, total: 0, error: null }),
+    getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 86 }),
+    getRecentHistory: vi.fn().mockResolvedValue([]),
   },
 }))
 

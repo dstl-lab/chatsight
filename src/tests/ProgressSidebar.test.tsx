@@ -16,6 +16,8 @@ const defaultProps = {
   onUpdateLabel: noop as (id: number, body: { description?: string }) => void,
   onStartAutolabel: noop,
   autolabelStatus: null,
+  remaining: null,
+  history: [],
 }
 
 test('shows labeled count and total', () => {
@@ -44,8 +46,11 @@ test('renders clickable label buttons', () => {
 
 test('shows count badge on label buttons', () => {
   render(<ProgressSidebar {...defaultProps} />)
-  expect(screen.getByText('5')).toBeInTheDocument()
-  expect(screen.getByText('3')).toBeInTheDocument()
+  // Label "Concept Question" has count 5, "Clarification" has count 3
+  const conceptBtn = screen.getByRole('button', { name: /Concept Question/ })
+  expect(conceptBtn.querySelector('.rounded-full')).toHaveTextContent('5')
+  const clarifyBtn = screen.getByRole('button', { name: /Clarification/ })
+  expect(clarifyBtn.querySelector('.rounded-full')).toHaveTextContent('3')
 })
 
 test('shows selected state for applied labels', () => {

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../../types'
+import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 
 interface AutolabelStatus {
@@ -20,12 +20,14 @@ interface Props {
   onUpdateLabel: (id: number, body: UpdateLabelRequest) => void
   onStartAutolabel: () => void
   autolabelStatus: AutolabelStatus | null
+  remaining: number | null
+  history: HistoryItem[]
 }
 
 export function ProgressSidebar({
   session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
-  onStartAutolabel, autolabelStatus,
+  onStartAutolabel, autolabelStatus, remaining, history,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -71,6 +73,9 @@ export function ProgressSidebar({
         <p className="text-sm text-neutral-200 font-medium">{labeled} <span className="text-neutral-500 font-normal">/ {total.toLocaleString()}</span></p>
         {skippedCount > 0 && (
           <p className="text-[10px] text-neutral-500 mt-1">Skipped: {skippedCount}</p>
+        )}
+        {remaining !== null && (
+          <p className="text-[10px] text-neutral-500 mt-1">Remaining: {remaining.toLocaleString()}</p>
         )}
       </div>
 
@@ -143,6 +148,11 @@ export function ProgressSidebar({
                 }`}
                 title={label.name}
               >
+                {labels.indexOf(label) < 9 && (
+                  <span className="text-[8px] text-neutral-600 bg-neutral-800 rounded px-1 shrink-0 mr-1">
+                    {labels.indexOf(label) + 1}
+                  </span>
+                )}
                 <span className="truncate flex-1">{label.name}</span>
                 {label.count > 0 && (
                   <span className="ml-1.5 text-[9px] text-neutral-500 bg-neutral-800 rounded-full px-1.5 shrink-0">

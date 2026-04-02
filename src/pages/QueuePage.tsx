@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -24,6 +24,8 @@ export function QueuePage() {
     running: boolean; processed: number; total: number; error: string | null
   } | null>(null)
   const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [history, setHistory] = useState<HistoryItem[]>([])
 
   const currentMessage = queue[currentIdx] ?? null
   const aiUnlocked = (stats?.labeled_count ?? 0) >= 20
@@ -40,11 +42,15 @@ export function QueuePage() {
       api.getLabels(),
       api.getQueue(20),
       api.getQueueStats(),
-    ]).then(([sess, lbls, q, st]) => {
+      api.getQueuePosition(),
+      api.getRecentHistory(5),
+    ]).then(([sess, lbls, q, st, pos, hist]) => {
       setSession(sess)
       setLabels(lbls)
       setQueue(q)
       setStats(st)
+      setRemaining(pos.total_remaining)
+      setHistory(hist)
       setLoading(false)
     })
   }, [])
@@ -113,6 +119,8 @@ export function QueuePage() {
     }
     setAppliedLabelIds(new Set())
     advance()
+    api.getQueuePosition().then(p => setRemaining(p.total_remaining))
+    api.getRecentHistory(5).then(setHistory)
   }, [currentMessage, appliedLabelIds, labels, advance])
 
   const handleUndo = useCallback(async () => {
@@ -219,6 +227,8 @@ export function QueuePage() {
         onUpdateLabel={handleUpdateLabel}
         onStartAutolabel={handleStartAutolabel}
         autolabelStatus={autolabelStatus}
+        remaining={remaining}
+        history={history}
       />
       <div className="flex-1 flex flex-col min-h-0">
         {undoState && (
