@@ -2,6 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+  HistoryItem,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -82,4 +83,12 @@ export const api = {
   getAutolabelStatus: (): Promise<{ running: boolean; processed: number; total: number; error: string | null }> =>
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
+
+  getQueuePosition: (): Promise<{ position: number; total_remaining: number }> =>
+    USE_MOCK ? Promise.resolve(mockApi.queuePosition)
+             : req('/api/queue/position'),
+
+  getRecentHistory: (limit = 20): Promise<HistoryItem[]> =>
+    USE_MOCK ? Promise.resolve(mockApi.history)
+             : req(`/api/queue/history?limit=${limit}`),
 }

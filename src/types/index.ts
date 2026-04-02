@@ -61,3 +61,11 @@ export interface UpdateLabelRequest {
   name?: string
   description?: string
 }
+
+export interface HistoryItem {
+  chatlog_id: number
+  message_index: number
+  message_text: string
+  labels: string[]
+  labeled_at: string
+}

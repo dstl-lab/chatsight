@@ -350,7 +350,7 @@ def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
 # ── Queue fetch route ─────────────────────────────────────────────────────────
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
-def get_queue(limit: int = 20, db: Session = Depends(get_session)):
+def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
     labeled = {
         (r.chatlog_id, r.message_index)
         for r in db.exec(select(LabelApplication)).all()
@@ -361,8 +361,15 @@ def get_queue(limit: int = 20, db: Session = Depends(get_session)):
     }
     excluded = labeled | skipped
 
+    if seed is not None:
+        order_clause = "ORDER BY MD5(CAST(s.id AS TEXT) || :seed_str)"
+        params = {"seed_str": str(seed)}
+    else:
+        order_clause = "ORDER BY RANDOM()"
+        params = {}
+
     with ext_engine.connect() as conn:
-        rows = conn.execute(text("""
+        rows = conn.execute(text(f"""
             WITH student AS (
                 SELECT id,
                        payload->>'conversation_id' AS conv_id,
@@ -388,8 +395,8 @@ def get_queue(limit: int = 20, db: Session = Depends(get_session)):
                  ORDER BY e3.id ASC LIMIT 1) AS context_after
             FROM student s
             JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            ORDER BY RANDOM()
-        """)).mappings().all()
+            {order_clause}
+        """), params).mappings().all()
 
     queue = [
         QueueItemResponse(
@@ -425,6 +432,25 @@ def get_queue_stats(db: Session = Depends(get_session)):
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
     }
+
+
+@app.get("/api/queue/position")
+def get_queue_position(db: Session = Depends(get_session)):
+    labeled_count = db.exec(
+        select(func.count()).select_from(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .distinct()
+            .subquery()
+        )
+    ).one()
+    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
+    with ext_engine.connect() as conn:
+        total = conn.execute(
+            text("SELECT COUNT(*) FROM events WHERE event_type = 'tutor_query'")
+        ).scalar() or 0
+    total_remaining = max(0, total - labeled_count - skipped_count)
+    position = labeled_count + skipped_count + 1
+    return {"position": position, "total_remaining": total_remaining}
 
 
 # ── Auto-labeling ────────────────────────────────────────────────────────────
