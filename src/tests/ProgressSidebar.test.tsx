@@ -63,3 +63,42 @@ test('shows + New label button', () => {
   render(<ProgressSidebar {...defaultProps} />)
   expect(screen.getByText('+ New label')).toBeInTheDocument()
 })
+
+const historyItems = [
+  { chatlog_id: 1, message_index: 0, message_text: 'Short message', labels: ['Concept Q'], labeled_at: '' },
+  { chatlog_id: 2, message_index: 1, message_text: 'A'.repeat(80), labels: ['Debug', 'Clarify'], labeled_at: '' },
+]
+
+test('does not render Recent section when history is empty', () => {
+  render(<ProgressSidebar {...defaultProps} history={[]} />)
+  expect(screen.queryByText(/recent/i)).not.toBeInTheDocument()
+})
+
+test('renders Recent toggle button when history has items', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} />)
+  expect(screen.getByText(/recent/i)).toBeInTheDocument()
+})
+
+test('history items not visible before expanding', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} />)
+  expect(screen.queryByText('Short message')).not.toBeInTheDocument()
+})
+
+test('history items visible after clicking Recent toggle', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} />)
+  fireEvent.click(screen.getByText(/recent/i))
+  expect(screen.getByText('Short message')).toBeInTheDocument()
+})
+
+test('long message text is truncated to 50 chars', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} />)
+  fireEvent.click(screen.getByText(/recent/i))
+  const truncated = screen.getByText((content) => content.startsWith('A'.repeat(50)))
+  expect(truncated).toBeInTheDocument()
+})
+
+test('label names are shown under each history item', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} />)
+  fireEvent.click(screen.getByText(/recent/i))
+  expect(screen.getByText('Debug, Clarify')).toBeInTheDocument()
+})

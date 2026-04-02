@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
+import { RecentHistory } from './RecentHistory'
 
 interface AutolabelStatus {
   running: boolean
@@ -227,6 +228,7 @@ export function ProgressSidebar({
           )}
         </div>
       </div>
+      <RecentHistory items={history} />
     </aside>
   )
 }
