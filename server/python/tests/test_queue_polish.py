@@ -78,7 +78,9 @@ def test_queue_seed_uses_md5_order(client):
 def test_history_empty_when_nothing_labeled(client):
     r = client.get("/api/queue/history")
     assert r.status_code == 200
-    assert r.json() == []
+    data = r.json()
+    assert data["items"] == []
+    assert data["total"] == 0
 
 
 def test_history_returns_recent_items_in_order(client):
@@ -96,16 +98,19 @@ def test_history_returns_recent_items_in_order(client):
     client.post("/api/queue/apply", json={"chatlog_id": 2, "message_index": 1, "label_id": lb})
     client.post("/api/queue/advance", json={"chatlog_id": 2, "message_index": 1})
 
-    # Mock ext_engine to return message_text per (chatlog_id, message_index)
+    # Mock ext_engine to return message_text + context per (chatlog_id, message_index)
     mock_conn = MagicMock()
 
     def fake_execute(sql, params=None):
         if params is None:
             params = {}
-        lookup = {(1, 0): "Explain DataFrames", (2, 1): "How to filter rows"}
-        text_val = lookup.get((params.get("chatlog_id"), params.get("message_index")), "")
+        lookup = {
+            (1, 0): {"message_text": "Explain DataFrames", "context_before": None, "context_after": None},
+            (2, 1): {"message_text": "How to filter rows", "context_before": None, "context_after": None},
+        }
+        entry = lookup.get((params.get("chatlog_id"), params.get("message_index")))
         result = MagicMock()
-        result.mappings.return_value.first.return_value = {"message_text": text_val}
+        result.mappings.return_value.first.return_value = entry
         return result
 
     mock_conn.execute.side_effect = fake_execute
@@ -119,11 +124,12 @@ def test_history_returns_recent_items_in_order(client):
         r = client.get("/api/queue/history?limit=20")
 
     assert r.status_code == 200
-    items = r.json()
+    items = r.json()["items"]
     assert len(items) == 2
     # Most recent first: (2, 1) was labeled after (1, 0)
     assert items[0]["chatlog_id"] == 2
     assert items[0]["message_index"] == 1
+    assert items[0]["status"] == "labeled"
     assert set(items[0]["labels"]) == {"Concept Q", "Debug"}
     assert items[1]["chatlog_id"] == 1
     assert items[1]["message_index"] == 0

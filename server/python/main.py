@@ -347,6 +347,21 @@ def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
     return {"ok": True}
 
 
+@app.delete("/api/queue/skip")
+def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(get_session)):
+    row = db.exec(
+        select(SkippedMessage).where(
+            SkippedMessage.chatlog_id == chatlog_id,
+            SkippedMessage.message_index == message_index,
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 # ── Queue fetch route ─────────────────────────────────────────────────────────
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
@@ -454,24 +469,40 @@ def get_queue_position(db: Session = Depends(get_session)):
 
 
 @app.get("/api/queue/history")
-def get_queue_history(limit: int = 20, db: Session = Depends(get_session)):
-    rows = db.exec(
+def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(get_session)):
+    # Gather labeled message keys
+    labeled_rows = db.exec(
         select(
             LabelApplication.chatlog_id,
             LabelApplication.message_index,
-            func.max(LabelApplication.created_at).label("labeled_at"),
+            func.max(LabelApplication.created_at).label("processed_at"),
         )
         .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
-        .order_by(func.max(LabelApplication.created_at).desc())
-        .limit(limit)
     ).all()
+    labeled_entries = [
+        (cid, midx, ts, "labeled") for cid, midx, ts in labeled_rows
+    ]
 
-    if not rows:
-        return []
+    # Gather skipped message keys
+    skipped_rows = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index, SkippedMessage.created_at)
+    ).all()
+    skipped_entries = [
+        (cid, midx, ts, "skipped") for cid, midx, ts in skipped_rows
+    ]
+
+    # Merge and sort by most recent first
+    all_entries = labeled_entries + skipped_entries
+    all_entries.sort(key=lambda e: e[2] if e[2] else "", reverse=True)
+    total = len(all_entries)
+    page = all_entries[offset:offset + limit]
+
+    if not page:
+        return {"items": [], "total": total}
 
     result = []
     with ext_engine.connect() as conn:
-        for chatlog_id, message_index, labeled_at in rows:
+        for chatlog_id, message_index, processed_at, status in page:
             msg_row = conn.execute(text("""
                 WITH student AS (
                     SELECT id,
@@ -481,40 +512,55 @@ def get_queue_history(limit: int = 20, db: Session = Depends(get_session)):
                                PARTITION BY payload->>'conversation_id'
                                ORDER BY id
                            )) - 1 AS message_index
-                    FROM events 
+                    FROM events
                     WHERE event_type = 'tutor_query'
                 ),
                 chatlog_ids AS (
                     SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events 
+                    FROM events
                     GROUP BY payload->>'conversation_id'
                 )
-                SELECT s.message_text
+                SELECT s.message_text,
+                    (SELECT e2.payload->>'response' FROM events e2
+                     WHERE e2.payload->>'conversation_id' = s.conv_id
+                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
+                     ORDER BY e2.id DESC LIMIT 1) AS context_before,
+                    (SELECT e3.payload->>'response' FROM events e3
+                     WHERE e3.payload->>'conversation_id' = s.conv_id
+                       AND e3.event_type = 'tutor_response' AND e3.id > s.id
+                     ORDER BY e3.id ASC LIMIT 1) AS context_after
                 FROM student s
                 JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
                 WHERE ci.chatlog_id = :chatlog_id AND s.message_index = :message_index
             """), {"chatlog_id": chatlog_id, "message_index": message_index}).mappings().first()
 
             message_text = msg_row["message_text"] if msg_row else ""
+            context_before = msg_row["context_before"] if msg_row else None
+            context_after = msg_row["context_after"] if msg_row else None
 
-            label_names = db.exec(
-                select(LabelDefinition.name)
-                .join(LabelApplication, LabelDefinition.id == LabelApplication.label_id)
-                .where(
-                    LabelApplication.chatlog_id == chatlog_id,
-                    LabelApplication.message_index == message_index,
-                )
-            ).all()
+            labels = []
+            if status == "labeled":
+                labels = list(db.exec(
+                    select(LabelDefinition.name)
+                    .join(LabelApplication, LabelDefinition.id == LabelApplication.label_id)
+                    .where(
+                        LabelApplication.chatlog_id == chatlog_id,
+                        LabelApplication.message_index == message_index,
+                    )
+                ).all())
 
             result.append({
                 "chatlog_id": chatlog_id,
                 "message_index": message_index,
                 "message_text": message_text,
-                "labels": list(label_names),
-                "labeled_at": labeled_at.isoformat() if labeled_at else "",
+                "context_before": context_before,
+                "context_after": context_after,
+                "labels": labels,
+                "status": status,
+                "processed_at": processed_at.isoformat() if processed_at else "",
             })
 
-    return result
+    return {"items": result, "total": total}
 
 
 # ── Auto-labeling ────────────────────────────────────────────────────────────
