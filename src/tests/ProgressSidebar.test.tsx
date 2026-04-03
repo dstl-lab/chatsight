@@ -18,6 +18,8 @@ const defaultProps = {
   autolabelStatus: null,
   remaining: null,
   history: [],
+  onSelectHistoryItem: noop as (item: import('../types').HistoryItem) => void,
+  reviewingKey: null as string | null,
 }
 
 test('shows labeled count and total', () => {
@@ -101,4 +103,30 @@ test('label names are shown under each history item', () => {
   render(<ProgressSidebar {...defaultProps} history={historyItems} />)
   fireEvent.click(screen.getByText(/recent/i))
   expect(screen.getByText('Debug, Clarify')).toBeInTheDocument()
+})
+
+test('clicking a history item calls onSelectHistoryItem', () => {
+  const onSelect = vi.fn()
+  render(<ProgressSidebar {...defaultProps} history={historyItems} onSelectHistoryItem={onSelect} />)
+  fireEvent.click(screen.getByText(/recent/i))
+  fireEvent.click(screen.getByText('Short message'))
+  expect(onSelect).toHaveBeenCalledWith(historyItems[0])
+})
+
+const mixedHistory = [
+  { chatlog_id: 1, message_index: 0, message_text: 'Labeled msg', context_before: null, context_after: null, labels: ['Concept'], status: 'labeled' as const, processed_at: '' },
+  { chatlog_id: 2, message_index: 0, message_text: 'Skipped msg', context_before: null, context_after: null, labels: [], status: 'skipped' as const, processed_at: '' },
+]
+
+test('skipped items show "Skipped" text instead of labels', () => {
+  render(<ProgressSidebar {...defaultProps} history={mixedHistory} />)
+  fireEvent.click(screen.getByText(/recent/i))
+  expect(screen.getByText('Skipped')).toBeInTheDocument()
+})
+
+test('highlights the currently reviewed item', () => {
+  render(<ProgressSidebar {...defaultProps} history={historyItems} reviewingKey="1-0" />)
+  fireEvent.click(screen.getByText(/recent/i))
+  const item = screen.getByText('Short message').closest('[data-history-item]')
+  expect(item?.className).toContain('blue')
 })

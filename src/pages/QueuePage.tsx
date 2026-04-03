@@ -211,6 +211,20 @@ export function QueuePage() {
     }, 2000)
   }
 
+  const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
+    setReviewTarget({
+      chatlog_id: item.chatlog_id,
+      message_index: item.message_index,
+      message_text: item.message_text,
+      context_before: item.context_before,
+      context_after: item.context_after,
+    })
+  }, [])
+
+  const reviewingKey = reviewTarget
+    ? `${reviewTarget.chatlog_id}-${reviewTarget.message_index}`
+    : null
+
   if (loading) {
     return (
       <div className="flex-1 flex min-h-0" data-testid="loading-skeleton">
@@ -265,6 +279,8 @@ export function QueuePage() {
         autolabelStatus={autolabelStatus}
         remaining={remaining}
         history={history}
+        onSelectHistoryItem={handleSelectHistoryItem}
+        reviewingKey={reviewingKey}
       />
       <div className="flex-1 flex flex-col min-h-0">
         {undoState && (

@@ -23,12 +23,14 @@ interface Props {
   autolabelStatus: AutolabelStatus | null
   remaining: number | null
   history: HistoryItem[]
+  onSelectHistoryItem: (item: HistoryItem) => void
+  reviewingKey: string | null
 }
 
 export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
-  onStartAutolabel, autolabelStatus, remaining, history,
+  onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -228,7 +230,7 @@ export function ProgressSidebar({
           )}
         </div>
       </div>
-      <RecentHistory items={history} />
+      <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
     </aside>
   )
 }
