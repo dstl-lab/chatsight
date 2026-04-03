@@ -8,6 +8,7 @@ export function Navigation() {
       <div className="flex gap-5 ml-4">
         {[
           { to: '/queue', label: 'Queue' },
+          { to: '/history', label: 'History' },
           { to: '/labels', label: 'Labels' },
           { to: '/analysis', label: 'Analysis' },
         ].map(({ to, label }) => (
