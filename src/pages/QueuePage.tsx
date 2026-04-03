@@ -122,31 +122,6 @@ export function QueuePage() {
         label_id: labelId,
       })
       setAppliedLabelIds(prev => new Set(prev).add(labelId))
-
-      // If in archive review mode, mark message as completed
-      if (archiveReview) {
-        const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`
-        setArchiveReview(prev => {
-          if (!prev) return prev
-          const next = new Set(prev.completedMessageKeys)
-          next.add(key)
-          // Check if all messages are done — auto-complete archive
-          if (next.size === prev.orphanedMessages.length) {
-            api.archiveLabel(prev.labelId).then(() => {
-              Promise.all([api.getLabels(), api.getQueue(20), api.getQueueStats()]).then(([lbls, q, st]) => {
-                setLabels(lbls)
-                setQueue(q)
-                setCurrentIdx(0)
-                setStats(st)
-                api.getQueuePosition().then(p => setRemaining(p.total_remaining))
-              })
-            })
-            setReviewTarget(null)
-            return null
-          }
-          return { ...prev, completedMessageKeys: next }
-        })
-      }
     }
     api.getLabels().then(setLabels)
   }, [displayedMessage, appliedLabelIds, archiveReview])
@@ -223,7 +198,10 @@ export function QueuePage() {
 
       const num = parseInt(e.key)
       if (num >= 1 && num <= 9) {
-        const label = labels[num - 1]
+        const availableLabels = archiveReview
+          ? labels.filter(l => l.id !== archiveReview.labelId)
+          : labels
+        const label = availableLabels[num - 1]
         if (label) handleToggleLabel(label.id)
         return
       }
@@ -242,7 +220,7 @@ export function QueuePage() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [labels, appliedLabelIds, isReviewing, handleToggleLabel, handleNext, handleSkip, handleUndo])
+  }, [labels, appliedLabelIds, isReviewing, archiveReview, handleToggleLabel, handleNext, handleSkip, handleUndo])
 
   const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
     const updated = await api.updateLabel(id, body)
@@ -295,6 +273,7 @@ export function QueuePage() {
     setCurrentIdx(0)
     setStats(st)
     api.getQueuePosition().then(p => setRemaining(p.total_remaining))
+    api.getRecentHistory(5).then(setHistory)
   }, [archiveConfirm])
 
   const handleEnterReviewMode = useCallback(() => {
@@ -315,13 +294,33 @@ export function QueuePage() {
   }, [archiveConfirm])
 
   const handleSelectReviewMessage = useCallback((chatlogId: number, messageIndex: number) => {
+    // Mark current message as completed if it has labels applied
+    if (archiveReview && displayedMessage && appliedLabelIds.size > 0) {
+      const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`
+      setArchiveReview(prev => {
+        if (!prev) return prev
+        const next = new Set(prev.completedMessageKeys)
+        next.add(key)
+        return { ...prev, completedMessageKeys: next }
+      })
+    }
     api.getMessage(chatlogId, messageIndex).then(msg => {
       setReviewTarget(msg)
     })
-  }, [])
+  }, [archiveReview, displayedMessage, appliedLabelIds])
 
   const handleSkipAndArchive = useCallback(async () => {
     if (!archiveReview) return
+    // Mark current message as completed if it has labels
+    if (displayedMessage && appliedLabelIds.size > 0) {
+      const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`
+      setArchiveReview(prev => {
+        if (!prev) return prev
+        const next = new Set(prev.completedMessageKeys)
+        next.add(key)
+        return { ...prev, completedMessageKeys: next }
+      })
+    }
     await api.archiveLabel(archiveReview.labelId)
     setArchiveReview(null)
     setReviewTarget(null)
@@ -331,7 +330,32 @@ export function QueuePage() {
     setCurrentIdx(0)
     setStats(st)
     api.getQueuePosition().then(p => setRemaining(p.total_remaining))
-  }, [archiveReview])
+    api.getRecentHistory(5).then(setHistory)
+  }, [archiveReview, displayedMessage, appliedLabelIds])
+
+  const handleCompleteArchive = useCallback(async () => {
+    if (!archiveReview) return
+    // Mark current message as completed if it has labels
+    if (displayedMessage && appliedLabelIds.size > 0) {
+      const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`
+      setArchiveReview(prev => {
+        if (!prev) return prev
+        const next = new Set(prev.completedMessageKeys)
+        next.add(key)
+        return { ...prev, completedMessageKeys: next }
+      })
+    }
+    await api.archiveLabel(archiveReview.labelId)
+    setArchiveReview(null)
+    setReviewTarget(null)
+    const [lbls, q, st] = await Promise.all([api.getLabels(), api.getQueue(20), api.getQueueStats()])
+    setLabels(lbls)
+    setQueue(q)
+    setCurrentIdx(0)
+    setStats(st)
+    api.getQueuePosition().then(p => setRemaining(p.total_remaining))
+    api.getRecentHistory(5).then(setHistory)
+  }, [archiveReview, displayedMessage, appliedLabelIds])
 
   const handleCancelArchiveReview = useCallback(() => {
     setArchiveReview(null)
@@ -398,6 +422,7 @@ export function QueuePage() {
           labelName={archiveReview.labelName}
           remainingCount={archiveReview.orphanedMessages.length - archiveReview.completedMessageKeys.size}
           onSkipAndArchive={handleSkipAndArchive}
+          onCompleteArchive={handleCompleteArchive}
           onCancel={handleCancelArchiveReview}
         />
       )}
@@ -414,6 +439,7 @@ export function QueuePage() {
             appliedLabelIds={appliedLabelIds}
             onToggleLabel={handleToggleLabel}
             onCreateAndApply={handleCreateAndApply}
+            onUpdateLabel={handleUpdateLabel}
           />
         ) : (
           <ProgressSidebar
