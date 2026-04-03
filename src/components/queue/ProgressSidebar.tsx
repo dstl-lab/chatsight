@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 import { RecentHistory } from './RecentHistory'
+import { LabelContextMenu } from './LabelContextMenu'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -29,6 +30,7 @@ interface Props {
   onSelectHistoryItem: (item: HistoryItem) => void
   reviewingKey: string | null
   onReorderLabels: (labelIds: number[]) => void
+  onArchiveLabel: (labelId: number) => void
 }
 
 interface SortableLabelItemProps {
@@ -43,16 +45,22 @@ interface SortableLabelItemProps {
   onCancelHover: () => void
   onClearHoverTimer: () => void
   onSetEditDesc: (v: string) => void
-  onStartEditing: () => void
   onCancelEditing: () => void
   onSaveDescription: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  isRenaming: boolean
+  renameValue: string
+  onSetRenameValue: (v: string) => void
+  onConfirmRename: () => void
+  onCancelRename: () => void
 }
 
 function SortableLabelItem({
   label, index, isApplied, onToggle,
   isHovered, isEditing, editDesc,
   onStartHover, onCancelHover, onClearHoverTimer,
-  onSetEditDesc, onStartEditing, onCancelEditing, onSaveDescription,
+  onSetEditDesc, onCancelEditing, onSaveDescription,
+  onContextMenu, isRenaming, renameValue, onSetRenameValue, onConfirmRename, onCancelRename,
 }: SortableLabelItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: label.id })
   const style = {
@@ -67,30 +75,44 @@ function SortableLabelItem({
       style={style}
       onMouseEnter={onStartHover}
       onMouseLeave={onCancelHover}
+      onContextMenu={onContextMenu}
     >
-      <button
-        onClick={onToggle}
-        className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
-          isApplied
-            ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
-            : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
-        }`}
-        title={label.name}
-      >
-        <span className="truncate flex-1">{label.name}</span>
-        {index < 9 && (
-          <span
-            {...attributes}
-            {...listeners}
-            className="text-[9px] text-neutral-600 shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums"
-            onClick={e => e.stopPropagation()}
-          >
-            {index + 1}
-          </span>
-        )}
-      </button>
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={renameValue}
+          onChange={e => onSetRenameValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onConfirmRename()
+            if (e.key === 'Escape') onCancelRename()
+          }}
+          onBlur={onCancelRename}
+          className="w-full bg-neutral-900 border border-blue-500 rounded px-2.5 py-1.5 text-[11px] text-neutral-100 focus:outline-none"
+        />
+      ) : (
+        <button
+          onClick={onToggle}
+          className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
+            isApplied
+              ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
+              : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
+          }`}
+        >
+          <span className="truncate flex-1">{label.name}</span>
+          {index < 9 && (
+            <span
+              {...attributes}
+              {...listeners}
+              className="text-[9px] text-neutral-600 shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums"
+              onClick={e => e.stopPropagation()}
+            >
+              {index + 1}
+            </span>
+          )}
+        </button>
+      )}
 
-      {(isHovered || isEditing) && (
+      {(isHovered || isEditing) && !isRenaming && (
         <div
           className="bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 mt-1"
           onMouseEnter={onClearHoverTimer}
@@ -121,9 +143,6 @@ function SortableLabelItem({
               <p className="text-[11px] text-neutral-400 leading-relaxed">
                 {label.description || 'No description'}
               </p>
-              <button onClick={onStartEditing} className="text-[10px] text-blue-400 mt-1 hover:text-blue-300">
-                {label.description ? 'Edit' : 'Add description'}
-              </button>
             </>
           )}
         </div>
@@ -136,12 +155,16 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
+  onArchiveLabel,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
   const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
   const [editDesc, setEditDesc] = useState('')
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ labelId: number; x: number; y: number } | null>(null)
+  const [renamingLabelId, setRenamingLabelId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const startHover = useCallback((labelId: number) => {
     if (editingLabelId === labelId) return
@@ -170,6 +193,36 @@ export function ProgressSidebar({
     setEditingLabelId(null)
     setHoveredLabelId(null)
   }
+
+  const handleContextMenu = useCallback((labelId: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    setContextMenu({ labelId, x: e.clientX, y: e.clientY })
+  }, [])
+
+  const handleStartRename = useCallback((labelId: number) => {
+    const label = labels.find(l => l.id === labelId)
+    if (!label) return
+    setRenamingLabelId(labelId)
+    setRenameValue(label.name)
+    setContextMenu(null)
+  }, [labels])
+
+  const handleConfirmRename = useCallback((labelId: number) => {
+    const trimmed = renameValue.trim()
+    if (trimmed && trimmed !== labels.find(l => l.id === labelId)?.name) {
+      onUpdateLabel(labelId, { name: trimmed })
+    }
+    setRenamingLabelId(null)
+  }, [renameValue, labels, onUpdateLabel])
+
+  const handleStartDescriptionEdit = useCallback((labelId: number) => {
+    const label = labels.find(l => l.id === labelId)
+    if (!label) return
+    setEditingLabelId(labelId)
+    setEditDesc(label.description || '')
+    setHoveredLabelId(labelId)
+    setContextMenu(null)
+  }, [labels])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -271,9 +324,14 @@ export function ProgressSidebar({
                   onCancelHover={() => cancelHover(label.id)}
                   onClearHoverTimer={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
                   onSetEditDesc={setEditDesc}
-                  onStartEditing={() => { setEditingLabelId(label.id); setEditDesc(label.description || '') }}
                   onCancelEditing={() => { setEditingLabelId(null); setHoveredLabelId(null) }}
                   onSaveDescription={() => handleSaveDescription(label.id)}
+                  onContextMenu={(e) => handleContextMenu(label.id, e)}
+                  isRenaming={renamingLabelId === label.id}
+                  renameValue={renameValue}
+                  onSetRenameValue={setRenameValue}
+                  onConfirmRename={() => handleConfirmRename(label.id)}
+                  onCancelRename={() => setRenamingLabelId(null)}
                 />
               ))}
             </SortableContext>
@@ -297,6 +355,17 @@ export function ProgressSidebar({
         </div>
       </div>
       <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
+      {contextMenu && (
+        <LabelContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          labelName={labels.find(l => l.id === contextMenu.labelId)?.name ?? ''}
+          onRename={() => handleStartRename(contextMenu.labelId)}
+          onEditDescription={() => handleStartDescriptionEdit(contextMenu.labelId)}
+          onArchive={() => { onArchiveLabel(contextMenu.labelId); setContextMenu(null) }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </aside>
   )
 }

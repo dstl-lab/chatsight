@@ -34,6 +34,8 @@ export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription,
       style={{ position: 'fixed', left: x, top: y, zIndex: 50 }}
       className="bg-neutral-800 border border-neutral-700 rounded-lg py-1 min-w-[160px] shadow-xl"
     >
+      <div className="px-3 py-1 text-[10px] text-neutral-500 truncate max-w-[160px]">{labelName}</div>
+      <div className="border-t border-neutral-700 my-1" />
       <button
         onClick={() => { onRename(); onClose() }}
         className="w-full text-left px-3 py-1.5 text-[12px] text-neutral-200 hover:bg-neutral-700 transition-colors"
