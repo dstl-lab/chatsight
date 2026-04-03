@@ -34,3 +34,12 @@ class SkippedMessage(SQLModel, table=True):
     chatlog_id: int
     message_index: int
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MessageCache(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    context_before: Optional[str] = None
+    context_after: Optional[str] = None

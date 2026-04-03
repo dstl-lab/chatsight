@@ -24,16 +24,26 @@ def _mock_ext_message(lookup: dict):
     return mock_engine
 
 
+def _add_cached_message(client_or_session, chatlog_id, message_index, message_text, context_before=None, context_after=None):
+    """Helper: insert a MessageCache row directly via the test session."""
+    from models import MessageCache
+    from database import get_session
+    from main import app
+    # Get the overridden session from the client fixture
+    override = app.dependency_overrides.get(get_session)
+    if override:
+        for sess in override():
+            sess.add(MessageCache(
+                chatlog_id=chatlog_id, message_index=message_index,
+                message_text=message_text, context_before=context_before, context_after=context_after,
+            ))
+            sess.commit()
+            break
+
+
 def test_get_message_returns_queue_item(client):
-    lookup = {
-        (1, 0): {
-            "message_text": "What is a DataFrame?",
-            "context_before": "prev AI response",
-            "context_after": "next AI response",
-        }
-    }
-    with patch("main.ext_engine", _mock_ext_message(lookup)):
-        r = client.get("/api/queue/message", params={"chatlog_id": 1, "message_index": 0})
+    _add_cached_message(client, 1, 0, "What is a DataFrame?", "prev AI response", "next AI response")
+    r = client.get("/api/queue/message", params={"chatlog_id": 1, "message_index": 0})
     assert r.status_code == 200
     data = r.json()
     assert data["chatlog_id"] == 1
@@ -43,39 +53,32 @@ def test_get_message_returns_queue_item(client):
 
 
 def test_get_message_not_found(client):
-    lookup = {}
-    with patch("main.ext_engine", _mock_ext_message(lookup)):
-        r = client.get("/api/queue/message", params={"chatlog_id": 999, "message_index": 0})
+    r = client.get("/api/queue/message", params={"chatlog_id": 999, "message_index": 0})
     assert r.status_code == 404
 
 
 def test_history_filter_human_only(client):
     """filter=human returns only human-labeled messages."""
+    _add_cached_message(client, 1, 0, "Msg 1")
+    _add_cached_message(client, 2, 0, "Msg 2")
+
     client.post("/api/session/start")
     la = client.post("/api/labels", json={"name": "Test"}).json()["id"]
-    # Human label
     client.post("/api/queue/apply", json={"chatlog_id": 1, "message_index": 0, "label_id": la})
     client.post("/api/queue/advance", json={"chatlog_id": 1, "message_index": 0})
-    # Skip
     client.post("/api/queue/skip", json={"chatlog_id": 2, "message_index": 0})
 
-    lookup = {
-        (1, 0): {"message_text": "Msg 1", "context_before": None, "context_after": None},
-        (2, 0): {"message_text": "Msg 2", "context_before": None, "context_after": None},
-    }
-    with patch("main.ext_engine", _mock_ext_message(lookup)):
-        r = client.get("/api/queue/history?filter=human")
+    r = client.get("/api/queue/history?filter=human")
     data = r.json()
     assert data["total"] == 1
     assert data["items"][0]["applied_by"] == "human"
 
 
 def test_history_filter_skipped(client):
+    _add_cached_message(client, 1, 0, "Msg")
     client.post("/api/queue/skip", json={"chatlog_id": 1, "message_index": 0})
 
-    lookup = {(1, 0): {"message_text": "Msg", "context_before": None, "context_after": None}}
-    with patch("main.ext_engine", _mock_ext_message(lookup)):
-        r = client.get("/api/queue/history?filter=skipped")
+    r = client.get("/api/queue/history?filter=skipped")
     data = r.json()
     assert data["total"] == 1
     assert data["items"][0]["status"] == "skipped"
@@ -84,14 +87,14 @@ def test_history_filter_skipped(client):
 
 def test_history_includes_applied_by_and_confidence(client):
     """History items include applied_by and confidence fields."""
+    _add_cached_message(client, 1, 0, "Msg")
+
     client.post("/api/session/start")
     la = client.post("/api/labels", json={"name": "Test"}).json()["id"]
     client.post("/api/queue/apply", json={"chatlog_id": 1, "message_index": 0, "label_id": la})
     client.post("/api/queue/advance", json={"chatlog_id": 1, "message_index": 0})
 
-    lookup = {(1, 0): {"message_text": "Msg", "context_before": None, "context_after": None}}
-    with patch("main.ext_engine", _mock_ext_message(lookup)):
-        r = client.get("/api/queue/history")
+    r = client.get("/api/queue/history")
     item = r.json()["items"][0]
     assert item["applied_by"] == "human"
     assert item["confidence"] is None

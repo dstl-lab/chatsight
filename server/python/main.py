@@ -8,7 +8,7 @@ from sqlalchemy import func, text
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache
 from schemas import (
     CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
     SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
@@ -19,9 +19,61 @@ from schemas import (
 from sqlmodel import Session, select
 
 
+def populate_message_cache():
+    """Populate the local MessageCache from the external PostgreSQL events table."""
+    with Session(engine) as db:
+        existing = db.exec(select(func.count(MessageCache.id))).one()
+        if existing > 0:
+            return  # Cache already populated
+
+    try:
+        with ext_engine.connect() as conn:
+            rows = conn.execute(text("""
+                WITH student AS (
+                    SELECT id,
+                           payload->>'conversation_id' AS conv_id,
+                           payload->>'question' AS message_text,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id'
+                               ORDER BY id
+                           )) - 1 AS message_index
+                    FROM events WHERE event_type = 'tutor_query'
+                ),
+                chatlog_ids AS (
+                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                    FROM events GROUP BY payload->>'conversation_id'
+                )
+                SELECT s.message_text, s.message_index, ci.chatlog_id,
+                    (SELECT e2.payload->>'response' FROM events e2
+                     WHERE e2.payload->>'conversation_id' = s.conv_id
+                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
+                     ORDER BY e2.id DESC LIMIT 1) AS context_before,
+                    (SELECT e3.payload->>'response' FROM events e3
+                     WHERE e3.payload->>'conversation_id' = s.conv_id
+                       AND e3.event_type = 'tutor_response' AND e3.id > s.id
+                     ORDER BY e3.id ASC LIMIT 1) AS context_after
+                FROM student s
+                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+            """)).mappings().all()
+
+        with Session(engine) as db:
+            for r in rows:
+                db.add(MessageCache(
+                    chatlog_id=r["chatlog_id"],
+                    message_index=r["message_index"],
+                    message_text=r["message_text"],
+                    context_before=r["context_before"],
+                    context_after=r["context_after"],
+                ))
+            db.commit()
+    except Exception as e:
+        print(f"Warning: could not populate message cache: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    populate_message_cache()
     yield
 
 
@@ -379,64 +431,41 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
-    labeled = {
-        (r.chatlog_id, r.message_index)
-        for r in db.exec(select(LabelApplication)).all()
-    }
-    skipped = {
-        (r.chatlog_id, r.message_index)
-        for r in db.exec(select(SkippedMessage)).all()
-    }
-    excluded = labeled | skipped
+    # Get excluded (chatlog_id, message_index) pairs using DISTINCT queries
+    labeled_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index).distinct()
+    ).all()
+    skipped_pairs = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
+    ).all()
+    excluded = {(cid, midx) for cid, midx in labeled_pairs} | {(cid, midx) for cid, midx in skipped_pairs}
 
+    # Query from cache instead of external DB CTE
+    all_cached = db.exec(select(MessageCache)).all()
+
+    candidates = [
+        c for c in all_cached
+        if (c.chatlog_id, c.message_index) not in excluded
+    ]
+
+    # Apply seed-based deterministic ordering or random shuffle
     if seed is not None:
-        order_clause = "ORDER BY MD5(CAST(s.id AS TEXT) || :seed_str)"
-        params = {"seed_str": str(seed)}
+        import hashlib
+        candidates.sort(key=lambda c: hashlib.md5(f"{c.id}{seed}".encode()).hexdigest())
     else:
-        order_clause = "ORDER BY RANDOM()"
-        params = {}
-
-    with ext_engine.connect() as conn:
-        rows = conn.execute(text(f"""
-            WITH student AS (
-                SELECT id,
-                       payload->>'conversation_id' AS conv_id,
-                       payload->>'question'        AS message_text,
-                       (ROW_NUMBER() OVER (
-                           PARTITION BY payload->>'conversation_id'
-                           ORDER BY id
-                       )) - 1 AS message_index
-                FROM events WHERE event_type = 'tutor_query'
-            ),
-            chatlog_ids AS (
-                SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                FROM events GROUP BY payload->>'conversation_id'
-            )
-            SELECT s.message_text, s.message_index, ci.chatlog_id,
-                (SELECT e2.payload->>'response' FROM events e2
-                 WHERE e2.payload->>'conversation_id' = s.conv_id
-                   AND e2.event_type = 'tutor_response' AND e2.id < s.id
-                 ORDER BY e2.id DESC LIMIT 1) AS context_before,
-                (SELECT e3.payload->>'response' FROM events e3
-                 WHERE e3.payload->>'conversation_id' = s.conv_id
-                   AND e3.event_type = 'tutor_response' AND e3.id > s.id
-                 ORDER BY e3.id ASC LIMIT 1) AS context_after
-            FROM student s
-            JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            {order_clause}
-        """), params).mappings().all()
+        import random
+        random.shuffle(candidates)
 
     queue = [
         QueueItemResponse(
-            chatlog_id=r["chatlog_id"],
-            message_index=r["message_index"],
-            message_text=r["message_text"],
-            context_before=r["context_before"],
-            context_after=r["context_after"],
+            chatlog_id=c.chatlog_id,
+            message_index=c.message_index,
+            message_text=c.message_text,
+            context_before=c.context_before,
+            context_after=c.context_after,
         )
-        for r in rows
-        if (r["chatlog_id"], r["message_index"]) not in excluded
-    ][:limit]
+        for c in candidates[:limit]
+    ]
 
     return queue
 
@@ -451,10 +480,7 @@ def get_queue_stats(db: Session = Depends(get_session)):
         )
     ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    with ext_engine.connect() as conn:
-        total = conn.execute(
-            text("SELECT COUNT(*) FROM events WHERE event_type = 'tutor_query'")
-        ).scalar()
+    total = db.exec(select(func.count(MessageCache.id))).one() or 0
     return {
         "total_messages": total,
         "labeled_count": labeled_count,
@@ -472,58 +498,30 @@ def get_queue_position(db: Session = Depends(get_session)):
         )
     ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    with ext_engine.connect() as conn:
-        total = conn.execute(
-            text("SELECT COUNT(*) FROM events WHERE event_type = 'tutor_query'")
-        ).scalar() or 0
+    total = db.exec(select(func.count(MessageCache.id))).one() or 0
     total_remaining = max(0, total - labeled_count - skipped_count)
     position = labeled_count + skipped_count + 1
     return {"position": position, "total_remaining": total_remaining}
 
 
 @app.get("/api/queue/message")
-def get_queue_message(chatlog_id: int, message_index: int):
-    with ext_engine.connect() as conn:
-        msg_row = conn.execute(text("""
-            WITH student AS (
-                SELECT id,
-                       payload->>'conversation_id' AS conv_id,
-                       payload->>'question' AS message_text,
-                       (ROW_NUMBER() OVER (
-                           PARTITION BY payload->>'conversation_id'
-                           ORDER BY id
-                       )) - 1 AS message_index
-                FROM events
-                WHERE event_type = 'tutor_query'
-            ),
-            chatlog_ids AS (
-                SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                FROM events
-                GROUP BY payload->>'conversation_id'
-            )
-            SELECT s.message_text,
-                (SELECT e2.payload->>'response' FROM events e2
-                 WHERE e2.payload->>'conversation_id' = s.conv_id
-                   AND e2.event_type = 'tutor_response' AND e2.id < s.id
-                 ORDER BY e2.id DESC LIMIT 1) AS context_before,
-                (SELECT e3.payload->>'response' FROM events e3
-                 WHERE e3.payload->>'conversation_id' = s.conv_id
-                   AND e3.event_type = 'tutor_response' AND e3.id > s.id
-                 ORDER BY e3.id ASC LIMIT 1) AS context_after
-            FROM student s
-            JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            WHERE ci.chatlog_id = :chatlog_id AND s.message_index = :message_index
-        """), {"chatlog_id": chatlog_id, "message_index": message_index}).mappings().first()
+def get_queue_message(chatlog_id: int, message_index: int, db: Session = Depends(get_session)):
+    cached = db.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == chatlog_id,
+            MessageCache.message_index == message_index,
+        )
+    ).first()
 
-    if not msg_row:
+    if not cached:
         raise HTTPException(status_code=404, detail="Message not found")
 
     return {
-        "chatlog_id": chatlog_id,
-        "message_index": message_index,
-        "message_text": msg_row["message_text"],
-        "context_before": msg_row["context_before"],
-        "context_after": msg_row["context_after"],
+        "chatlog_id": cached.chatlog_id,
+        "message_index": cached.message_index,
+        "message_text": cached.message_text,
+        "context_before": cached.context_before,
+        "context_after": cached.context_after,
     }
 
 
@@ -590,75 +588,56 @@ def get_queue_history(
     if not page:
         return {"items": [], "total": total}
 
+    # Batch fetch message text from cache (one query for all page items)
+    page_keys = [(e["chatlog_id"], e["message_index"]) for e in page]
+    cached_msgs = db.exec(select(MessageCache)).all()
+    cache_lookup = {(c.chatlog_id, c.message_index): c for c in cached_msgs}
+
+    # Batch fetch all labels for labeled items on this page (one query)
+    labeled_keys = [(e["chatlog_id"], e["message_index"]) for e in page if e["status"] == "labeled"]
+    labels_by_msg: dict[tuple[int, int], list[str]] = {}
+    if labeled_keys:
+        label_rows = db.exec(
+            select(
+                LabelApplication.chatlog_id,
+                LabelApplication.message_index,
+                LabelDefinition.name,
+            )
+            .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        ).all()
+        for cid, midx, name in label_rows:
+            key = (cid, midx)
+            if key in {(e["chatlog_id"], e["message_index"]) for e in page}:
+                labels_by_msg.setdefault(key, []).append(name)
+
     result = []
-    with ext_engine.connect() as conn:
-        for entry in page:
-            chatlog_id = entry["chatlog_id"]
-            message_index = entry["message_index"]
+    for entry in page:
+        chatlog_id = entry["chatlog_id"]
+        message_index = entry["message_index"]
+        key = (chatlog_id, message_index)
+        cached = cache_lookup.get(key)
 
-            msg_row = conn.execute(text("""
-                WITH student AS (
-                    SELECT id,
-                           payload->>'conversation_id' AS conv_id,
-                           payload->>'question' AS message_text,
-                           (ROW_NUMBER() OVER (
-                               PARTITION BY payload->>'conversation_id'
-                               ORDER BY id
-                           )) - 1 AS message_index
-                    FROM events
-                    WHERE event_type = 'tutor_query'
-                ),
-                chatlog_ids AS (
-                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events
-                    GROUP BY payload->>'conversation_id'
-                )
-                SELECT s.message_text,
-                    (SELECT e2.payload->>'response' FROM events e2
-                     WHERE e2.payload->>'conversation_id' = s.conv_id
-                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
-                     ORDER BY e2.id DESC LIMIT 1) AS context_before,
-                    (SELECT e3.payload->>'response' FROM events e3
-                     WHERE e3.payload->>'conversation_id' = s.conv_id
-                       AND e3.event_type = 'tutor_response' AND e3.id > s.id
-                     ORDER BY e3.id ASC LIMIT 1) AS context_after
-                FROM student s
-                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-                WHERE ci.chatlog_id = :chatlog_id AND s.message_index = :message_index
-            """), {"chatlog_id": chatlog_id, "message_index": message_index}).mappings().first()
+        message_text = cached.message_text if cached else ""
+        context_before = cached.context_before if cached else None
+        context_after = cached.context_after if cached else None
 
-            message_text = msg_row["message_text"] if msg_row else ""
-            context_before = msg_row["context_before"] if msg_row else None
-            context_after = msg_row["context_after"] if msg_row else None
+        # Apply search filter
+        if search and search.lower() not in message_text.lower():
+            continue
 
-            # Apply search filter
-            if search and search.lower() not in message_text.lower():
-                continue
-
-            labels = []
-            if entry["status"] == "labeled":
-                labels = list(db.exec(
-                    select(LabelDefinition.name)
-                    .join(LabelApplication, LabelDefinition.id == LabelApplication.label_id)
-                    .where(
-                        LabelApplication.chatlog_id == chatlog_id,
-                        LabelApplication.message_index == message_index,
-                    )
-                ).all())
-
-            processed_at = entry["processed_at"]
-            result.append({
-                "chatlog_id": chatlog_id,
-                "message_index": message_index,
-                "message_text": message_text,
-                "context_before": context_before,
-                "context_after": context_after,
-                "labels": labels,
-                "status": entry["status"],
-                "applied_by": entry["applied_by"],
-                "confidence": entry["confidence"],
-                "processed_at": processed_at.isoformat() if processed_at else "",
-            })
+        processed_at = entry["processed_at"]
+        result.append({
+            "chatlog_id": chatlog_id,
+            "message_index": message_index,
+            "message_text": message_text,
+            "context_before": context_before,
+            "context_after": context_after,
+            "labels": labels_by_msg.get(key, []),
+            "status": entry["status"],
+            "applied_by": entry["applied_by"],
+            "confidence": entry["confidence"],
+            "processed_at": processed_at.isoformat() if processed_at else "",
+        })
 
     return {"items": result, "total": total}
 

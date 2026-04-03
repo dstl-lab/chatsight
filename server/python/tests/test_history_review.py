@@ -48,27 +48,39 @@ def test_unskip_then_skip_again(client):
     assert r.status_code == 200
 
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _add_cache(client, chatlog_id, message_index, message_text, context_before=None, context_after=None):
+    from models import MessageCache
+    from database import get_session
+    from main import app
+    override = app.dependency_overrides.get(get_session)
+    if override:
+        for sess in override():
+            sess.add(MessageCache(
+                chatlog_id=chatlog_id, message_index=message_index,
+                message_text=message_text, context_before=context_before, context_after=context_after,
+            ))
+            sess.commit()
+            break
+
+
 # ── History endpoint (new shape) ─────────────────────────────────────────────
 
 
 def test_history_includes_skipped_messages(client):
     """History now returns both labeled and skipped messages."""
+    _add_cache(client, 1, 0, "What is a DataFrame?", "prev", "next")
+    _add_cache(client, 2, 1, "How do I filter?")
+
     client.post("/api/session/start")
     la = client.post("/api/labels", json={"name": "Concept"}).json()["id"]
 
-    # Label message (1, 0)
     client.post("/api/queue/apply", json={"chatlog_id": 1, "message_index": 0, "label_id": la})
     client.post("/api/queue/advance", json={"chatlog_id": 1, "message_index": 0})
-
-    # Skip message (2, 1)
     client.post("/api/queue/skip", json={"chatlog_id": 2, "message_index": 1})
 
-    lookup = {
-        (1, 0): {"message_text": "What is a DataFrame?", "context_before": "prev", "context_after": "next"},
-        (2, 1): {"message_text": "How do I filter?", "context_before": None, "context_after": None},
-    }
-    with patch("main.ext_engine", _mock_ext_history_conn(lookup)):
-        r = client.get("/api/queue/history?limit=20")
+    r = client.get("/api/queue/history?limit=20")
 
     assert r.status_code == 200
     data = r.json()
@@ -102,25 +114,19 @@ def test_history_returns_total_count(client):
 
 def test_history_most_recent_first(client):
     """Items are ordered by most recently processed."""
+    _add_cache(client, 1, 0, "Msg 1")
+    _add_cache(client, 2, 0, "Msg 2")
+
     client.post("/api/session/start")
     la = client.post("/api/labels", json={"name": "A"}).json()["id"]
 
-    # Label (1, 0) first
     client.post("/api/queue/apply", json={"chatlog_id": 1, "message_index": 0, "label_id": la})
     client.post("/api/queue/advance", json={"chatlog_id": 1, "message_index": 0})
-
-    # Skip (2, 0) second (more recent)
     client.post("/api/queue/skip", json={"chatlog_id": 2, "message_index": 0})
 
-    lookup = {
-        (1, 0): {"message_text": "Msg 1", "context_before": None, "context_after": None},
-        (2, 0): {"message_text": "Msg 2", "context_before": None, "context_after": None},
-    }
-    with patch("main.ext_engine", _mock_ext_history_conn(lookup)):
-        r = client.get("/api/queue/history?limit=20")
+    r = client.get("/api/queue/history?limit=20")
 
     items = r.json()["items"]
-    # Skipped (2,0) was processed after labeled (1,0), so it should be first
     assert items[0]["chatlog_id"] == 2
     assert items[0]["status"] == "skipped"
     assert items[1]["chatlog_id"] == 1
