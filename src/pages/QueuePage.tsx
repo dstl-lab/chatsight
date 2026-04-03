@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
@@ -60,6 +61,21 @@ export function QueuePage() {
       setLoading(false)
     })
   }, [])
+
+  // Enter review mode from ?review= query param (e.g., from /history page)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    const reviewParam = searchParams.get('review')
+    if (!reviewParam || loading) return
+    const [cidStr, midxStr] = reviewParam.split('-')
+    const cid = parseInt(cidStr)
+    const midx = parseInt(midxStr)
+    if (isNaN(cid) || isNaN(midx)) return
+    setSearchParams({}, { replace: true })
+    api.getMessage(cid, midx).then(msg => {
+      setReviewTarget(msg)
+    }).catch(() => {})
+  }, [loading, searchParams, setSearchParams])
 
   // Load applied labels and AI suggestion when displayed message changes
   useEffect(() => {

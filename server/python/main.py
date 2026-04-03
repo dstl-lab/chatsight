@@ -481,19 +481,78 @@ def get_queue_position(db: Session = Depends(get_session)):
     return {"position": position, "total_remaining": total_remaining}
 
 
+@app.get("/api/queue/message")
+def get_queue_message(chatlog_id: int, message_index: int):
+    with ext_engine.connect() as conn:
+        msg_row = conn.execute(text("""
+            WITH student AS (
+                SELECT id,
+                       payload->>'conversation_id' AS conv_id,
+                       payload->>'question' AS message_text,
+                       (ROW_NUMBER() OVER (
+                           PARTITION BY payload->>'conversation_id'
+                           ORDER BY id
+                       )) - 1 AS message_index
+                FROM events
+                WHERE event_type = 'tutor_query'
+            ),
+            chatlog_ids AS (
+                SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                FROM events
+                GROUP BY payload->>'conversation_id'
+            )
+            SELECT s.message_text,
+                (SELECT e2.payload->>'response' FROM events e2
+                 WHERE e2.payload->>'conversation_id' = s.conv_id
+                   AND e2.event_type = 'tutor_response' AND e2.id < s.id
+                 ORDER BY e2.id DESC LIMIT 1) AS context_before,
+                (SELECT e3.payload->>'response' FROM events e3
+                 WHERE e3.payload->>'conversation_id' = s.conv_id
+                   AND e3.event_type = 'tutor_response' AND e3.id > s.id
+                 ORDER BY e3.id ASC LIMIT 1) AS context_after
+            FROM student s
+            JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+            WHERE ci.chatlog_id = :chatlog_id AND s.message_index = :message_index
+        """), {"chatlog_id": chatlog_id, "message_index": message_index}).mappings().first()
+
+    if not msg_row:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return {
+        "chatlog_id": chatlog_id,
+        "message_index": message_index,
+        "message_text": msg_row["message_text"],
+        "context_before": msg_row["context_before"],
+        "context_after": msg_row["context_after"],
+    }
+
+
 @app.get("/api/queue/history")
-def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(get_session)):
-    # Gather labeled message keys
+def get_queue_history(
+    limit: int = 20,
+    offset: int = 0,
+    filter: Optional[str] = None,
+    sort_by: str = "processed_at",
+    search: Optional[str] = None,
+    db: Session = Depends(get_session),
+):
+    # Gather labeled message keys with applied_by and confidence
     labeled_rows = db.exec(
         select(
             LabelApplication.chatlog_id,
             LabelApplication.message_index,
             func.max(LabelApplication.created_at).label("processed_at"),
+            func.min(LabelApplication.applied_by).label("applied_by"),
+            func.min(LabelApplication.confidence).label("confidence"),
         )
         .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
     ).all()
     labeled_entries = [
-        (cid, midx, ts, "labeled") for cid, midx, ts in labeled_rows
+        {
+            "chatlog_id": cid, "message_index": midx, "processed_at": ts,
+            "status": "labeled", "applied_by": ab, "confidence": conf,
+        }
+        for cid, midx, ts, ab, conf in labeled_rows
     ]
 
     # Gather skipped message keys
@@ -501,12 +560,30 @@ def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(ge
         select(SkippedMessage.chatlog_id, SkippedMessage.message_index, SkippedMessage.created_at)
     ).all()
     skipped_entries = [
-        (cid, midx, ts, "skipped") for cid, midx, ts in skipped_rows
+        {
+            "chatlog_id": cid, "message_index": midx, "processed_at": ts,
+            "status": "skipped", "applied_by": None, "confidence": None,
+        }
+        for cid, midx, ts in skipped_rows
     ]
 
-    # Merge and sort by most recent first
+    # Merge
     all_entries = labeled_entries + skipped_entries
-    all_entries.sort(key=lambda e: e[2] if e[2] else "", reverse=True)
+
+    # Apply filter
+    if filter == "human":
+        all_entries = [e for e in all_entries if e["applied_by"] == "human"]
+    elif filter == "ai":
+        all_entries = [e for e in all_entries if e["applied_by"] == "ai"]
+    elif filter == "skipped":
+        all_entries = [e for e in all_entries if e["status"] == "skipped"]
+
+    # Sort
+    if sort_by == "confidence":
+        all_entries.sort(key=lambda e: e["confidence"] if e["confidence"] is not None else 999)
+    else:
+        all_entries.sort(key=lambda e: e["processed_at"] if e["processed_at"] else "", reverse=True)
+
     total = len(all_entries)
     page = all_entries[offset:offset + limit]
 
@@ -515,7 +592,10 @@ def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(ge
 
     result = []
     with ext_engine.connect() as conn:
-        for chatlog_id, message_index, processed_at, status in page:
+        for entry in page:
+            chatlog_id = entry["chatlog_id"]
+            message_index = entry["message_index"]
+
             msg_row = conn.execute(text("""
                 WITH student AS (
                     SELECT id,
@@ -551,8 +631,12 @@ def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(ge
             context_before = msg_row["context_before"] if msg_row else None
             context_after = msg_row["context_after"] if msg_row else None
 
+            # Apply search filter
+            if search and search.lower() not in message_text.lower():
+                continue
+
             labels = []
-            if status == "labeled":
+            if entry["status"] == "labeled":
                 labels = list(db.exec(
                     select(LabelDefinition.name)
                     .join(LabelApplication, LabelDefinition.id == LabelApplication.label_id)
@@ -562,6 +646,7 @@ def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(ge
                     )
                 ).all())
 
+            processed_at = entry["processed_at"]
             result.append({
                 "chatlog_id": chatlog_id,
                 "message_index": message_index,
@@ -569,7 +654,9 @@ def get_queue_history(limit: int = 20, offset: int = 0, db: Session = Depends(ge
                 "context_before": context_before,
                 "context_after": context_after,
                 "labels": labels,
-                "status": status,
+                "status": entry["status"],
+                "applied_by": entry["applied_by"],
+                "confidence": entry["confidence"],
                 "processed_at": processed_at.isoformat() if processed_at else "",
             })
 
@@ -698,11 +785,17 @@ def _run_autolabel():
                         )
                     ).first()
                     if not existing:
+                        conf = r.get("confidence")
+                        if isinstance(conf, (int, float)):
+                            conf = max(0.0, min(1.0, float(conf)))
+                        else:
+                            conf = None
                         db.add(LabelApplication(
                             label_id=label_map[label_name],
                             chatlog_id=msg["chatlog_id"],
                             message_index=msg["message_index"],
                             applied_by="ai",
+                            confidence=conf,
                         ))
                 db.commit()
 

@@ -25,8 +25,9 @@ TOOL = types.Tool(function_declarations=[
                         "properties": {
                             "index": {"type": "integer", "description": "Index in the input messages array"},
                             "label": {"type": "string", "description": "The label name to assign"},
+                            "confidence": {"type": "number", "description": "Your confidence in this classification, 0.0 to 1.0"},
                         },
-                        "required": ["index", "label"],
+                        "required": ["index", "label", "confidence"],
                     },
                 },
             },
@@ -40,7 +41,7 @@ CONFIG = types.GenerateContentConfig(
         "You are classifying student messages from AI tutoring conversations. "
         "You will be given label definitions with example messages, then a batch "
         "of unlabeled messages to classify. Assign exactly one label to each message. "
-        "Use the label names exactly as provided. If uncertain, pick the closest match."
+        "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
     ),
     temperature=0,
     tools=[TOOL],

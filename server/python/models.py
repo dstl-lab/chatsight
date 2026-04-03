@@ -18,6 +18,7 @@ class LabelApplication(SQLModel, table=True):
     chatlog_id: int
     message_index: int
     applied_by: str = "human"
+    confidence: Optional[float] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

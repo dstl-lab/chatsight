@@ -99,4 +99,24 @@ export const api = {
   reorderLabels: (labelIds: number[]): Promise<void> =>
     USE_MOCK ? Promise.resolve()
              : req('/api/labels/reorder', { method: 'PUT', ...json({ label_ids: labelIds }) }),
+
+  getHistory: (params: {
+    limit?: number; offset?: number;
+    filter?: 'all' | 'human' | 'ai' | 'skipped';
+    sort_by?: 'processed_at' | 'confidence';
+    search?: string;
+  } = {}): Promise<{ items: HistoryItem[]; total: number }> => {
+    if (USE_MOCK) return Promise.resolve({ items: mockApi.history, total: mockApi.history.length })
+    const q = new URLSearchParams()
+    if (params.limit) q.set('limit', String(params.limit))
+    if (params.offset) q.set('offset', String(params.offset))
+    if (params.filter && params.filter !== 'all') q.set('filter', params.filter)
+    if (params.sort_by) q.set('sort_by', params.sort_by)
+    if (params.search) q.set('search', params.search)
+    return req(`/api/queue/history?${q.toString()}`)
+  },
+
+  getMessage: (chatlog_id: number, message_index: number): Promise<QueueItem> =>
+    USE_MOCK ? Promise.resolve(mockApi.queue[0])
+             : req(`/api/queue/message?chatlog_id=${chatlog_id}&message_index=${message_index}`),
 }

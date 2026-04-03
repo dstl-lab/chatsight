@@ -70,5 +70,7 @@ export interface HistoryItem {
   context_after: string | null
   labels: string[]
   status: 'labeled' | 'skipped'
+  applied_by: 'human' | 'ai' | null
+  confidence: number | null
   processed_at: string
 }

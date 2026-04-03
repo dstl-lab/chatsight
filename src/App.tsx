@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Navigation } from './components/Navigation'
 import { QueuePage } from './pages/QueuePage'
+import { HistoryPage } from './pages/HistoryPage'
 import { LabelsPage } from './pages/LabelsPage'
 import { AnalysisPage } from './pages/AnalysisPage'
 
@@ -14,6 +15,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/queue" replace />} />
             <Route path="/queue" element={<QueuePage />} />
+            <Route path="/history" element={<HistoryPage />} />
             <Route path="/labels" element={<LabelsPage />} />
             <Route path="/analysis" element={<AnalysisPage />} />
           </Routes>

@@ -68,8 +68,8 @@ test('shows + New label button', () => {
 })
 
 const historyItems = [
-  { chatlog_id: 1, message_index: 0, message_text: 'Short message', context_before: null, context_after: null, labels: ['Concept Q'], status: 'labeled' as const, processed_at: '' },
-  { chatlog_id: 2, message_index: 1, message_text: 'A'.repeat(80), context_before: null, context_after: null, labels: ['Debug', 'Clarify'], status: 'labeled' as const, processed_at: '' },
+  { chatlog_id: 1, message_index: 0, message_text: 'Short message', context_before: null, context_after: null, labels: ['Concept Q'], status: 'labeled' as const, applied_by: 'human' as const, confidence: null, processed_at: '' },
+  { chatlog_id: 2, message_index: 1, message_text: 'A'.repeat(80), context_before: null, context_after: null, labels: ['Debug', 'Clarify'], status: 'labeled' as const, applied_by: 'human' as const, confidence: null, processed_at: '' },
 ]
 
 test('does not render Recent section when history is empty', () => {
@@ -115,8 +115,8 @@ test('clicking a history item calls onSelectHistoryItem', () => {
 })
 
 const mixedHistory = [
-  { chatlog_id: 1, message_index: 0, message_text: 'Labeled msg', context_before: null, context_after: null, labels: ['Concept'], status: 'labeled' as const, processed_at: '' },
-  { chatlog_id: 2, message_index: 0, message_text: 'Skipped msg', context_before: null, context_after: null, labels: [], status: 'skipped' as const, processed_at: '' },
+  { chatlog_id: 1, message_index: 0, message_text: 'Labeled msg', context_before: null, context_after: null, labels: ['Concept'], status: 'labeled' as const, applied_by: 'human' as const, confidence: null, processed_at: '' },
+  { chatlog_id: 2, message_index: 0, message_text: 'Skipped msg', context_before: null, context_after: null, labels: [], status: 'skipped' as const, applied_by: null, confidence: null, processed_at: '' },
 ]
 
 test('skipped items show "Skipped" text instead of labels', () => {
