@@ -62,6 +62,29 @@ export interface UpdateLabelRequest {
   description?: string
 }
 
+export interface OrphanedMessage {
+  chatlog_id: number
+  message_index: number
+  preview_text: string
+}
+
+export interface OrphanedMessagesResponse {
+  messages: OrphanedMessage[]
+  count: number
+}
+
+export interface ArchiveResponse {
+  archived_at: string
+  messages_returned_to_queue: number
+}
+
+export interface ArchiveReviewState {
+  labelId: number
+  labelName: string
+  orphanedMessages: OrphanedMessage[]
+  completedMessageKeys: Set<string>
+}
+
 export interface HistoryItem {
   chatlog_id: number
   message_index: number

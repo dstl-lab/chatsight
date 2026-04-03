@@ -2,7 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem,
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -119,4 +119,12 @@ export const api = {
   getMessage: (chatlog_id: number, message_index: number): Promise<QueueItem> =>
     USE_MOCK ? Promise.resolve(mockApi.queue[0])
              : req(`/api/queue/message?chatlog_id=${chatlog_id}&message_index=${message_index}`),
+
+  getOrphanedMessages: (labelId: number): Promise<OrphanedMessagesResponse> =>
+    USE_MOCK ? Promise.resolve({ messages: [], count: 0 })
+             : req(`/api/labels/${labelId}/orphaned-messages`),
+
+  archiveLabel: (labelId: number): Promise<ArchiveResponse> =>
+    USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
+             : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
 }
