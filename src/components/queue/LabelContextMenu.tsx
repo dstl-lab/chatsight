@@ -6,7 +6,7 @@ interface Props {
   labelName: string
   onRename: () => void
   onEditDescription: () => void
-  onArchive: () => void
+  onArchive?: () => void
   onClose: () => void
 }
 
@@ -48,13 +48,17 @@ export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription,
       >
         Edit description
       </button>
-      <div className="border-t border-neutral-700 my-1" />
-      <button
-        onClick={() => { onArchive(); onClose() }}
-        className="w-full text-left px-3 py-1.5 text-[12px] text-red-400 hover:bg-neutral-700 transition-colors"
-      >
-        Archive
-      </button>
+      {onArchive && (
+        <>
+          <div className="border-t border-neutral-700 my-1" />
+          <button
+            onClick={() => { onArchive(); onClose() }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-red-400 hover:bg-neutral-700 transition-colors"
+          >
+            Archive
+          </button>
+        </>
+      )}
     </div>
   )
 }
