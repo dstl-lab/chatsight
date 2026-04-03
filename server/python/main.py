@@ -704,6 +704,7 @@ def get_queue_history(
                 LabelDefinition.name,
             )
             .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
         ).all()
         for cid, midx, name in label_rows:
             key = (cid, midx)
