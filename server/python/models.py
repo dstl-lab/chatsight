@@ -10,6 +10,7 @@ class LabelDefinition(SQLModel, table=True):
     description: Optional[str] = None
     sort_order: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    archived_at: Optional[datetime] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):

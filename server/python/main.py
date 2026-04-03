@@ -15,6 +15,7 @@ from schemas import (
     ReorderLabelsRequest, AdvanceRequest, UndoRequest,
     LabelDefinitionResponse, QueueItemResponse, SessionResponse,
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
+    OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
 )
 from sqlmodel import Session, select
 
@@ -182,8 +183,11 @@ def get_chatlog(
 # ── Label routes ──────────────────────────────────────────────────────────────
 
 @app.get("/api/labels", response_model=List[LabelDefinitionResponse])
-def get_labels(db: Session = Depends(get_session)):
-    labels = db.exec(select(LabelDefinition).order_by(LabelDefinition.sort_order, LabelDefinition.id)).all()
+def get_labels(include_archived: bool = False, db: Session = Depends(get_session)):
+    query = select(LabelDefinition).order_by(LabelDefinition.sort_order, LabelDefinition.id)
+    if not include_archived:
+        query = query.where(LabelDefinition.archived_at == None)  # noqa: E711
+    labels = db.exec(query).all()
     result = []
     for label in labels:
         count = db.exec(
@@ -229,6 +233,14 @@ def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(g
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
     if req.name is not None:
+        existing = db.exec(
+            select(LabelDefinition).where(
+                LabelDefinition.name == req.name,
+                LabelDefinition.id != label_id,
+            )
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="A label with this name already exists")
         label.name = req.name
     if req.description is not None:
         label.description = req.description
@@ -241,6 +253,87 @@ def update_label(label_id: int, req: UpdateLabelRequest, db: Session = Depends(g
     return LabelDefinitionResponse(
         id=label.id, name=label.name, description=label.description,
         created_at=label.created_at, count=count,
+    )
+
+
+@app.get("/api/labels/{label_id}/orphaned-messages", response_model=OrphanedMessagesResponse)
+def get_orphaned_messages(label_id: int, db: Session = Depends(get_session)):
+    """Messages that have this label as their ONLY active label."""
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    # Get all (chatlog_id, message_index) pairs with this label
+    target_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(LabelApplication.label_id == label_id)
+    ).all()
+
+    orphaned = []
+    for chatlog_id, message_index in target_pairs:
+        other_active = db.exec(
+            select(func.count(LabelApplication.id))
+            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+            .where(
+                LabelApplication.chatlog_id == chatlog_id,
+                LabelApplication.message_index == message_index,
+                LabelApplication.label_id != label_id,
+                LabelDefinition.archived_at == None,  # noqa: E711
+            )
+        ).one()
+        if other_active == 0:
+            cached = db.exec(
+                select(MessageCache).where(
+                    MessageCache.chatlog_id == chatlog_id,
+                    MessageCache.message_index == message_index,
+                )
+            ).first()
+            preview = (cached.message_text[:100] + "...") if cached and len(cached.message_text) > 100 else (cached.message_text if cached else "")
+            orphaned.append(OrphanedMessageItem(
+                chatlog_id=chatlog_id,
+                message_index=message_index,
+                preview_text=preview,
+            ))
+
+    return OrphanedMessagesResponse(messages=orphaned, count=len(orphaned))
+
+
+@app.put("/api/labels/{label_id}/archive", response_model=ArchiveResponse)
+def archive_label(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+    if label.archived_at is not None:
+        raise HTTPException(status_code=400, detail="Label already archived")
+
+    target_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(LabelApplication.label_id == label_id)
+    ).all()
+
+    orphan_count = 0
+    for chatlog_id, message_index in target_pairs:
+        other_active = db.exec(
+            select(func.count(LabelApplication.id))
+            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+            .where(
+                LabelApplication.chatlog_id == chatlog_id,
+                LabelApplication.message_index == message_index,
+                LabelApplication.label_id != label_id,
+                LabelDefinition.archived_at == None,  # noqa: E711
+            )
+        ).one()
+        if other_active == 0:
+            orphan_count += 1
+
+    label.archived_at = datetime.utcnow()
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+
+    return ArchiveResponse(
+        archived_at=label.archived_at,
+        messages_returned_to_queue=orphan_count,
     )
 
 
@@ -431,9 +524,12 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
-    # Get excluded (chatlog_id, message_index) pairs using DISTINCT queries
+    # Only count applications of active (non-archived) labels
     labeled_pairs = db.exec(
-        select(LabelApplication.chatlog_id, LabelApplication.message_index).distinct()
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .distinct()
     ).all()
     skipped_pairs = db.exec(
         select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
@@ -475,6 +571,8 @@ def get_queue_stats(db: Session = Depends(get_session)):
     labeled_count = db.exec(
         select(func.count()).select_from(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
             .distinct()
             .subquery()
         )
@@ -493,6 +591,8 @@ def get_queue_position(db: Session = Depends(get_session)):
     labeled_count = db.exec(
         select(func.count()).select_from(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
             .distinct()
             .subquery()
         )

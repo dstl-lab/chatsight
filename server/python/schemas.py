@@ -91,6 +91,22 @@ class LabelApplicationResponse(BaseModel):
     created_at: datetime
 
 
+class OrphanedMessageItem(BaseModel):
+    chatlog_id: int
+    message_index: int
+    preview_text: str
+
+
+class OrphanedMessagesResponse(BaseModel):
+    messages: list[OrphanedMessageItem]
+    count: int
+
+
+class ArchiveResponse(BaseModel):
+    archived_at: datetime
+    messages_returned_to_queue: int
+
+
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────
 
 class ChatlogSummary(BaseModel):
