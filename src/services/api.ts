@@ -95,4 +95,8 @@ export const api = {
   unskipMessage: (chatlog_id: number, message_index: number): Promise<void> =>
     USE_MOCK ? Promise.resolve()
              : req(`/api/queue/skip?chatlog_id=${chatlog_id}&message_index=${message_index}`, { method: 'DELETE' }),
+
+  reorderLabels: (labelIds: number[]): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req('/api/labels/reorder', { method: 'PUT', ...json({ label_ids: labelIds }) }),
 }

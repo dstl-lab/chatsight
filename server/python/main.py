@@ -12,7 +12,7 @@ from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMe
 from schemas import (
     CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
     SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
-    AdvanceRequest, UndoRequest,
+    ReorderLabelsRequest, AdvanceRequest, UndoRequest,
     LabelDefinitionResponse, QueueItemResponse, SessionResponse,
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
 )
@@ -131,7 +131,7 @@ def get_chatlog(
 
 @app.get("/api/labels", response_model=List[LabelDefinitionResponse])
 def get_labels(db: Session = Depends(get_session)):
-    labels = db.exec(select(LabelDefinition)).all()
+    labels = db.exec(select(LabelDefinition).order_by(LabelDefinition.sort_order, LabelDefinition.id)).all()
     result = []
     for label in labels:
         count = db.exec(
@@ -146,9 +146,22 @@ def get_labels(db: Session = Depends(get_session)):
     return result
 
 
+@app.put("/api/labels/reorder")
+def reorder_labels(req: ReorderLabelsRequest, db: Session = Depends(get_session)):
+    for i, label_id in enumerate(req.label_ids):
+        label = db.get(LabelDefinition, label_id)
+        if not label:
+            raise HTTPException(status_code=400, detail=f"Label {label_id} not found")
+        label.sort_order = i
+        db.add(label)
+    db.commit()
+    return {"ok": True}
+
+
 @app.post("/api/labels", response_model=LabelDefinitionResponse)
 def create_label(req: CreateLabelRequest, db: Session = Depends(get_session)):
-    label = LabelDefinition(name=req.name, description=req.description)
+    max_order = db.exec(select(func.max(LabelDefinition.sort_order))).one() or 0
+    label = LabelDefinition(name=req.name, description=req.description, sort_order=max_order + 1)
     db.add(label)
     db.commit()
     db.refresh(label)

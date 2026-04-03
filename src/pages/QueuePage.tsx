@@ -55,6 +55,9 @@ export function QueuePage() {
       setRemaining(pos.total_remaining)
       setHistory(hist)
       setLoading(false)
+    }).catch(err => {
+      console.error('Failed to load queue data:', err)
+      setLoading(false)
     })
   }, [])
 
@@ -211,6 +214,12 @@ export function QueuePage() {
     }, 2000)
   }
 
+  const handleReorderLabels = useCallback(async (labelIds: number[]) => {
+    const reordered = labelIds.map(id => labels.find(l => l.id === id)!).filter(Boolean)
+    setLabels(reordered)
+    await api.reorderLabels(labelIds)
+  }, [labels])
+
   const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
     setReviewTarget({
       chatlog_id: item.chatlog_id,
@@ -281,6 +290,7 @@ export function QueuePage() {
         history={history}
         onSelectHistoryItem={handleSelectHistoryItem}
         reviewingKey={reviewingKey}
+        onReorderLabels={handleReorderLabels}
       />
       <div className="flex-1 flex flex-col min-h-0">
         {undoState && (

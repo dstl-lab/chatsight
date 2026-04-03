@@ -43,6 +43,10 @@ class SplitLabelRequest(BaseModel):
     name_b: str
 
 
+class ReorderLabelsRequest(BaseModel):
+    label_ids: List[int]
+
+
 class AdvanceRequest(BaseModel):
     chatlog_id: int
     message_index: int

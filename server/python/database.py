@@ -10,6 +10,13 @@ engine = create_engine(DATABASE_URL, echo=True)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
+    # Migrate: add sort_order column if missing (added in task4 branch)
+    with engine.connect() as conn:
+        from sqlalchemy import text, inspect
+        cols = [c["name"] for c in inspect(conn).get_columns("labeldefinition")]
+        if "sort_order" not in cols:
+            conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
 
 def get_session():
     with Session(engine) as session:
