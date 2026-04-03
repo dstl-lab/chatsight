@@ -168,7 +168,7 @@ export function ProgressSidebar({
 
   const startHover = useCallback((labelId: number) => {
     if (editingLabelId === labelId) return
-    hoverTimer.current = setTimeout(() => setHoveredLabelId(labelId), 2000)
+    hoverTimer.current = setTimeout(() => setHoveredLabelId(labelId), 750)
   }, [editingLabelId])
 
   const cancelHover = useCallback((labelId: number) => {
