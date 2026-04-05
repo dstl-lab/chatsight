@@ -12,7 +12,7 @@ def _fake_embed_result(texts):
     mock_result.embeddings = []
     for i, _ in enumerate(texts):
         emb = MagicMock()
-        emb.values = list(np.random.RandomState(i).rand(768).astype(float))
+        emb.values = list(np.random.RandomState(i).rand(3072).astype(float))
         mock_result.embeddings.append(emb)
     return mock_result
 
@@ -31,7 +31,7 @@ def test_embed_messages_caches_results(mock_client, session):
     ]
     vectors = embed_messages(messages, session)
 
-    assert vectors.shape == (2, 768)
+    assert vectors.shape == (2, 3072)
     # Verify cached in DB
     cached = session.exec(select(MessageEmbedding)).all()
     assert len(cached) == 2
@@ -39,7 +39,7 @@ def test_embed_messages_caches_results(mock_client, session):
     # Second call should NOT hit the API
     mock_client.models.embed_content.reset_mock()
     vectors2 = embed_messages(messages, session)
-    assert vectors2.shape == (2, 768)
+    assert vectors2.shape == (2, 3072)
     mock_client.models.embed_content.assert_not_called()
     assert np.allclose(vectors, vectors2)
 

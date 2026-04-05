@@ -97,3 +97,19 @@ export interface HistoryItem {
   confidence: number | null
   processed_at: string
 }
+
+export interface ConceptCandidate {
+  id: number
+  name: string
+  description: string
+  example_messages: { excerpt: string; chatlog_id?: number; message_index?: number }[]
+  status: 'pending' | 'accepted' | 'rejected'
+  source_run_id: string
+  created_at: string
+}
+
+export interface EmbedStatus {
+  cached: number
+  total_unlabeled: number
+  running: boolean
+}

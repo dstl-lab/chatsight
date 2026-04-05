@@ -7,12 +7,12 @@ from models import MessageEmbedding, ConceptCandidate
 
 
 def test_message_embedding_roundtrip(session):
-    vec = np.random.rand(768).astype(np.float32)
+    vec = np.random.rand(3072).astype(np.float32)
     row = MessageEmbedding(
         chatlog_id=1,
         message_index=0,
         embedding=vec.tobytes(),
-        model_version="text-embedding-004",
+        model_version="gemini-embedding-001",
     )
     session.add(row)
     session.commit()
@@ -25,7 +25,7 @@ def test_message_embedding_roundtrip(session):
         )
     ).one()
     restored = np.frombuffer(loaded.embedding, dtype=np.float32)
-    assert restored.shape == (768,)
+    assert restored.shape == (3072,)
     assert np.allclose(vec, restored)
 
 

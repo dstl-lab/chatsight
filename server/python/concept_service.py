@@ -12,7 +12,8 @@ from models import MessageEmbedding, ConceptCandidate, LabelDefinition
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
-EMBED_MODEL = "text-embedding-004"
+EMBED_MODEL = "gemini-embedding-001"
+EMBED_DIM = 3072
 EMBED_BATCH_SIZE = 100  # Gemini API limit per call
 
 
@@ -24,7 +25,7 @@ def embed_messages(
     Each message dict must have: chatlog_id, message_index, message_text.
     Returns numpy array of shape (len(messages), 768).
     """
-    vectors = np.zeros((len(messages), 768), dtype=np.float32)
+    vectors = np.zeros((len(messages), EMBED_DIM), dtype=np.float32)
     uncached_indices: List[int] = []
 
     # Check cache

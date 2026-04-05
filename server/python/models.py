@@ -55,7 +55,7 @@ class MessageEmbedding(SQLModel, table=True):
     chatlog_id: int
     message_index: int
     embedding: bytes
-    model_version: str = "text-embedding-004"
+    model_version: str = "gemini-embedding-001"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

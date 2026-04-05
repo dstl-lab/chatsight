@@ -8,7 +8,8 @@ from sqlalchemy import func, text
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache
+import json as json_mod
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
 from schemas import (
     CreateLabelRequest, UpdateLabelRequest, ApplyLabelRequest,
     SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
@@ -16,6 +17,7 @@ from schemas import (
     LabelDefinitionResponse, QueueItemResponse, SessionResponse,
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
     OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
+    DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
 )
 from sqlmodel import Session, select
 
@@ -987,6 +989,142 @@ def merge_labels(_req: MergeLabelRequest):
 @app.post("/api/labels/split")
 def split_label(_req: SplitLabelRequest):
     return {"ok": True}
+
+
+# ── Concept Induction ──────────────────────────────────────────────
+
+_discover_status: dict = {"running": False, "run_id": None, "error": None}
+
+
+def _run_discover():
+    """Background task: embed, cluster, and discover concepts."""
+    import uuid
+    from concept_service import discover_concepts
+    from database import engine as local_engine
+    global _discover_status
+
+    run_id = str(uuid.uuid4())[:8]
+    _discover_status = {"running": True, "run_id": run_id, "error": None}
+
+    try:
+        with Session(local_engine) as db:
+            # Get labeled (chatlog_id, message_index) pairs
+            labeled_keys = set()
+            for la in db.exec(select(LabelApplication)).all():
+                labeled_keys.add((la.chatlog_id, la.message_index))
+
+            # Get all messages from cache that are unlabeled
+            all_messages = []
+            for mc in db.exec(select(MessageCache)).all():
+                key = (mc.chatlog_id, mc.message_index)
+                if key not in labeled_keys:
+                    all_messages.append({
+                        "chatlog_id": mc.chatlog_id,
+                        "message_index": mc.message_index,
+                        "message_text": mc.message_text,
+                    })
+
+            if not all_messages:
+                _discover_status = {"running": False, "run_id": run_id, "error": "No unlabeled messages found"}
+                return
+
+            discover_concepts(all_messages, db)
+            _discover_status = {"running": False, "run_id": run_id, "error": None}
+
+    except Exception as e:
+        _discover_status = {"running": False, "run_id": _discover_status.get("run_id"), "error": str(e)}
+
+
+@app.post("/api/concepts/discover", response_model=DiscoverConceptsResponse)
+def start_discover():
+    if _discover_status["running"]:
+        raise HTTPException(status_code=409, detail="Concept discovery already in progress")
+    thread = threading.Thread(target=_run_discover, daemon=True)
+    thread.start()
+    return DiscoverConceptsResponse(run_id=_discover_status.get("run_id") or "starting", status="running")
+
+
+@app.get("/api/concepts/candidates", response_model=List[ConceptCandidateResponse])
+def get_candidates(db: Session = Depends(get_session)):
+    rows = db.exec(
+        select(ConceptCandidate).where(ConceptCandidate.status == "pending").order_by(ConceptCandidate.created_at)
+    ).all()
+    return [
+        ConceptCandidateResponse(
+            id=r.id,
+            name=r.name,
+            description=r.description,
+            example_messages=json_mod.loads(r.example_messages),
+            status=r.status,
+            source_run_id=r.source_run_id,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@app.put("/api/concepts/candidates/{candidate_id}")
+def resolve_candidate(candidate_id: int, req: ResolveCandidateRequest, db: Session = Depends(get_session)):
+    candidate = db.get(ConceptCandidate, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if req.action == "accept":
+        label_name = req.name if req.name else candidate.name
+        # Check for duplicate label name
+        existing = db.exec(
+            select(LabelDefinition).where(LabelDefinition.name == label_name)
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Label '{label_name}' already exists")
+
+        max_order = db.exec(select(func.max(LabelDefinition.sort_order))).one() or 0
+        label = LabelDefinition(
+            name=label_name,
+            description=candidate.description,
+            sort_order=max_order + 1,
+        )
+        db.add(label)
+        candidate.status = "accepted"
+        db.add(candidate)
+        db.commit()
+        db.refresh(label)
+
+        count = db.exec(
+            select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+        ).one()
+        return LabelDefinitionResponse(
+            id=label.id, name=label.name, description=label.description,
+            created_at=label.created_at, count=count,
+        )
+
+    elif req.action == "reject":
+        candidate.status = "rejected"
+        db.add(candidate)
+        db.commit()
+        return {"ok": True}
+
+    else:
+        raise HTTPException(status_code=400, detail="action must be 'accept' or 'reject'")
+
+
+@app.get("/api/concepts/embed-status")
+def get_embed_status(db: Session = Depends(get_session)):
+    from models import MessageEmbedding
+    cached = db.exec(select(func.count(MessageEmbedding.id))).one()
+
+    labeled_keys = set()
+    for la in db.exec(select(LabelApplication)).all():
+        labeled_keys.add((la.chatlog_id, la.message_index))
+    total_cached = db.exec(select(func.count(MessageCache.id))).one()
+    total_unlabeled = total_cached - len(labeled_keys)
+
+    return {
+        "cached": cached,
+        "total_unlabeled": max(total_unlabeled, 0),
+        "running": _discover_status["running"],
+        "error": _discover_status.get("error"),
+    }
 
 
 @app.get("/api/analysis/summary")
