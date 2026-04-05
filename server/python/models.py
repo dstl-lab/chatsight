@@ -1,6 +1,7 @@
 # server/python/models.py
 from datetime import datetime
 from typing import Optional
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -44,3 +45,25 @@ class MessageCache(SQLModel, table=True):
     message_text: str
     context_before: Optional[str] = None
     context_after: Optional[str] = None
+
+
+class MessageEmbedding(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("chatlog_id", "message_index", "model_version"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    embedding: bytes
+    model_version: str = "text-embedding-004"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConceptCandidate(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    description: str
+    example_messages: str  # JSON string
+    status: str = "pending"  # pending | accepted | rejected
+    source_run_id: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
