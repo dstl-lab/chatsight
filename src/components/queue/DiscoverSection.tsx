@@ -58,75 +58,77 @@ export default function DiscoverSection({
       )}
 
       {candidates.length > 0 && (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           {candidates.map(c => (
             <div
               key={c.id}
-              className="rounded bg-neutral-800/60 border border-neutral-700/50 p-2 text-xs"
+              className="rounded-md bg-neutral-800/60 border border-neutral-700/50 p-2.5 text-xs"
             >
-              <div className="flex items-center justify-between gap-1">
-                {renaming?.id === c.id ? (
-                  <input
-                    autoFocus
-                    className="flex-1 bg-neutral-900 border border-neutral-600 rounded px-1.5 py-0.5 text-xs text-neutral-100 outline-none focus:border-violet-500"
-                    value={renaming.value}
-                    onChange={e => setRenaming({ id: c.id, value: e.target.value })}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && renaming.value.trim()) {
-                        onAccept(c.id, renaming.value.trim())
-                        setRenaming(null)
-                      }
-                      if (e.key === 'Escape') setRenaming(null)
-                    }}
-                    onBlur={() => setRenaming(null)}
-                  />
-                ) : (
-                  <span
-                    className="font-medium text-amber-300 truncate cursor-pointer"
-                    onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                  >
-                    {c.name}
-                  </span>
-                )}
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <button
-                    onClick={() => onAccept(c.id)}
-                    className="p-0.5 rounded hover:bg-green-500/20 text-green-400"
-                    title="Accept"
-                  >
-                    ✓
-                  </button>
-                  <button
-                    onClick={() => setRenaming({ id: c.id, value: c.name })}
-                    className="p-0.5 rounded hover:bg-amber-500/20 text-amber-400"
-                    title="Rename & Accept"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    onClick={() => onReject(c.id)}
-                    className="p-0.5 rounded hover:bg-red-500/20 text-red-400"
-                    title="Reject"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
+              {/* Name — full width, wraps */}
+              {renaming?.id === c.id ? (
+                <input
+                  autoFocus
+                  className="w-full bg-neutral-900 border border-neutral-600 rounded px-2 py-1 text-xs text-neutral-100 outline-none focus:border-violet-500 mb-1.5"
+                  value={renaming.value}
+                  onChange={e => setRenaming({ id: c.id, value: e.target.value })}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && renaming.value.trim()) {
+                      onAccept(c.id, renaming.value.trim())
+                      setRenaming(null)
+                    }
+                    if (e.key === 'Escape') setRenaming(null)
+                  }}
+                  onBlur={() => setRenaming(null)}
+                />
+              ) : (
+                <p
+                  className="font-medium text-amber-300 leading-snug cursor-pointer mb-1.5"
+                  onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
+                >
+                  {c.name}
+                </p>
+              )}
 
-              {expandedId === c.id && (
-                <div className="mt-1.5 text-[11px] text-neutral-400">
-                  <p className="mb-1">{c.description}</p>
-                  {c.example_messages.length > 0 && (
-                    <div className="flex flex-col gap-0.5">
-                      {c.example_messages.map((ex, i) => (
-                        <p key={i} className="text-neutral-500 italic truncate">
-                          &ldquo;{ex.excerpt}&rdquo;
-                        </p>
-                      ))}
-                    </div>
-                  )}
+              {/* Description preview — always visible, 2 lines max */}
+              <p
+                className="text-[11px] text-neutral-500 leading-tight mb-2 line-clamp-2 cursor-pointer"
+                onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
+              >
+                {c.description}
+              </p>
+
+              {/* Expanded: examples */}
+              {expandedId === c.id && c.example_messages.length > 0 && (
+                <div className="flex flex-col gap-1 mb-2">
+                  {c.example_messages.map((ex, i) => (
+                    <p key={i} className="text-[10px] text-neutral-500 italic leading-tight line-clamp-2">
+                      &ldquo;{ex.excerpt}&rdquo;
+                    </p>
+                  ))}
                 </div>
               )}
+
+              {/* Action buttons — full width row at bottom */}
+              <div className="flex gap-1">
+                <button
+                  onClick={() => onAccept(c.id)}
+                  className="flex-1 py-1 rounded text-[11px] bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                >
+                  Accept
+                </button>
+                <button
+                  onClick={() => setRenaming({ id: c.id, value: c.name })}
+                  className="flex-1 py-1 rounded text-[11px] bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
+                >
+                  Rename
+                </button>
+                <button
+                  onClick={() => onReject(c.id)}
+                  className="flex-1 py-1 rounded text-[11px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                >
+                  Reject
+                </button>
+              </div>
             </div>
           ))}
 

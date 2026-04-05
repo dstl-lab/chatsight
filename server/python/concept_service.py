@@ -128,15 +128,18 @@ SUGGEST_CONFIG = types.GenerateContentConfig(
 
 def _build_discovery_prompt(
     samples_by_cluster: Dict[int, List[Dict[str, Any]]],
-    existing_labels: List[str],
+    existing_labels: List[Dict[str, str]],
     rejected_names: List[str],
 ) -> str:
     """Build the prompt for Gemini concept discovery."""
     parts = []
 
     parts.append("## Existing Labels (already in use — do NOT re-suggest these)")
-    for name in existing_labels:
-        parts.append(f"- {name}")
+    parts.append("These labels reflect the instructor's labeling style. Study their naming conventions,")
+    parts.append("granularity, and thematic focus. Your suggestions MUST match this style.\n")
+    for label in existing_labels:
+        desc = f" — {label['description']}" if label.get("description") else ""
+        parts.append(f"- **{label['name']}**{desc}")
 
     if rejected_names:
         parts.append("\n## Previously Rejected (do NOT suggest these again)")
@@ -155,9 +158,18 @@ def _build_discovery_prompt(
 
     parts.append(
         "## Task\n"
-        "Analyze these clusters and propose new label categories. Each category should:\n"
-        "- Have a short, descriptive name\n"
-        "- Be pedagogically meaningful (describes a learning behavior or interaction pattern)\n"
+        "Analyze these clusters and propose new label categories.\n\n"
+        "**Naming style:** Match the instructor's naming convention. Look at the existing labels —\n"
+        "if they use short lowercase phrases (e.g. 'code help', 'confused how to start'),\n"
+        "your names should follow the same format. Don't use title case or formal academic phrasing\n"
+        "unless the existing labels do.\n\n"
+        "**Thematic scope:** You are NOT limited to the same themes as existing labels.\n"
+        "If the existing labels focus on actions (e.g. 'code help', 'validation') but you notice\n"
+        "emotional, social, or metacognitive patterns in the clusters, propose those too.\n"
+        "New dimensions of student behavior are valuable — just use consistent naming style.\n\n"
+        "Each category should:\n"
+        "- Use the same naming style as existing labels\n"
+        "- Be pedagogically meaningful\n"
         "- Be distinct from existing labels\n"
         "- Reference specific message excerpts as evidence\n\n"
         "Call the `suggest_concepts` tool with your proposed categories."
@@ -204,7 +216,8 @@ def discover_concepts(
 
     # 4. Gather existing + rejected labels
     existing = [
-        ld.name for ld in db.exec(
+        {"name": ld.name, "description": ld.description or ""}
+        for ld in db.exec(
             select(LabelDefinition).where(LabelDefinition.archived_at == None)
         ).all()
     ]
