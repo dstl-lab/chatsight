@@ -7,6 +7,7 @@ import { MessageCard } from '../components/queue/MessageCard'
 import { ArchiveConfirmModal } from '../components/queue/ArchiveConfirmModal'
 import { ArchiveReviewBanner } from '../components/queue/ArchiveReviewBanner'
 import { ArchiveReviewSidebar } from '../components/queue/ArchiveReviewSidebar'
+import DiscoverModal from '../components/queue/DiscoverModal'
 
 interface UndoState {
   message: QueueItem
@@ -41,6 +42,7 @@ export function QueuePage() {
   } | null>(null)
   const [candidates, setCandidates] = useState<ConceptCandidate[]>([])
   const [discovering, setDiscovering] = useState(false)
+  const [discoverModalOpen, setDiscoverModalOpen] = useState(false)
   const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentMessage = queue[currentIdx] ?? null
@@ -268,6 +270,7 @@ export function QueuePage() {
       if (result.length > 0) {
         setCandidates(result)
         setDiscovering(false)
+        setDiscoverModalOpen(true)
         if (discoverPollRef.current) clearInterval(discoverPollRef.current)
         discoverPollRef.current = null
       } else if (!embedStatus.running) {
@@ -507,8 +510,7 @@ export function QueuePage() {
             onArchiveLabel={handleArchiveLabel}
             candidates={candidates}
             onDiscover={handleDiscover}
-            onAcceptCandidate={handleAcceptCandidate}
-            onRejectCandidate={handleRejectCandidate}
+            onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
             discovering={discovering}
           />
         )}
@@ -543,6 +545,17 @@ export function QueuePage() {
           onReviewAndRelabel={handleEnterReviewMode}
           onArchiveAnyway={handleArchiveAnyway}
           onCancel={() => setArchiveConfirm(null)}
+        />
+      )}
+      {discoverModalOpen && (
+        <DiscoverModal
+          candidates={candidates}
+          labels={labels}
+          onAccept={handleAcceptCandidate}
+          onReject={handleRejectCandidate}
+          onDiscover={handleDiscover}
+          onClose={() => setDiscoverModalOpen(false)}
+          discovering={discovering}
         />
       )}
     </div>

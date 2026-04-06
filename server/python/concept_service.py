@@ -178,6 +178,34 @@ def _build_discovery_prompt(
     return "\n".join(parts)
 
 
+def _deduplicate_concepts(
+    concepts: List[Dict[str, Any]], threshold: float = 0.85
+) -> List[Dict[str, Any]]:
+    """Remove near-duplicate concepts using embedding cosine similarity.
+
+    Greedy: iterate in order, keep a concept only if its max similarity
+    to all previously kept concepts is below threshold.
+    """
+    if len(concepts) <= 1:
+        return concepts
+
+    texts = [f"{c['name']}: {c['description']}" for c in concepts]
+    result = client.models.embed_content(model=EMBED_MODEL, contents=texts)
+    vectors = np.array([e.values for e in result.embeddings], dtype=np.float32)
+
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-9
+    normed = vectors / norms
+
+    kept_indices: List[int] = [0]
+    for i in range(1, len(concepts)):
+        kept_vecs = normed[kept_indices]
+        sims = kept_vecs @ normed[i]
+        if float(np.max(sims)) < threshold:
+            kept_indices.append(i)
+
+    return [concepts[i] for i in kept_indices]
+
+
 def discover_concepts(
     messages: List[Dict[str, Any]],
     db: Session,
@@ -243,10 +271,41 @@ def discover_concepts(
             concepts_raw = list(args.get("concepts", []))
             break
 
-    # 7. Save candidates
+    # 6b. Deduplicate similar concepts
+    concepts_raw = _deduplicate_concepts(concepts_raw)
+
+    # 7. Compute similarity to existing labels
+    label_vectors = None
+    if existing:
+        label_texts = [f"{ld['name']}: {ld['description']}" for ld in existing]
+        label_embed_result = client.models.embed_content(
+            model=EMBED_MODEL,
+            contents=label_texts,
+        )
+        label_vectors = np.array(
+            [e.values for e in label_embed_result.embeddings], dtype=np.float32
+        )
+
+    # 8. Save candidates with similarity
     run_id = str(uuid.uuid4())[:8]
     candidates: List[ConceptCandidate] = []
     for c in concepts_raw:
+        nearest_label: str | None = None
+        if label_vectors is not None and c.get("cluster_ids"):
+            cids = [int(ci) for ci in c["cluster_ids"] if int(ci) < k]
+            if cids:
+                concept_vec = np.mean(
+                    [kmeans.cluster_centers_[ci] for ci in cids], axis=0
+                )
+                concept_norm = concept_vec / (np.linalg.norm(concept_vec) + 1e-9)
+                label_norms = label_vectors / (
+                    np.linalg.norm(label_vectors, axis=1, keepdims=True) + 1e-9
+                )
+                similarities = label_norms @ concept_norm
+                best_idx = int(np.argmax(similarities))
+                if similarities[best_idx] > 0.75:
+                    nearest_label = existing[best_idx]["name"]
+
         example_data = [{"excerpt": e} for e in c.get("evidence", [])]
         candidate = ConceptCandidate(
             name=c["name"],
@@ -254,6 +313,7 @@ def discover_concepts(
             example_messages=json.dumps(example_data),
             status="pending",
             source_run_id=run_id,
+            similar_to=nearest_label,
         )
         db.add(candidate)
         candidates.append(candidate)

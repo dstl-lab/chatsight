@@ -66,4 +66,5 @@ class ConceptCandidate(SQLModel, table=True):
     example_messages: str  # JSON string
     status: str = "pending"  # pending | accepted | rejected
     source_run_id: str
+    similar_to: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)

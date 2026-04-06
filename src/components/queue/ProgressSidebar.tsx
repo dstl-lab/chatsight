@@ -34,8 +34,7 @@ interface Props {
   onArchiveLabel: (labelId: number) => void
   candidates: ConceptCandidate[]
   onDiscover: () => void
-  onAcceptCandidate: (id: number, name?: string) => Promise<void>
-  onRejectCandidate: (id: number) => Promise<void>
+  onOpenDiscoverModal: () => void
   discovering: boolean
 }
 
@@ -161,7 +160,7 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
-  onArchiveLabel, candidates, onDiscover, onAcceptCandidate, onRejectCandidate, discovering,
+  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -316,8 +315,7 @@ export function ProgressSidebar({
         aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
         labeledCount={stats?.labeled_count ?? 0}
         onDiscover={onDiscover}
-        onAccept={onAcceptCandidate}
-        onReject={onRejectCandidate}
+        onOpenModal={onOpenDiscoverModal}
         discovering={discovering}
       />
 

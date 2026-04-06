@@ -105,6 +105,7 @@ export interface ConceptCandidate {
   example_messages: { excerpt: string; chatlog_id?: number; message_index?: number }[]
   status: 'pending' | 'accepted' | 'rejected'
   source_run_id: string
+  similar_to: string | null
   created_at: string
 }
 

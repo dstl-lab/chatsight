@@ -138,6 +138,7 @@ class ConceptCandidateResponse(BaseModel):
     example_messages: List[dict]  # parsed from JSON
     status: str
     source_run_id: str
+    similar_to: Optional[str] = None
     created_at: datetime
 
 

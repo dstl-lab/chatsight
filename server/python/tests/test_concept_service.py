@@ -89,3 +89,29 @@ def test_discover_concepts_returns_candidates(mock_client, session):
     # Verify saved to DB
     saved = session.exec(select(ConceptCandidate)).all()
     assert len(saved) == 1
+    # similar_to field should exist (value depends on random embeddings vs threshold)
+    assert hasattr(candidates[0], "similar_to")
+
+
+@patch("concept_service.client")
+def test_deduplicate_concepts_filters_similar(mock_client):
+    from concept_service import _deduplicate_concepts
+
+    # Mock embeddings: first two very similar, third distinct
+    mock_result = MagicMock()
+    v1 = np.ones(3072, dtype=float)
+    v2 = np.ones(3072, dtype=float) * 0.99 + np.random.RandomState(0).rand(3072) * 0.01
+    v3 = np.random.RandomState(42).randn(3072).astype(float)
+    mock_result.embeddings = [MagicMock(values=list(v)) for v in [v1, v2, v3]]
+    mock_client.models.embed_content.return_value = mock_result
+
+    concepts = [
+        {"name": "code review", "description": "Student asks for code review"},
+        {"name": "code check", "description": "Student asks to check their code"},
+        {"name": "frustrated", "description": "Student expresses frustration"},
+    ]
+    result = _deduplicate_concepts(concepts, threshold=0.85)
+
+    assert len(result) == 2
+    assert result[0]["name"] == "code review"
+    assert result[1]["name"] == "frustrated"

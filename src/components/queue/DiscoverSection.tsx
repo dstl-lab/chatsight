@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { ConceptCandidate } from '../../types'
 
 interface Props {
@@ -6,8 +5,7 @@ interface Props {
   aiUnlocked: boolean
   labeledCount: number
   onDiscover: () => void
-  onAccept: (id: number, name?: string) => Promise<void>
-  onReject: (id: number) => Promise<void>
+  onOpenModal: () => void
   discovering: boolean
 }
 
@@ -16,14 +14,9 @@ export default function DiscoverSection({
   aiUnlocked,
   labeledCount,
   onDiscover,
-  onAccept,
-  onReject,
+  onOpenModal,
   discovering,
 }: Props) {
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [renaming, setRenaming] = useState<{ id: number; value: string } | null>(null)
-
-  // Nudge thresholds
   const nudgeThresholds = [30, 50, 80]
   const showNudge = candidates.length === 0 && nudgeThresholds.some(t => labeledCount >= t && labeledCount < t + 5)
 
@@ -33,7 +26,7 @@ export default function DiscoverSection({
     <div className="mb-3">
       <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">Discover</p>
 
-      {candidates.length === 0 && (
+      {candidates.length === 0 ? (
         <button
           onClick={onDiscover}
           disabled={discovering}
@@ -55,91 +48,13 @@ export default function DiscoverSection({
             </>
           )}
         </button>
-      )}
-
-      {candidates.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {candidates.map(c => (
-            <div
-              key={c.id}
-              className="rounded-md bg-neutral-800/60 border border-neutral-700/50 p-2.5 text-xs"
-            >
-              {/* Name — full width, wraps */}
-              {renaming?.id === c.id ? (
-                <input
-                  autoFocus
-                  className="w-full bg-neutral-900 border border-neutral-600 rounded px-2 py-1 text-xs text-neutral-100 outline-none focus:border-violet-500 mb-1.5"
-                  value={renaming.value}
-                  onChange={e => setRenaming({ id: c.id, value: e.target.value })}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && renaming.value.trim()) {
-                      onAccept(c.id, renaming.value.trim())
-                      setRenaming(null)
-                    }
-                    if (e.key === 'Escape') setRenaming(null)
-                  }}
-                  onBlur={() => setRenaming(null)}
-                />
-              ) : (
-                <p
-                  className="font-medium text-amber-300 leading-snug cursor-pointer mb-1.5"
-                  onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-                >
-                  {c.name}
-                </p>
-              )}
-
-              {/* Description preview — always visible, 2 lines max */}
-              <p
-                className="text-[11px] text-neutral-500 leading-tight mb-2 line-clamp-2 cursor-pointer"
-                onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
-              >
-                {c.description}
-              </p>
-
-              {/* Expanded: examples */}
-              {expandedId === c.id && c.example_messages.length > 0 && (
-                <div className="flex flex-col gap-1 mb-2">
-                  {c.example_messages.map((ex, i) => (
-                    <p key={i} className="text-[10px] text-neutral-500 italic leading-tight line-clamp-2">
-                      &ldquo;{ex.excerpt}&rdquo;
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              {/* Action buttons — full width row at bottom */}
-              <div className="flex gap-1">
-                <button
-                  onClick={() => onAccept(c.id)}
-                  className="flex-1 py-1 rounded text-[11px] bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={() => setRenaming({ id: c.id, value: c.name })}
-                  className="flex-1 py-1 rounded text-[11px] bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors"
-                >
-                  Rename
-                </button>
-                <button
-                  onClick={() => onReject(c.id)}
-                  className="flex-1 py-1 rounded text-[11px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <button
-            onClick={onDiscover}
-            disabled={discovering}
-            className="text-[10px] text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
-          >
-            {discovering ? 'Discovering...' : '↻ Discover more'}
-          </button>
-        </div>
+      ) : (
+        <button
+          onClick={onOpenModal}
+          className="w-full text-xs py-1.5 px-2 rounded border border-violet-500/50 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition-colors"
+        >
+          ✦ {candidates.length} suggestion{candidates.length !== 1 ? 's' : ''}
+        </button>
       )}
     </div>
   )

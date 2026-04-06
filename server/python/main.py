@@ -1057,6 +1057,7 @@ def get_candidates(db: Session = Depends(get_session)):
             example_messages=json_mod.loads(r.example_messages),
             status=r.status,
             source_run_id=r.source_run_id,
+            similar_to=r.similar_to,
             created_at=r.created_at,
         )
         for r in rows
