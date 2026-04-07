@@ -3,6 +3,7 @@ import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
+  ConceptCandidate, EmbedStatus,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -127,4 +128,21 @@ export const api = {
   archiveLabel: (labelId: number): Promise<ArchiveResponse> =>
     USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
              : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
+
+  // ── Concept Induction ──────────────────────────────────────────
+  discoverConcepts: (): Promise<{ run_id: string; status: string }> =>
+    USE_MOCK ? Promise.resolve({ run_id: 'mock-run', status: 'running' })
+             : req('/api/concepts/discover', { method: 'POST', ...json({}) }),
+
+  getCandidates: (): Promise<ConceptCandidate[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/concepts/candidates'),
+
+  resolveCandidate: (id: number, action: 'accept' | 'reject', name?: string): Promise<LabelDefinition | { ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/concepts/candidates/${id}`, { method: 'PUT', ...json({ action, name }) }),
+
+  getEmbedStatus: (): Promise<EmbedStatus> =>
+    USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
+             : req('/api/concepts/embed-status'),
 }

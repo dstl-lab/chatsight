@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
 import { ArchiveConfirmModal } from '../components/queue/ArchiveConfirmModal'
 import { ArchiveReviewBanner } from '../components/queue/ArchiveReviewBanner'
 import { ArchiveReviewSidebar } from '../components/queue/ArchiveReviewSidebar'
+import DiscoverModal from '../components/queue/DiscoverModal'
 
 interface UndoState {
   message: QueueItem
@@ -39,6 +40,10 @@ export function QueuePage() {
     orphanedCount: number
     orphanedMessages: OrphanedMessage[]
   } | null>(null)
+  const [candidates, setCandidates] = useState<ConceptCandidate[]>([])
+  const [discovering, setDiscovering] = useState(false)
+  const [discoverModalOpen, setDiscoverModalOpen] = useState(false)
+  const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const currentMessage = queue[currentIdx] ?? null
   const displayedMessage = reviewTarget ?? currentMessage
@@ -59,18 +64,26 @@ export function QueuePage() {
       api.getQueueStats(),
       api.getQueuePosition(),
       api.getRecentHistory(5),
-    ]).then(([sess, lbls, q, st, pos, hist]) => {
+      api.getCandidates(),
+    ]).then(([sess, lbls, q, st, pos, hist, cands]) => {
       setSession(sess)
       setLabels(lbls)
       setQueue(q)
       setStats(st)
       setRemaining(pos.total_remaining)
       setHistory(hist)
+      setCandidates(cands)
       setLoading(false)
     }).catch(err => {
       console.error('Failed to load queue data:', err)
       setLoading(false)
     })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (discoverPollRef.current) clearInterval(discoverPollRef.current)
+    }
   }, [])
 
   // Enter review mode from ?review= query param (e.g., from /history page)
@@ -240,8 +253,44 @@ export function QueuePage() {
         // Refresh stats and labels
         api.getQueueStats().then(setStats)
         api.getLabels().then(setLabels)
+        // Auto-trigger concept discovery if unlabeled messages remain
+        api.getEmbedStatus().then(embedStatus => {
+          if (embedStatus.total_unlabeled > 0) handleDiscover()
+        })
       }
     }, 2000)
+  }
+
+  const handleDiscover = async () => {
+    setDiscovering(true)
+    await api.discoverConcepts()
+    discoverPollRef.current = setInterval(async () => {
+      const result = await api.getCandidates()
+      const embedStatus = await api.getEmbedStatus()
+      if (result.length > 0) {
+        setCandidates(result)
+        setDiscovering(false)
+        setDiscoverModalOpen(true)
+        if (discoverPollRef.current) clearInterval(discoverPollRef.current)
+        discoverPollRef.current = null
+      } else if (!embedStatus.running) {
+        setDiscovering(false)
+        if (discoverPollRef.current) clearInterval(discoverPollRef.current)
+        discoverPollRef.current = null
+      }
+    }, 3000)
+  }
+
+  const handleAcceptCandidate = async (id: number, name?: string) => {
+    await api.resolveCandidate(id, 'accept', name)
+    setCandidates(prev => prev.filter(c => c.id !== id))
+    const updated = await api.getLabels()
+    setLabels(updated)
+  }
+
+  const handleRejectCandidate = async (id: number) => {
+    await api.resolveCandidate(id, 'reject')
+    setCandidates(prev => prev.filter(c => c.id !== id))
   }
 
   const handleReorderLabels = useCallback(async (labelIds: number[]) => {
@@ -459,6 +508,10 @@ export function QueuePage() {
             reviewingKey={reviewingKey}
             onReorderLabels={handleReorderLabels}
             onArchiveLabel={handleArchiveLabel}
+            candidates={candidates}
+            onDiscover={handleDiscover}
+            onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
+            discovering={discovering}
           />
         )}
         <div className="flex-1 flex flex-col min-h-0">
@@ -492,6 +545,17 @@ export function QueuePage() {
           onReviewAndRelabel={handleEnterReviewMode}
           onArchiveAnyway={handleArchiveAnyway}
           onCancel={() => setArchiveConfirm(null)}
+        />
+      )}
+      {discoverModalOpen && (
+        <DiscoverModal
+          candidates={candidates}
+          labels={labels}
+          onAccept={handleAcceptCandidate}
+          onReject={handleRejectCandidate}
+          onDiscover={handleDiscover}
+          onClose={() => setDiscoverModalOpen(false)}
+          discovering={discovering}
         />
       )}
     </div>

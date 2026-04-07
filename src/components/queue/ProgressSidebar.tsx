@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem } from '../../types'
+import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 import { RecentHistory } from './RecentHistory'
 import { LabelContextMenu } from './LabelContextMenu'
+import DiscoverSection from './DiscoverSection'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -31,6 +32,10 @@ interface Props {
   reviewingKey: string | null
   onReorderLabels: (labelIds: number[]) => void
   onArchiveLabel: (labelId: number) => void
+  candidates: ConceptCandidate[]
+  onDiscover: () => void
+  onOpenDiscoverModal: () => void
+  discovering: boolean
 }
 
 interface SortableLabelItemProps {
@@ -155,7 +160,7 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
-  onArchiveLabel,
+  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -304,6 +309,15 @@ export function ProgressSidebar({
           )}
         </div>
       </div>
+
+      <DiscoverSection
+        candidates={candidates}
+        aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
+        labeledCount={stats?.labeled_count ?? 0}
+        onDiscover={onDiscover}
+        onOpenModal={onOpenDiscoverModal}
+        discovering={discovering}
+      />
 
       <div className="flex-1 min-h-0 flex flex-col">
         <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labels</p>

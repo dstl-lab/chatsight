@@ -122,3 +122,32 @@ class ChatlogResponse(BaseModel):
     filename: str
     content: str
     created_at: datetime
+
+
+# ── Concept Induction ──────────────────────────────────────────────
+
+class DiscoverConceptsResponse(BaseModel):
+    run_id: str
+    status: str  # "running"
+
+
+class ConceptCandidateResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    example_messages: List[dict]  # parsed from JSON
+    status: str
+    source_run_id: str
+    similar_to: Optional[str] = None
+    created_at: datetime
+
+
+class ResolveCandidateRequest(BaseModel):
+    action: str  # "accept" | "reject"
+    name: Optional[str] = None  # rename on accept
+
+
+class EmbedStatusResponse(BaseModel):
+    cached: int
+    total_unlabeled: int
+    running: bool
