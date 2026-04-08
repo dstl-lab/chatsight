@@ -43,6 +43,10 @@ class SplitLabelRequest(BaseModel):
     name_b: str
 
 
+class ReorderLabelsRequest(BaseModel):
+    label_ids: List[int]
+
+
 class AdvanceRequest(BaseModel):
     chatlog_id: int
     message_index: int
@@ -91,6 +95,22 @@ class DeleteLabelResponse(BaseModel):
     deleted_applications: Optional[int] = None
 
 
+class OrphanedMessageItem(BaseModel):
+    chatlog_id: int
+    message_index: int
+    preview_text: str
+
+
+class OrphanedMessagesResponse(BaseModel):
+    messages: list[OrphanedMessageItem]
+    count: int
+
+
+class ArchiveResponse(BaseModel):
+    archived_at: datetime
+    messages_returned_to_queue: int
+
+
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────
 
 class ChatlogSummary(BaseModel):
@@ -106,3 +126,32 @@ class ChatlogResponse(BaseModel):
     filename: str
     content: str
     created_at: datetime
+
+
+# ── Concept Induction ──────────────────────────────────────────────
+
+class DiscoverConceptsResponse(BaseModel):
+    run_id: str
+    status: str  # "running"
+
+
+class ConceptCandidateResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    example_messages: List[dict]  # parsed from JSON
+    status: str
+    source_run_id: str
+    similar_to: Optional[str] = None
+    created_at: datetime
+
+
+class ResolveCandidateRequest(BaseModel):
+    action: str  # "accept" | "reject"
+    name: Optional[str] = None  # rename on accept
+
+
+class EmbedStatusResponse(BaseModel):
+    cached: int
+    total_unlabeled: int
+    running: bool

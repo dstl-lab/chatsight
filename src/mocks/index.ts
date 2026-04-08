@@ -1,5 +1,5 @@
 // src/mocks/index.ts
-import type { LabelDefinition, QueueItem, LabelingSession, SuggestResponse } from '../types'
+import type { LabelDefinition, QueueItem, LabelingSession, SuggestResponse, HistoryItem } from '../types'
 
 export const mockApi = {
   queue: [
@@ -37,4 +37,42 @@ export const mockApi = {
     evidence: "explain what a DataFrame is",
     rationale: "Student asks for a definition of a new concept, not debugging help.",
   } satisfies SuggestResponse,
+
+  queuePosition: { position: 15, total_remaining: 85 },
+
+  history: [
+    {
+      chatlog_id: 1, message_index: 0,
+      message_text: "Can you explain what a DataFrame is and how it's different from a regular Python list?",
+      context_before: "You can think of it like a spreadsheet with rows and columns...",
+      context_after: "Great question! The key difference is that DataFrames are optimized for...",
+      labels: ["Concept Question"],
+      status: "labeled",
+      applied_by: "human",
+      confidence: null,
+      processed_at: "2026-03-28T10:05:00",
+    },
+    {
+      chatlog_id: 1, message_index: 2,
+      message_text: "How do I filter rows where the grade column is above 90?",
+      context_before: "You can use boolean indexing to filter DataFrames...",
+      context_after: "Exactly. You can also use df.query('grade > 90') for the same result.",
+      labels: ["Debug Help"],
+      status: "labeled",
+      applied_by: "ai",
+      confidence: 0.72,
+      processed_at: "2026-03-28T10:10:00",
+    },
+    {
+      chatlog_id: 2, message_index: 0,
+      message_text: "Thanks that makes sense now",
+      context_before: null,
+      context_after: null,
+      labels: [],
+      status: "skipped",
+      applied_by: null,
+      confidence: null,
+      processed_at: "2026-03-28T10:12:00",
+    },
+  ] satisfies HistoryItem[],
 }

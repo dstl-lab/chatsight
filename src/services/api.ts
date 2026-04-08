@@ -2,6 +2,8 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
+  ConceptCandidate, EmbedStatus,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -82,4 +84,65 @@ export const api = {
   getAutolabelStatus: (): Promise<{ running: boolean; processed: number; total: number; error: string | null }> =>
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
+
+  getQueuePosition: (): Promise<{ position: number; total_remaining: number }> =>
+    USE_MOCK ? Promise.resolve(mockApi.queuePosition)
+             : req('/api/queue/position'),
+
+  getRecentHistory: (limit = 20): Promise<HistoryItem[]> =>
+    USE_MOCK ? Promise.resolve(mockApi.history)
+             : req<{ items: HistoryItem[]; total: number }>(`/api/queue/history?limit=${limit}`).then(r => r.items),
+
+  unskipMessage: (chatlog_id: number, message_index: number): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req(`/api/queue/skip?chatlog_id=${chatlog_id}&message_index=${message_index}`, { method: 'DELETE' }),
+
+  reorderLabels: (labelIds: number[]): Promise<void> =>
+    USE_MOCK ? Promise.resolve()
+             : req('/api/labels/reorder', { method: 'PUT', ...json({ label_ids: labelIds }) }),
+
+  getHistory: (params: {
+    limit?: number; offset?: number;
+    filter?: 'all' | 'human' | 'ai' | 'skipped';
+    sort_by?: 'processed_at' | 'confidence';
+    search?: string;
+  } = {}): Promise<{ items: HistoryItem[]; total: number }> => {
+    if (USE_MOCK) return Promise.resolve({ items: mockApi.history, total: mockApi.history.length })
+    const q = new URLSearchParams()
+    if (params.limit) q.set('limit', String(params.limit))
+    if (params.offset) q.set('offset', String(params.offset))
+    if (params.filter && params.filter !== 'all') q.set('filter', params.filter)
+    if (params.sort_by) q.set('sort_by', params.sort_by)
+    if (params.search) q.set('search', params.search)
+    return req(`/api/queue/history?${q.toString()}`)
+  },
+
+  getMessage: (chatlog_id: number, message_index: number): Promise<QueueItem> =>
+    USE_MOCK ? Promise.resolve(mockApi.queue[0])
+             : req(`/api/queue/message?chatlog_id=${chatlog_id}&message_index=${message_index}`),
+
+  getOrphanedMessages: (labelId: number): Promise<OrphanedMessagesResponse> =>
+    USE_MOCK ? Promise.resolve({ messages: [], count: 0 })
+             : req(`/api/labels/${labelId}/orphaned-messages`),
+
+  archiveLabel: (labelId: number): Promise<ArchiveResponse> =>
+    USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
+             : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
+
+  // ── Concept Induction ──────────────────────────────────────────
+  discoverConcepts: (): Promise<{ run_id: string; status: string }> =>
+    USE_MOCK ? Promise.resolve({ run_id: 'mock-run', status: 'running' })
+             : req('/api/concepts/discover', { method: 'POST', ...json({}) }),
+
+  getCandidates: (): Promise<ConceptCandidate[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/concepts/candidates'),
+
+  resolveCandidate: (id: number, action: 'accept' | 'reject', name?: string): Promise<LabelDefinition | { ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/concepts/candidates/${id}`, { method: 'PUT', ...json({ action, name }) }),
+
+  getEmbedStatus: (): Promise<EmbedStatus> =>
+    USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
+             : req('/api/concepts/embed-status'),
 }

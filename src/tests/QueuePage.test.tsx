@@ -36,6 +36,14 @@ vi.mock('../services/api', () => ({
     undoLabels: vi.fn().mockResolvedValue({ ok: true, removed_count: 1 }),
     createLabel: vi.fn().mockResolvedValue({ id: 99, name: 'New', description: null, created_at: '', count: 0 }),
     updateLabel: vi.fn().mockResolvedValue({ id: 1, name: 'Concept Question', description: 'Updated', created_at: '', count: 5 }),
+    suggestLabel: vi.fn().mockResolvedValue({ label_name: '', evidence: '', rationale: '' }),
+    startAutolabel: vi.fn(),
+    getAutolabelStatus: vi.fn().mockResolvedValue({ running: false, processed: 0, total: 0, error: null }),
+    getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 86 }),
+    getRecentHistory: vi.fn().mockResolvedValue([]),
+    unskipMessage: vi.fn().mockResolvedValue(undefined),
+    reorderLabels: vi.fn().mockResolvedValue(undefined),
+    getMessage: vi.fn().mockResolvedValue({ chatlog_id: 1, message_index: 0, message_text: 'Test', context_before: null, context_after: null }),
   },
 }))
 
@@ -83,4 +91,12 @@ test('skips message when skip clicked', async () => {
   await waitFor(() => screen.getByText("Can you explain what a DataFrame is?"))
   fireEvent.click(screen.getByText(/^skip$/i))
   expect(apiModule.api.skipMessage).toHaveBeenCalled()
+})
+
+test('shows loading skeleton while data is loading', () => {
+  // Make getQueue hang so loading state persists
+  vi.mocked(apiModule.api.getQueue).mockReturnValueOnce(new Promise(() => {}))
+  render(<MemoryRouter><QueuePage /></MemoryRouter>)
+  expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+  expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument()
 })

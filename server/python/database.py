@@ -6,10 +6,40 @@ from sqlalchemy import create_engine as sa_create_engine
 load_dotenv()
 
 DATABASE_URL = "sqlite:///./chatsight.db"
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=False)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
+    # Migrate: add sort_order column if missing (added in task4 branch)
+    with engine.connect() as conn:
+        from sqlalchemy import text, inspect
+        cols = [c["name"] for c in inspect(conn).get_columns("labeldefinition")]
+        if "sort_order" not in cols:
+            conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+        # Migrate: add confidence column if missing
+        cols_la = [c["name"] for c in inspect(conn).get_columns("labelapplication")]
+        if "confidence" not in cols_la:
+            conn.execute(text("ALTER TABLE labelapplication ADD COLUMN confidence FLOAT DEFAULT NULL"))
+            conn.commit()
+        # Add indexes for fast lookups on (chatlog_id, message_index)
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_labelapp_chatlog_msg "
+            "ON labelapplication(chatlog_id, message_index)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_skipped_chatlog_msg "
+            "ON skippedmessage(chatlog_id, message_index)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_labelapp_label_id "
+            "ON labelapplication(label_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_msgcache_chatlog_msg "
+            "ON messagecache(chatlog_id, message_index)"
+        ))
+        conn.commit()
 
 def get_session():
     with Session(engine) as session:
