@@ -53,7 +53,21 @@ class UndoRequest(BaseModel):
     message_index: int
 
 
+class SplitAutoLabelRequest(BaseModel):
+    label_id: int
+    name_a: str
+    name_b: str
+    assignments: dict[str, str]  # e.g., "chatlog_id:message_index" -> "name_a" or "name_b"
+
+
 # ── Response shapes ───────────────────────────────────────────────────────────
+
+class LabelExampleResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    label_id: int
+    applied_by: str
 
 class LabelDefinitionResponse(BaseModel):
     id: int
