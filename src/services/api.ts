@@ -4,6 +4,7 @@ import type {
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
   ConceptCandidate, EmbedStatus,
+  LabelExample, SplitAutoLabelRequest
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -85,6 +86,7 @@ export const api = {
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
 
+<<<<<<< HEAD
   getQueuePosition: (): Promise<{ position: number; total_remaining: number }> =>
     USE_MOCK ? Promise.resolve(mockApi.queuePosition)
              : req('/api/queue/position'),
@@ -145,4 +147,16 @@ export const api = {
   getEmbedStatus: (): Promise<EmbedStatus> =>
     USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
              : req('/api/concepts/embed-status'),
+
+  getLabelExamples: (labelId: number, limit = 50): Promise<LabelExample[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req(`/api/labels/${labelId}/examples?limit=${limit}`),
+
+  mergeLabels: (sourceLabelId: number, targetLabelId: number): Promise<LabelDefinition> =>
+    USE_MOCK ? Promise.resolve(mockApi.labels[0])
+             : req('/api/labels/merge', { method: 'POST', ...json({ source_label_id: sourceLabelId, target_label_id: targetLabelId }) }),
+
+  splitLabelAutoLabel: (body: SplitAutoLabelRequest): Promise<LabelDefinition[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/labels/split-autolabel', { method: 'POST', ...json(body) }),
 }
