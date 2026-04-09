@@ -2,6 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+  LabelExample, SplitAutoLabelRequest
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -82,4 +83,16 @@ export const api = {
   getAutolabelStatus: (): Promise<{ running: boolean; processed: number; total: number; error: string | null }> =>
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
+
+  getLabelExamples: (labelId: number, limit = 50): Promise<LabelExample[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req(`/api/labels/${labelId}/examples?limit=${limit}`),
+
+  mergeLabels: (sourceLabelId: number, targetLabelId: number): Promise<LabelDefinition> =>
+    USE_MOCK ? Promise.resolve(mockApi.labels[0])
+             : req('/api/labels/merge', { method: 'POST', ...json({ source_label_id: sourceLabelId, target_label_id: targetLabelId }) }),
+
+  splitLabelAutoLabel: (body: SplitAutoLabelRequest): Promise<LabelDefinition[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/labels/split-autolabel', { method: 'POST', ...json(body) }),
 }

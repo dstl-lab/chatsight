@@ -917,28 +917,39 @@ def split_label_autolabel(
     if not original_label:
         raise HTTPException(status_code=404, detail="Label not found")
 
-    # Create new labels
-    new_label_a = LabelDefinition(
-        name=req.name_a, description=f"Sub-category of {original_label.name}"
-    )
-    new_label_b = LabelDefinition(
-        name=req.name_b, description=f"Sub-category of {original_label.name}"
-    )
-    db.add(new_label_a)
-    db.add(new_label_b)
-    db.commit()
-    db.refresh(new_label_a)
-    db.refresh(new_label_b)
+    # Check for existing labels or create new ones
+    def get_or_create_label(name: str):
+        existing = db.exec(select(LabelDefinition).where(LabelDefinition.name == name)).first()
+        if existing:
+            return existing
+        new_lbl = LabelDefinition(name=name, description=f"Sub-category of {original_label.name}")
+        db.add(new_lbl)
+        db.commit()
+        db.refresh(new_lbl)
+        return new_lbl
+
+    label_a = get_or_create_label(req.name_a)
+    label_b = get_or_create_label(req.name_b)
 
     # Convert assignments (which are human-labeled)
-    # req.assignments is { "cid:midx": "name_a" | "name_b" }
+    # req.assignments is { "cid:midx": "name_a" | "name_b" | "some_other_label" }
     human_examples = []
     processed_keys = set()
     with ext_engine.connect() as conn:
         for key, target_name in req.assignments.items():
             cid_str, midx_str = key.split(":")
             cid, midx = int(cid_str), int(midx_str)
-            target_id = new_label_a.id if target_name == req.name_a else new_label_b.id
+            
+            # Find the actual label ID for the assigned name
+            target_label = db.exec(select(LabelDefinition).where(LabelDefinition.name == target_name)).first()
+            if not target_label:
+                # If it doesn't exist (e.g. user typed something new in the UI), create it
+                target_label = LabelDefinition(name=target_name)
+                db.add(target_label)
+                db.commit()
+                db.refresh(target_label)
+            
+            target_id = target_label.id
 
             # Save human application
             db.add(
@@ -951,26 +962,28 @@ def split_label_autolabel(
             )
             processed_keys.add((cid, midx))
 
-            # Fetch text for example
-            row = conn.execute(
-                text("""
-                WITH student AS (
-                    SELECT payload->>'question' AS msg,
-                           (ROW_NUMBER() OVER (
-                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                           )) - 1 AS idx
-                    FROM events
-                    WHERE event_type = 'tutor_query'
-                      AND payload->>'conversation_id' = (
-                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                      )
-                )
-                SELECT msg FROM student WHERE idx = :midx
-                """),
-                {"cid": cid, "midx": midx},
-            ).first()
-            if row and row[0]:
-                human_examples.append({"text": row[0], "label_name": target_name})
+            # Fetch text for example - ONLY if it's one of the two split labels
+            # We only use these to "train" the AI for the remaining split
+            if target_name in [req.name_a, req.name_b]:
+                row = conn.execute(
+                    text("""
+                    WITH student AS (
+                        SELECT payload->>'question' AS msg,
+                               (ROW_NUMBER() OVER (
+                                   PARTITION BY payload->>'conversation_id' ORDER BY id
+                               )) - 1 AS idx
+                        FROM events
+                        WHERE event_type = 'tutor_query'
+                          AND payload->>'conversation_id' = (
+                              SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                          )
+                    )
+                    SELECT msg FROM student WHERE idx = :midx
+                    """),
+                    {"cid": cid, "midx": midx},
+                ).first()
+                if row and row[0]:
+                    human_examples.append({"text": row[0], "label_name": target_name})
 
     # Find remaining messages of original label
     remaining_apps = db.exec(
@@ -1012,35 +1025,39 @@ def split_label_autolabel(
     # Delete original label and its applications
     for app_ in remaining_apps:
         db.delete(app_)
-    db.delete(original_label)
+    
+    # Only delete original if it's not one of the target labels (edge case)
+    if original_label.id not in [label_a.id, label_b.id]:
+        db.delete(original_label)
+    
     db.commit()
 
     # Start background task
     background_tasks.add_task(
         _run_split_autolabel,
         original_label.name,
-        new_label_a.id,
-        new_label_a.name,
-        new_label_b.id,
-        new_label_b.name,
+        label_a.id,
+        label_a.name,
+        label_b.id,
+        label_b.name,
         human_examples,
         remaining_messages,
     )
 
     return [
         LabelDefinitionResponse(
-            id=new_label_a.id,
-            name=new_label_a.name,
-            description=new_label_a.description,
-            created_at=new_label_a.created_at,
-            count=len([e for e in human_examples if e["label_name"] == req.name_a]),
+            id=label_a.id,
+            name=label_a.name,
+            description=label_a.description,
+            created_at=label_a.created_at,
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_a.id)).one(),
         ),
         LabelDefinitionResponse(
-            id=new_label_b.id,
-            name=new_label_b.name,
-            description=new_label_b.description,
-            created_at=new_label_b.created_at,
-            count=len([e for e in human_examples if e["label_name"] == req.name_b]),
+            id=label_b.id,
+            name=label_b.name,
+            description=label_b.description,
+            created_at=label_b.created_at,
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_b.id)).one(),
         ),
     ]
 
