@@ -2,7 +2,9 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import type { QueueItem, SuggestResponse } from '../../types'
+import { MessageSquare } from 'lucide-react'
+import type { QueueItem, SuggestResponse, LabelDefinition, ConversationMessage } from '../../types'
+import { ConversationPanel } from './ConversationPanel'
 
 function stripMarkdown(md: string): string {
   return md
@@ -40,16 +42,39 @@ interface Props {
   item: QueueItem
   aiUnlocked: boolean
   suggestion: SuggestResponse | null
+  suggestionLoading?: boolean
   onSkip: () => void
   onNext: () => void
   hasLabelsApplied: boolean
   isReviewing?: boolean
+  labels?: LabelDefinition[]
+  onToggleLabel?: (labelId: number) => void
+  conversationMessages?: ConversationMessage[]
 }
 
-export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasLabelsApplied, isReviewing }: Props) {
+export function MessageCard({
+  item,
+  aiUnlocked,
+  suggestion,
+  suggestionLoading,
+  onSkip,
+  onNext,
+  hasLabelsApplied,
+  isReviewing,
+  labels,
+  onToggleLabel,
+  conversationMessages,
+}: Props) {
   const [showRationale, setShowRationale] = useState(false)
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [afterExpanded, setAfterExpanded] = useState(false)
+  const [showConversation, setShowConversation] = useState(false)
+
+  function handleApplySuggestion() {
+    if (!suggestion || !labels || !onToggleLabel) return
+    const match = labels.find(l => l.name === suggestion.label_name)
+    if (match) onToggleLabel(match.id)
+  }
 
   return (
     <div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
@@ -82,19 +107,44 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
       )}
 
       <div className="relative bg-[#0d1f33] border border-blue-700/60 rounded-lg p-4">
-        <span className="text-[10px] uppercase tracking-wide text-blue-400 block mb-2">
-          Student · message {item.message_index}
-        </span>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] uppercase tracking-wide text-blue-400">
+            Student · message {item.message_index}
+          </span>
+          {conversationMessages && conversationMessages.length > 0 && (
+            <button
+              onClick={() => setShowConversation(v => !v)}
+              className="flex items-center gap-1 text-[9px] text-neutral-500 hover:text-neutral-300 transition-colors"
+              title="View full conversation"
+            >
+              <MessageSquare size={11} />
+              <span>View full conversation</span>
+            </button>
+          )}
+        </div>
         <p className="text-sm text-neutral-100 leading-relaxed">{item.message_text}</p>
 
         <div className="absolute bottom-3 right-3">
-          {aiUnlocked && suggestion ? (
-            <button
-              onClick={() => setShowRationale(v => !v)}
-              className="text-[9px] text-neutral-500 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 hover:text-neutral-300 transition-colors"
-            >
-              ✦ {suggestion.label_name} · why?
-            </button>
+          {aiUnlocked && suggestionLoading ? (
+            <span className="text-[9px] text-neutral-500 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 animate-pulse">
+              ✦ ...
+            </span>
+          ) : aiUnlocked && suggestion ? (
+            <span className="inline-flex items-center gap-0 text-[9px] bg-neutral-900 border border-neutral-700 rounded overflow-hidden">
+              <button
+                onClick={handleApplySuggestion}
+                className="text-neutral-400 hover:text-neutral-100 px-1.5 py-0.5 transition-colors"
+                title="Click to toggle this label"
+              >
+                ✦ {suggestion.label_name}
+              </button>
+              <button
+                onClick={() => setShowRationale(v => !v)}
+                className="text-neutral-600 hover:text-neutral-300 px-1.5 py-0.5 border-l border-neutral-700 transition-colors"
+              >
+                why?
+              </button>
+            </span>
           ) : !aiUnlocked ? (
             <span className="text-[8px] text-neutral-600 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-0.5">
               AI unlocks at 20
@@ -156,6 +206,14 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
           {isReviewing ? 'Back to queue' : 'Next →'}
         </button>
       </div>
+
+      {showConversation && conversationMessages && conversationMessages.length > 0 && (
+        <ConversationPanel
+          messages={conversationMessages}
+          currentMessageIndex={item.message_index}
+          onClose={() => setShowConversation(false)}
+        />
+      )}
     </div>
   )
 }

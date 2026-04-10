@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate, ConversationMessage } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -24,6 +24,8 @@ export function QueuePage() {
   const [loading, setLoading] = useState(true)
   const [appliedLabelIds, setAppliedLabelIds] = useState<Set<number>>(new Set())
   const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null)
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
+  const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([])
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [autolabelStatus, setAutolabelStatus] = useState<{
     running: boolean; processed: number; total: number; error: string | null
@@ -101,16 +103,22 @@ export function QueuePage() {
     }).catch(() => {})
   }, [loading, searchParams, setSearchParams])
 
-  // Load applied labels and AI suggestion when displayed message changes
+  // Load applied labels, AI suggestion, and conversation messages when displayed message changes
   useEffect(() => {
     if (!displayedMessage) return
     api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
       .then(ids => setAppliedLabelIds(new Set(ids)))
     setSuggestion(null)
+    setConversationMessages([])
+    api.getConversationMessages(displayedMessage.chatlog_id)
+      .then(setConversationMessages)
+      .catch(() => {})
     if (aiUnlocked) {
+      setSuggestionLoading(true)
       api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
         .then(s => { if (s.label_name) setSuggestion(s) })
         .catch(() => {})
+        .finally(() => setSuggestionLoading(false))
     }
   }, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked])
 
@@ -530,10 +538,14 @@ export function QueuePage() {
             item={displayedMessage}
             aiUnlocked={aiUnlocked}
             suggestion={archiveReview ? null : suggestion}
+            suggestionLoading={!archiveReview && suggestionLoading}
             onSkip={handleSkip}
             onNext={handleNext}
             hasLabelsApplied={appliedLabelIds.size > 0}
             isReviewing={isReviewing}
+            labels={labels}
+            onToggleLabel={handleToggleLabel}
+            conversationMessages={conversationMessages}
           />
         </div>
       </div>

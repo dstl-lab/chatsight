@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
+import hashlib
 import threading
 from fastapi import FastAPI, Depends, HTTPException, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +10,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
@@ -193,6 +194,50 @@ def get_chatlog(
         content=content,
         created_at=first["started_at"],
     )
+
+
+@app.get("/api/chatlogs/{chatlog_id}/messages")
+def get_chatlog_messages(
+    chatlog_id: int,
+    conn: Connection = Depends(get_ext_conn),
+    db: Session = Depends(get_session),
+):
+    """Return the full conversation as a structured array with per-message label info."""
+    rows = _fetch_conversation_events(conn, chatlog_id)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Chatlog not found")
+
+    messages = []
+    student_idx = 0
+    seen_query = False
+    for row in rows:
+        if row["event_type"] == "tutor_query" and row["question"]:
+            seen_query = True
+            apps = db.exec(
+                select(LabelApplication, LabelDefinition)
+                .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+                .where(
+                    LabelApplication.chatlog_id == chatlog_id,
+                    LabelApplication.message_index == student_idx,
+                    LabelDefinition.archived_at == None,  # noqa: E711
+                )
+            ).all()
+            labels = [{"label_name": ld.name, "applied_by": la.applied_by} for la, ld in apps]
+            messages.append({
+                "role": "student",
+                "text": row["question"],
+                "message_index": student_idx,
+                "labels": labels,
+            })
+            student_idx += 1
+        elif row["event_type"] == "tutor_response" and row["response"] and seen_query:
+            messages.append({
+                "role": "assistant",
+                "text": row["response"],
+                "message_index": None,
+                "labels": [],
+            })
+    return messages
 
 
 # ── Label routes ──────────────────────────────────────────────────────────────
@@ -968,9 +1013,25 @@ def get_autolabel_status():
 
 @app.post("/api/queue/suggest")
 def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
-    labels = db.exec(select(LabelDefinition)).all()
+    labels = db.exec(
+        select(LabelDefinition).where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
     if not labels:
         return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
+
+    # Compute a hash of current label names so cache entries are invalidated when labels change
+    labels_hash = hashlib.md5(",".join(sorted(l.name for l in labels)).encode()).hexdigest()
+
+    # Check cache
+    cached = db.exec(
+        select(SuggestionCache).where(
+            SuggestionCache.chatlog_id == req.chatlog_id,
+            SuggestionCache.message_index == req.message_index,
+            SuggestionCache.labels_hash == labels_hash,
+        )
+    ).first()
+    if cached:
+        return {"label_name": cached.label_name, "evidence": cached.evidence, "rationale": cached.rationale}
 
     # Build examples for each label
     examples_by_label: dict[str, list[str]] = {}
@@ -1037,6 +1098,18 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
 
     message_text = row[0]
 
+    def _cache_and_return(result: dict) -> dict:
+        db.add(SuggestionCache(
+            chatlog_id=req.chatlog_id,
+            message_index=req.message_index,
+            label_name=result["label_name"],
+            evidence=result["evidence"],
+            rationale=result["rationale"],
+            labels_hash=labels_hash,
+        ))
+        db.commit()
+        return result
+
     # Call Gemini for suggestion
     try:
         from autolabel_service import classify_batch
@@ -1046,19 +1119,19 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
         results = classify_batch(label_defs, examples_by_label, messages)
         if results:
             label_name = results[0].get("label", "")
-            return {
+            return _cache_and_return({
                 "label_name": label_name,
                 "evidence": message_text[:100],
                 "rationale": f"AI classified this as '{label_name}' based on {len(examples_by_label.get(label_name, []))} human-labeled examples.",
-            }
+            })
     except Exception:
         pass
 
-    return {
+    return _cache_and_return({
         "label_name": labels[0].name,
         "evidence": message_text[:100],
         "rationale": "Fallback suggestion.",
-    }
+    })
 
 
 @app.post("/api/labels/merge")

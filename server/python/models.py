@@ -68,3 +68,14 @@ class ConceptCandidate(SQLModel, table=True):
     source_run_id: str
     similar_to: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SuggestionCache(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    label_name: str
+    evidence: str
+    rationale: str
+    labels_hash: str  # hash of all active label names; invalidated when labels change
+    created_at: datetime = Field(default_factory=datetime.utcnow)

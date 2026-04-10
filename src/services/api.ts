@@ -3,7 +3,7 @@ import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
-  ConceptCandidate, EmbedStatus,
+  ConceptCandidate, EmbedStatus, ConversationMessage,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -145,4 +145,8 @@ export const api = {
   getEmbedStatus: (): Promise<EmbedStatus> =>
     USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
              : req('/api/concepts/embed-status'),
+
+  getConversationMessages: (chatlogId: number): Promise<ConversationMessage[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req(`/api/chatlogs/${chatlogId}/messages`),
 }
