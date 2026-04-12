@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import type { RecalibrationItem } from '../../types'
+import { api } from '../../services/api'
 
 interface Props {
   items: RecalibrationItem[]
@@ -7,6 +8,9 @@ interface Props {
 }
 
 export function RecalibrationOverlay({ items, onDismiss }: Props) {
+  const [descriptions, setDescriptions] = useState<Record<number, string>>({})
+  const [generating, setGenerating] = useState<Set<number>>(new Set())
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onDismiss()
@@ -14,6 +18,26 @@ export function RecalibrationOverlay({ items, onDismiss }: Props) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onDismiss])
+
+  useEffect(() => {
+    const needsDef = items.filter(i => !i.description || i.description.startsWith('AI Generated:'))
+    if (needsDef.length === 0) return
+    setGenerating(new Set(needsDef.map(i => i.label_id)))
+    needsDef.forEach(item => {
+      api.generateLabelDescription(item.label_id)
+        .then(updated => {
+          setDescriptions(prev => ({ ...prev, [item.label_id]: updated.description ?? '' }))
+        })
+        .catch(() => {})
+        .finally(() => {
+          setGenerating(prev => {
+            const next = new Set(prev)
+            next.delete(item.label_id)
+            return next
+          })
+        })
+    })
+  }, [])
 
   if (items.length === 0) return null
 
@@ -31,9 +55,17 @@ export function RecalibrationOverlay({ items, onDismiss }: Props) {
           {items.map(item => (
             <div key={item.label_id} className="border border-neutral-700 rounded-lg p-4">
               <p className="text-neutral-100 text-sm font-semibold mb-1">{item.name}</p>
-              {item.description && (
-                <p className="text-neutral-400 text-xs mb-3">{item.description}</p>
-              )}
+              {(() => {
+                const desc = item.description ?? descriptions[item.label_id]
+                const isLoading = !desc && generating.has(item.label_id)
+                if (isLoading) return (
+                  <p className="text-neutral-600 text-xs mb-3 italic">Generating definition...</p>
+                )
+                if (desc) return (
+                  <p className="text-neutral-400 text-xs mb-3">{desc}</p>
+                )
+                return null
+              })()}
               {item.example_text ? (
                 <>
                   <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Human example</p>

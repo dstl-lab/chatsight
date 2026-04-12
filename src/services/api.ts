@@ -49,6 +49,9 @@ export const api = {
     USE_MOCK ? Promise.resolve(mockApi.labels[0])
              : req(`/api/labels/${id}`, { method: 'PUT', ...json(body) }),
 
+  generateLabelDescription: (labelId: number): Promise<LabelDefinition> =>
+    req(`/api/labels/${labelId}/generate-description`, { method: 'POST' }),
+
   getSession: (): Promise<LabelingSession> =>
     USE_MOCK ? Promise.resolve(mockApi.session)
              : req('/api/session'),
