@@ -49,13 +49,13 @@ export function QueuePage() {
 
   const [showRecalibration, setShowRecalibration] = useState(false)
   const [recalibrationItems, setRecalibrationItems] = useState<RecalibrationItem[]>([])
-  const [activeTab, setActiveTab] = useState<'queue' | 'skipped'>('queue')
+  const [isSkippedReview, setIsSkippedReview] = useState(false)
   const [skippedQueue, setSkippedQueue] = useState<QueueItem[]>([])
   const [skippedIdx, setSkippedIdx] = useState(0)
 
   const currentMessage = queue[currentIdx] ?? null
   const skippedMessage = skippedQueue[skippedIdx] ?? null
-  const displayedMessage = reviewTarget ?? (activeTab === 'skipped' ? skippedMessage : currentMessage)
+  const displayedMessage = reviewTarget ?? (isSkippedReview ? skippedMessage : currentMessage)
   const isReviewing = reviewTarget !== null
   const aiUnlocked = (stats?.labeled_count ?? 0) >= 20
 
@@ -108,17 +108,6 @@ export function QueuePage() {
     }).catch(() => {})
   }, [loading])
 
-  // Load skipped queue when switching to skipped tab
-  useEffect(() => {
-    if (activeTab !== 'skipped') return
-    api.getSkippedMessages().then(items => {
-      setSkippedQueue(items)
-      setSkippedIdx(0)
-      setAppliedLabelIds(new Set())
-      setSuggestion(null)
-    })
-  }, [activeTab])
-
   // Enter review mode from ?review= query param (e.g., from /history page)
   const [searchParams, setSearchParams] = useSearchParams()
   useEffect(() => {
@@ -128,10 +117,22 @@ export function QueuePage() {
     const cid = parseInt(cidStr)
     const midx = parseInt(midxStr)
     if (isNaN(cid) || isNaN(midx)) return
+    const modeParam = searchParams.get('mode')
     setSearchParams({}, { replace: true })
-    api.getMessage(cid, midx).then(msg => {
-      setReviewTarget(msg)
-    }).catch(() => {})
+    if (modeParam === 'skipped') {
+      api.getSkippedMessages().then(items => {
+        setSkippedQueue(items)
+        const idx = items.findIndex(m => m.chatlog_id === cid && m.message_index === midx)
+        setSkippedIdx(idx >= 0 ? idx : 0)
+        setIsSkippedReview(true)
+        setAppliedLabelIds(new Set())
+        setSuggestion(null)
+      }).catch(() => {})
+    } else {
+      api.getMessage(cid, midx).then(msg => {
+        setReviewTarget(msg)
+      }).catch(() => {})
+    }
   }, [loading, searchParams, setSearchParams])
 
   // Load applied labels and AI suggestion when displayed message changes
@@ -185,7 +186,7 @@ export function QueuePage() {
   }
 
   const handleNext = useCallback(async () => {
-    if (activeTab === 'skipped') {
+    if (isSkippedReview) {
       if (appliedLabelIds.size === 0) return
       const item = skippedQueue[skippedIdx]
       if (!item) return
@@ -233,7 +234,7 @@ export function QueuePage() {
     advance()
     api.getQueuePosition().then(p => setRemaining(p.total_remaining))
     api.getRecentHistory(5).then(setHistory)
-  }, [activeTab, skippedQueue, skippedIdx, isReviewing, reviewTarget, currentMessage, appliedLabelIds, labels, advance])
+  }, [isSkippedReview, skippedQueue, skippedIdx, isReviewing, reviewTarget, currentMessage, appliedLabelIds, labels, advance])
 
   const handleUndo = useCallback(async () => {
     if (!undoState) return
@@ -262,7 +263,7 @@ export function QueuePage() {
   }, [undoState, currentIdx, skippedIdx])
 
   const handleSkip = useCallback(async () => {
-    if (activeTab === 'skipped') {
+    if (isSkippedReview) {
       if (skippedQueue.length === 0) return
       setSkippedIdx(prev => (prev + 1) % skippedQueue.length)
       setAppliedLabelIds(new Set())
@@ -275,7 +276,15 @@ export function QueuePage() {
     setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
     setAppliedLabelIds(new Set())
     advance()
-  }, [activeTab, skippedQueue, isReviewing, currentMessage, advance])
+  }, [isSkippedReview, skippedQueue, isReviewing, currentMessage, advance])
+
+  const handleBackToQueue = useCallback(() => {
+    setIsSkippedReview(false)
+    setSkippedQueue([])
+    setSkippedIdx(0)
+    setAppliedLabelIds(new Set())
+    setSuggestion(null)
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -535,7 +544,7 @@ export function QueuePage() {
     )
   }
 
-  if (!displayedMessage && activeTab !== 'skipped') {
+  if (!displayedMessage && !isSkippedReview) {
     return (
       <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
         All messages labeled!
@@ -594,30 +603,6 @@ export function QueuePage() {
           />
         )}
         <div className="flex-1 flex flex-col min-h-0">
-          {!archiveReview && (
-            <div className="flex gap-1 px-4 pt-3">
-              <button
-                onClick={() => setActiveTab('queue')}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
-                  activeTab === 'queue'
-                    ? 'bg-neutral-700 text-neutral-100'
-                    : 'text-neutral-500 hover:text-neutral-300'
-                }`}
-              >
-                Queue
-              </button>
-              <button
-                onClick={() => setActiveTab('skipped')}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
-                  activeTab === 'skipped'
-                    ? 'bg-neutral-700 text-neutral-100'
-                    : 'text-neutral-500 hover:text-neutral-300'
-                }`}
-              >
-                Skipped ({skippedCount})
-              </button>
-            </div>
-          )}
           {undoState && !archiveReview && (
             <div className="mx-4 mt-3 flex items-center justify-between bg-neutral-900 border border-neutral-700 rounded px-4 py-2">
               <span className="text-xs text-neutral-300">
@@ -628,7 +613,7 @@ export function QueuePage() {
               </button>
             </div>
           )}
-          {activeTab === 'skipped' && skippedQueue.length === 0 ? (
+          {isSkippedReview && skippedQueue.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
               No skipped messages.
             </div>
@@ -640,8 +625,10 @@ export function QueuePage() {
               suggestion={archiveReview ? null : suggestion}
               onSkip={handleSkip}
               onNext={handleNext}
+              onBackToQueue={handleBackToQueue}
               hasLabelsApplied={appliedLabelIds.size > 0}
               isReviewing={isReviewing}
+              isSkippedReview={isSkippedReview}
             />
           ) : null}
         </div>
