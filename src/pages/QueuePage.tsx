@@ -152,6 +152,19 @@ export function QueuePage() {
 		};
 	}, []);
 
+	useEffect(() => {
+		if (!displayedMessage) return;
+		if (recalibration) return;
+		api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
+			.then(ids => setAppliedLabelIds(new Set(ids)));
+		setSuggestion(null);
+		if (aiUnlocked) {
+			api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
+				.then(s => { if (s.label_name) setSuggestion(s); })
+				.catch(() => {});
+		}
+	}, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked, recalibration]);
+
 	// Show label review overlay once per browser session
 	useEffect(() => {
 		if (loading) return;
