@@ -189,3 +189,34 @@ class EmbedStatusResponse(BaseModel):
     cached: int
     total_unlabeled: int
     running: bool
+
+
+# ── Recalibration ──────────────────────────────────────────────────
+
+class RecalibrationItemResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    context_before: Optional[str]
+    context_after: Optional[str]
+    original_label_ids: List[int]
+
+
+class SaveRecalibrationRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    original_label_ids: List[int]
+    relabel_ids: List[int]
+    final_label_ids: List[int]
+
+
+class SaveRecalibrationResponse(BaseModel):
+    matched: bool
+    trend: str  # "improving" | "steady" | "shifting"
+
+
+class RecalibrationStatsResponse(BaseModel):
+    recent_results: List[bool]
+    trend: str  # "improving" | "steady" | "shifting"
+    current_interval: int
+    total_recalibrations: int

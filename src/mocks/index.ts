@@ -1,7 +1,7 @@
 // src/mocks/index.ts
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse, HistoryItem, AnalysisSummary,
-  TemporalAnalysis,
+  TemporalAnalysis, RecalibrationItem, RecalibrationStats,
 } from '../types'
 
 export const mockApi = {
@@ -169,4 +169,26 @@ export const mockApi = {
       processed_at: "2026-03-28T10:12:00",
     },
   ] satisfies HistoryItem[],
+
+  // Returns a recalibration item every 5th call to simulate adaptive interval
+  _recalibrationCallCount: 0,
+  recalibration(): RecalibrationItem | null {
+    this._recalibrationCallCount++
+    if (this._recalibrationCallCount % 5 !== 0) return null
+    return {
+      chatlog_id: 1,
+      message_index: 0,
+      message_text: "Can you explain what a DataFrame is and how it's different from a regular Python list?",
+      context_before: "You can think of it like a spreadsheet with rows and columns...",
+      context_after: "Great question! The key difference is that DataFrames are optimized for...",
+      original_label_ids: [1, 3],
+    }
+  },
+
+  recalibrationStats: {
+    recent_results: [true, false, true, true, true, false, true, true],
+    trend: 'improving' as const,
+    current_interval: 15,
+    total_recalibrations: 8,
+  } satisfies RecalibrationStats,
 }

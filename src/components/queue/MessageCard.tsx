@@ -60,6 +60,8 @@ interface Props {
 	isBackNav?: boolean;
 	hasLabelsApplied: boolean;
 	isReviewing?: boolean;
+	isRecalibrating?: boolean;
+	recalibrationPhase?: 'blind' | 'reconcile' | null;
 	labels?: LabelDefinition[];
 	appliedLabelIds?: Set<number>;
 	onToggleLabel?: (labelId: number) => void;
@@ -85,6 +87,8 @@ export function MessageCard({
 	isBackNav,
 	hasLabelsApplied,
 	isReviewing,
+	isRecalibrating,
+	recalibrationPhase,
 	labels,
 	appliedLabelIds,
 	onToggleLabel,
@@ -317,7 +321,7 @@ export function MessageCard({
 					</>
 				) : (
 					<>
-						{!isReviewing && canGoBack && (
+						{!isReviewing && !isRecalibrating && canGoBack && (
 							<button
 								onClick={onBack}
 								className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
@@ -325,7 +329,7 @@ export function MessageCard({
 								← Back
 							</button>
 						)}
-						{!isReviewing && (
+						{!isReviewing && !isRecalibrating && (
 							<button
 								onClick={onSkip}
 								className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
@@ -335,10 +339,18 @@ export function MessageCard({
 						)}
 						<button
 							onClick={onNext}
-							disabled={!isReviewing && !hasLabelsApplied}
-							className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+							disabled={!isReviewing && !isRecalibrating && !hasLabelsApplied}
+							className={`text-xs text-white rounded px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+								isRecalibrating
+									? recalibrationPhase === 'reconcile'
+										? 'bg-amber-600 hover:bg-amber-500'
+										: 'bg-purple-600 hover:bg-purple-500'
+									: 'bg-blue-600 hover:bg-blue-500'
+							}`}
 						>
-							{isReviewing ? "Back to queue" : "Next →"}
+							{isReviewing ? "Back to queue" : isRecalibrating
+								? recalibrationPhase === 'reconcile' ? 'Confirm →' : 'Next →'
+								: "Next →"}
 						</button>
 					</>
 				)}

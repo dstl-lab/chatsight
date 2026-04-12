@@ -4,7 +4,8 @@ import type {
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, LabelReviewItem,
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
-  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
+  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
+  RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -220,4 +221,17 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
     return res.blob()
   },
+
+  // ── Recalibration ──────────────────────────────────────────────
+  getRecalibration: (): Promise<RecalibrationItem | null> =>
+    USE_MOCK ? Promise.resolve(mockApi.recalibration())
+             : req('/api/session/recalibration'),
+
+  saveRecalibration: (body: SaveRecalibrationRequest): Promise<SaveRecalibrationResponse> =>
+    USE_MOCK ? Promise.resolve({ matched: false, trend: 'steady' as const })
+             : req('/api/session/recalibration', { method: 'POST', ...json(body) }),
+
+  getRecalibrationStats: (): Promise<RecalibrationStats> =>
+    USE_MOCK ? Promise.resolve(mockApi.recalibrationStats)
+             : req('/api/session/recalibration/stats'),
 }
