@@ -18,6 +18,7 @@ from schemas import (
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
     OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
+    RecalibrationResponse,
 )
 from sqlmodel import Session, select
 
@@ -555,6 +556,31 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/queue/skipped", response_model=List[QueueItemResponse])
+def get_skipped_queue(db: Session = Depends(get_session)):
+    skipped_rows = db.exec(
+        select(SkippedMessage).order_by(SkippedMessage.created_at.asc())
+    ).all()
+    results = []
+    for row in skipped_rows:
+        cache = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == row.chatlog_id,
+                MessageCache.message_index == row.message_index,
+            )
+        ).first()
+        if not cache:
+            continue
+        results.append(QueueItemResponse(
+            chatlog_id=cache.chatlog_id,
+            message_index=cache.message_index,
+            message_text=cache.message_text,
+            context_before=cache.context_before,
+            context_after=cache.context_after,
+        ))
+    return results
 
 
 # ── Queue fetch route ─────────────────────────────────────────────────────────
@@ -1320,9 +1346,40 @@ def export_csv():
     )
 
 
-@app.get("/api/session/recalibration")
-def get_recalibration():
-    return []
+@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
+def get_recalibration(db: Session = Depends(get_session)):
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.archived_at == None)
+        .order_by(LabelDefinition.created_at.desc())
+    ).all()
+    results = []
+    for label in labels:
+        example_text = None
+        app_row = db.exec(
+            select(LabelApplication)
+            .where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "human",
+            )
+            .order_by(LabelApplication.created_at.desc())
+        ).first()
+        if app_row:
+            cache_row = db.exec(
+                select(MessageCache).where(
+                    MessageCache.chatlog_id == app_row.chatlog_id,
+                    MessageCache.message_index == app_row.message_index,
+                )
+            ).first()
+            if cache_row:
+                example_text = cache_row.message_text
+        results.append(RecalibrationResponse(
+            label_id=label.id,
+            name=label.name,
+            description=label.description,
+            example_text=example_text,
+        ))
+    return results
 
 
 @app.get("/api/queue/sample")

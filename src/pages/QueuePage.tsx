@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate, RecalibrationItem } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -8,10 +8,12 @@ import { ArchiveConfirmModal } from '../components/queue/ArchiveConfirmModal'
 import { ArchiveReviewBanner } from '../components/queue/ArchiveReviewBanner'
 import { ArchiveReviewSidebar } from '../components/queue/ArchiveReviewSidebar'
 import DiscoverModal from '../components/queue/DiscoverModal'
+import { RecalibrationOverlay } from '../components/queue/RecalibrationOverlay'
 
 interface UndoState {
   message: QueueItem
   labelNames: string[]
+  fromSkippedTab: boolean
 }
 
 export function QueuePage() {
@@ -45,8 +47,15 @@ export function QueuePage() {
   const [discoverModalOpen, setDiscoverModalOpen] = useState(false)
   const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const [showRecalibration, setShowRecalibration] = useState(false)
+  const [recalibrationItems, setRecalibrationItems] = useState<RecalibrationItem[]>([])
+  const [activeTab, setActiveTab] = useState<'queue' | 'skipped'>('queue')
+  const [skippedQueue, setSkippedQueue] = useState<QueueItem[]>([])
+  const [skippedIdx, setSkippedIdx] = useState(0)
+
   const currentMessage = queue[currentIdx] ?? null
-  const displayedMessage = reviewTarget ?? currentMessage
+  const skippedMessage = skippedQueue[skippedIdx] ?? null
+  const displayedMessage = reviewTarget ?? (activeTab === 'skipped' ? skippedMessage : currentMessage)
   const isReviewing = reviewTarget !== null
   const aiUnlocked = (stats?.labeled_count ?? 0) >= 20
 
@@ -70,6 +79,7 @@ export function QueuePage() {
       setLabels(lbls)
       setQueue(q)
       setStats(st)
+      setSkippedCount(st.skipped_count)
       setRemaining(pos.total_remaining)
       setHistory(hist)
       setCandidates(cands)
@@ -85,6 +95,29 @@ export function QueuePage() {
       if (discoverPollRef.current) clearInterval(discoverPollRef.current)
     }
   }, [])
+
+  // Show recalibration overlay once per browser session
+  useEffect(() => {
+    if (loading) return
+    if (sessionStorage.getItem('recalibration_shown')) return
+    api.getRecalibration().then(items => {
+      if (items.length > 0) {
+        setRecalibrationItems(items)
+        setShowRecalibration(true)
+      }
+    }).catch(() => {})
+  }, [loading])
+
+  // Load skipped queue when switching to skipped tab
+  useEffect(() => {
+    if (activeTab !== 'skipped') return
+    api.getSkippedMessages().then(items => {
+      setSkippedQueue(items)
+      setSkippedIdx(0)
+      setAppliedLabelIds(new Set())
+      setSuggestion(null)
+    })
+  }, [activeTab])
 
   // Enter review mode from ?review= query param (e.g., from /history page)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -152,6 +185,29 @@ export function QueuePage() {
   }
 
   const handleNext = useCallback(async () => {
+    if (activeTab === 'skipped') {
+      if (appliedLabelIds.size === 0) return
+      const item = skippedQueue[skippedIdx]
+      if (!item) return
+      const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
+      setUndoState({ message: item, labelNames, fromSkippedTab: true })
+      await api.advanceMessage(item.chatlog_id, item.message_index)
+      await api.unskipMessage(item.chatlog_id, item.message_index)
+      setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
+      setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1, skipped_count: Math.max(0, s.skipped_count - 1) } : s)
+      setSkippedCount(s => Math.max(0, s - 1))
+      const newLen = skippedQueue.length - 1
+      setSkippedQueue(prev => prev.filter((_, i) => i !== skippedIdx))
+      setAppliedLabelIds(new Set())
+      setSuggestion(null)
+      setSkippedIdx(prev => {
+        if (newLen <= 0) return 0
+        return prev >= newLen ? 0 : prev
+      })
+      setTimeout(() => setUndoState(prev => prev?.message === item ? null : prev), 8000)
+      api.getLabels().then(setLabels)
+      return
+    }
     if (isReviewing && reviewTarget) {
       // Exit review mode — unskip if labels were applied to a previously-skipped message
       if (appliedLabelIds.size > 0) {
@@ -165,7 +221,7 @@ export function QueuePage() {
     if (!currentMessage) return
     if (appliedLabelIds.size > 0) {
       const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
-      setUndoState({ message: currentMessage, labelNames })
+      setUndoState({ message: currentMessage, labelNames, fromSkippedTab: false })
       await api.advanceMessage(currentMessage.chatlog_id, currentMessage.message_index)
       setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
       setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
@@ -177,31 +233,49 @@ export function QueuePage() {
     advance()
     api.getQueuePosition().then(p => setRemaining(p.total_remaining))
     api.getRecentHistory(5).then(setHistory)
-  }, [isReviewing, reviewTarget, currentMessage, appliedLabelIds, labels, advance])
+  }, [activeTab, skippedQueue, skippedIdx, isReviewing, reviewTarget, currentMessage, appliedLabelIds, labels, advance])
 
   const handleUndo = useCallback(async () => {
     if (!undoState) return
     await api.undoLabels(undoState.message.chatlog_id, undoState.message.message_index)
     setSession(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
     setStats(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
-    // Re-insert the message at current position
-    setQueue(q => {
-      const next = [...q]
-      next.splice(currentIdx, 0, undoState.message)
-      return next
-    })
+    if (undoState.fromSkippedTab) {
+      await api.skipMessage(undoState.message.chatlog_id, undoState.message.message_index)
+      setSkippedCount(s => s + 1)
+      setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
+      setSkippedQueue(prev => {
+        const next = [...prev]
+        next.splice(skippedIdx, 0, undoState.message)
+        return next
+      })
+    } else {
+      // Re-insert the message at current position
+      setQueue(q => {
+        const next = [...q]
+        next.splice(currentIdx, 0, undoState.message)
+        return next
+      })
+    }
     setUndoState(null)
     api.getLabels().then(setLabels)
-  }, [undoState, currentIdx])
+  }, [undoState, currentIdx, skippedIdx])
 
   const handleSkip = useCallback(async () => {
+    if (activeTab === 'skipped') {
+      if (skippedQueue.length === 0) return
+      setSkippedIdx(prev => (prev + 1) % skippedQueue.length)
+      setAppliedLabelIds(new Set())
+      setSuggestion(null)
+      return
+    }
     if (isReviewing || !currentMessage) return
     await api.skipMessage(currentMessage.chatlog_id, currentMessage.message_index)
     setSkippedCount(s => s + 1)
     setStats(s => s ? { ...s, skipped_count: s.skipped_count + 1 } : s)
     setAppliedLabelIds(new Set())
     advance()
-  }, [isReviewing, currentMessage, advance])
+  }, [activeTab, skippedQueue, isReviewing, currentMessage, advance])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -411,6 +485,11 @@ export function QueuePage() {
     setReviewTarget(null)
   }, [])
 
+  const handleDismissRecalibration = useCallback(() => {
+    setShowRecalibration(false)
+    sessionStorage.setItem('recalibration_shown', '1')
+  }, [])
+
   const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
     setReviewTarget({
       chatlog_id: item.chatlog_id,
@@ -456,7 +535,7 @@ export function QueuePage() {
     )
   }
 
-  if (!displayedMessage) {
+  if (!displayedMessage && activeTab !== 'skipped') {
     return (
       <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
         All messages labeled!
@@ -515,6 +594,30 @@ export function QueuePage() {
           />
         )}
         <div className="flex-1 flex flex-col min-h-0">
+          {!archiveReview && (
+            <div className="flex gap-1 px-4 pt-3">
+              <button
+                onClick={() => setActiveTab('queue')}
+                className={`text-xs px-3 py-1 rounded transition-colors ${
+                  activeTab === 'queue'
+                    ? 'bg-neutral-700 text-neutral-100'
+                    : 'text-neutral-500 hover:text-neutral-300'
+                }`}
+              >
+                Queue
+              </button>
+              <button
+                onClick={() => setActiveTab('skipped')}
+                className={`text-xs px-3 py-1 rounded transition-colors ${
+                  activeTab === 'skipped'
+                    ? 'bg-neutral-700 text-neutral-100'
+                    : 'text-neutral-500 hover:text-neutral-300'
+                }`}
+              >
+                Skipped ({skippedCount})
+              </button>
+            </div>
+          )}
           {undoState && !archiveReview && (
             <div className="mx-4 mt-3 flex items-center justify-between bg-neutral-900 border border-neutral-700 rounded px-4 py-2">
               <span className="text-xs text-neutral-300">
@@ -525,16 +628,22 @@ export function QueuePage() {
               </button>
             </div>
           )}
-          <MessageCard
-            key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
-            item={displayedMessage}
-            aiUnlocked={aiUnlocked}
-            suggestion={archiveReview ? null : suggestion}
-            onSkip={handleSkip}
-            onNext={handleNext}
-            hasLabelsApplied={appliedLabelIds.size > 0}
-            isReviewing={isReviewing}
-          />
+          {activeTab === 'skipped' && skippedQueue.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
+              No skipped messages.
+            </div>
+          ) : displayedMessage ? (
+            <MessageCard
+              key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
+              item={displayedMessage}
+              aiUnlocked={aiUnlocked}
+              suggestion={archiveReview ? null : suggestion}
+              onSkip={handleSkip}
+              onNext={handleNext}
+              hasLabelsApplied={appliedLabelIds.size > 0}
+              isReviewing={isReviewing}
+            />
+          ) : null}
         </div>
       </div>
       {archiveConfirm && (
@@ -556,6 +665,12 @@ export function QueuePage() {
           onDiscover={handleDiscover}
           onClose={() => setDiscoverModalOpen(false)}
           discovering={discovering}
+        />
+      )}
+      {showRecalibration && (
+        <RecalibrationOverlay
+          items={recalibrationItems}
+          onDismiss={handleDismissRecalibration}
         />
       )}
     </div>
