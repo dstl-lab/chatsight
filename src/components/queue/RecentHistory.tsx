@@ -13,10 +13,10 @@ export function RecentHistory({ items, onSelect, reviewingKey }: Props) {
   if (items.length === 0) return null
 
   return (
-    <div className="border-t border-neutral-800 pt-3 mt-1">
+    <div className="border-t border-edge-subtle pt-3 mt-1">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-neutral-500 mb-2 hover:text-neutral-400"
+        className="w-full flex items-center justify-between text-[10px] uppercase tracking-widest text-faint mb-2 hover:text-muted"
       >
         <span>Recent</span>
         <span>{open ? '\u25B2' : '\u25BC'}</span>
@@ -35,18 +35,18 @@ export function RecentHistory({ items, onSelect, reviewingKey }: Props) {
                 onClick={() => onSelect(item)}
                 className={`rounded px-2 py-1.5 cursor-pointer transition-colors ${
                   isActive
-                    ? 'bg-blue-900/40 border border-blue-600'
+                    ? 'bg-accent-surface border border-accent'
                     : isSkipped
-                      ? 'bg-neutral-900 border-l-2 border-amber-600/50 border-y border-r border-y-neutral-800 border-r-neutral-800'
-                      : 'bg-neutral-900 border border-neutral-800 hover:border-neutral-600'
+                      ? 'bg-surface border-l-2 border-warning-border border-y border-r border-y-edge-subtle border-r-edge-subtle'
+                      : 'bg-surface border border-edge-subtle hover:border-edge-strong'
                 }`}
               >
-                <p className="text-[10px] text-neutral-300 truncate">
+                <p className="text-[10px] text-tertiary truncate">
                   {item.message_text.length > 50
                     ? item.message_text.slice(0, 50) + '\u2026'
                     : item.message_text}
                 </p>
-                <p className={`text-[9px] mt-0.5 ${isSkipped ? 'text-amber-500/70' : 'text-neutral-500'}`}>
+                <p className={`text-[9px] mt-0.5 ${isSkipped ? 'text-warning' : 'text-faint'}`}>
                   {isSkipped ? 'Skipped' : item.labels.join(', ')}
                 </p>
               </div>

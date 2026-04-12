@@ -59,21 +59,21 @@ export function HistoryPage() {
       {/* Summary cards */}
       <div className="flex gap-3 mb-4">
         {[
-          { label: 'Total', value: totalMessages, color: 'text-neutral-200' },
-          { label: 'Labeled', value: totalLabeled, color: 'text-blue-400' },
-          { label: 'Skipped', value: totalSkipped, color: 'text-amber-400' },
-          { label: 'Remaining', value: remaining, color: 'text-neutral-500' },
+          { label: 'Total', value: totalMessages, color: 'text-on-surface' },
+          { label: 'Labeled', value: totalLabeled, color: 'text-accent-text' },
+          { label: 'Skipped', value: totalSkipped, color: 'text-warning' },
+          { label: 'Remaining', value: remaining, color: 'text-faint' },
         ].map(s => (
-          <div key={s.label} className="flex-1 bg-neutral-900 border border-neutral-800 rounded-lg p-3 text-center">
+          <div key={s.label} className="flex-1 bg-surface border border-edge-subtle rounded-lg p-3 text-center">
             <div className={`text-xl font-bold tabular-nums ${s.color}`}>{s.value}</div>
-            <div className="text-[8px] text-neutral-500 uppercase tracking-widest mt-1">{s.label}</div>
+            <div className="text-[8px] text-faint uppercase tracking-widest mt-1">{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Progress bar */}
       {totalMessages > 0 && (
-        <div className="h-2 bg-neutral-800 rounded-full flex overflow-hidden gap-px mb-4">
+        <div className="h-2 bg-elevated rounded-full flex overflow-hidden gap-px mb-4">
           <div className="bg-blue-500 rounded-full" style={{ width: `${(totalLabeled / totalMessages) * 100}%` }} />
           <div className="bg-amber-500 rounded-full" style={{ width: `${(totalSkipped / totalMessages) * 100}%` }} />
         </div>
@@ -86,7 +86,7 @@ export function HistoryPage() {
           placeholder="Search messages..."
           value={search}
           onChange={e => { setSearch(e.target.value); setPage(0) }}
-          className="flex-1 bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-blue-600"
+          className="flex-1 bg-surface border border-edge-subtle rounded-lg px-3 py-2 text-sm text-on-surface placeholder-disabled focus:outline-none focus:border-accent"
         />
         <div className="flex gap-1">
           {(['all', 'human', 'ai', 'skipped'] as Filter[]).map(f => (
@@ -95,8 +95,8 @@ export function HistoryPage() {
               onClick={() => handleFilterChange(f)}
               className={`text-[10px] px-3 py-1.5 rounded-full border transition-colors ${
                 filter === f
-                  ? 'bg-blue-900/50 border-blue-600 text-blue-200'
-                  : 'border-neutral-700 text-neutral-500 hover:text-neutral-300'
+                  ? 'bg-accent-surface border-accent text-accent-on-surface'
+                  : 'border-edge text-faint hover:text-tertiary'
               }`}
             >
               {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -107,36 +107,36 @@ export function HistoryPage() {
 
       {/* History list */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">Loading...</div>
+        <div className="flex-1 flex items-center justify-center text-faint text-sm">Loading...</div>
       ) : items.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">No messages found</div>
+        <div className="flex-1 flex items-center justify-center text-faint text-sm">No messages found</div>
       ) : (
         <div className="flex flex-col gap-0.5">
           {items.map((item, i) => (
             <div
               key={`${item.chatlog_id}-${item.message_index}-${i}`}
               onClick={() => handleClick(item)}
-              className="flex items-center gap-2 px-3 py-2 rounded cursor-pointer hover:bg-neutral-900 transition-colors group"
+              className="flex items-center gap-2 px-3 py-2 rounded cursor-pointer hover:bg-surface transition-colors group"
             >
               <span className={`text-[7px] rounded px-1.5 py-0.5 uppercase tracking-wide font-semibold shrink-0 ${
-                item.applied_by === 'ai' ? 'bg-purple-900/50 text-purple-300 border border-purple-700'
-                : item.status === 'skipped' ? 'bg-amber-900/40 text-amber-400 border border-amber-700'
-                : 'bg-blue-900/40 text-blue-300 border border-blue-700'
+                item.applied_by === 'ai' ? 'bg-ai-surface text-ai-text border border-ai-border'
+                : item.status === 'skipped' ? 'bg-warning-surface text-warning border border-warning-border'
+                : 'bg-accent-surface text-accent-muted border border-accent-border'
               }`}>
                 {item.applied_by === 'ai' ? 'AI' : item.status === 'skipped' ? 'S' : 'H'}
               </span>
-              <span className="text-sm text-neutral-300 flex-1 truncate">{item.message_text}</span>
+              <span className="text-sm text-tertiary flex-1 truncate">{item.message_text}</span>
               {item.labels.length > 0 ? (
-                <span className="text-[10px] text-neutral-600 shrink-0 max-w-[140px] truncate">{item.labels.join(', ')}</span>
+                <span className="text-[10px] text-disabled shrink-0 max-w-[140px] truncate">{item.labels.join(', ')}</span>
               ) : (
-                <span className="text-[10px] text-amber-700 shrink-0">&mdash;</span>
+                <span className="text-[10px] text-warning-name shrink-0">&mdash;</span>
               )}
               {item.confidence !== null && (
-                <span className="text-[9px] text-neutral-700 tabular-nums shrink-0 w-8 text-right">
+                <span className="text-[9px] text-disabled tabular-nums shrink-0 w-8 text-right">
                   {Math.round(item.confidence * 100)}%
                 </span>
               )}
-              <span className="text-[10px] text-neutral-800 group-hover:text-neutral-500 shrink-0">&rarr;</span>
+              <span className="text-[10px] text-disabled group-hover:text-faint shrink-0">&rarr;</span>
             </div>
           ))}
         </div>
@@ -144,11 +144,11 @@ export function HistoryPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-4 text-[10px] text-neutral-500">
+        <div className="flex items-center justify-center gap-3 mt-4 text-[10px] text-faint">
           <button
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="px-2 py-1 border border-neutral-800 rounded disabled:opacity-30"
+            className="px-2 py-1 border border-edge-subtle rounded disabled:opacity-30"
           >
             &larr; Prev
           </button>
@@ -156,7 +156,7 @@ export function HistoryPage() {
           <button
             onClick={() => setPage(p => p + 1)}
             disabled={page >= totalPages - 1}
-            className="px-2 py-1 border border-neutral-800 rounded disabled:opacity-30"
+            className="px-2 py-1 border border-edge-subtle rounded disabled:opacity-30"
           >
             Next &rarr;
           </button>

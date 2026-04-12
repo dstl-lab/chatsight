@@ -16,34 +16,34 @@ export function NewLabelPopover({ onConfirm, onCancel }: Props) {
   }
 
   return (
-    <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-3 mt-2">
-      <p className="text-xs text-neutral-300 font-medium mb-2">New label</p>
+    <div className="bg-elevated border border-edge rounded-lg p-3 mt-2">
+      <p className="text-xs text-tertiary font-medium mb-2">New label</p>
       <input
         autoFocus
         value={name}
         onChange={e => setName(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && handleConfirm()}
         placeholder="Label name (required)"
-        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600"
+        className="w-full bg-surface border border-edge rounded px-2.5 py-1.5 text-xs text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent"
       />
       <textarea
         value={description}
         onChange={e => setDescription(e.target.value)}
         placeholder="Description (optional)"
         rows={2}
-        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600 resize-none"
+        className="w-full bg-surface border border-edge rounded px-2.5 py-1.5 text-xs text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
       />
       <div className="flex gap-2 justify-end">
         <button
           onClick={onCancel}
-          className="text-xs text-neutral-500 px-2 py-1 hover:text-neutral-300"
+          className="text-xs text-faint px-2 py-1 hover:text-tertiary"
         >
           Cancel
         </button>
         <button
           onClick={handleConfirm}
           disabled={!name.trim()}
-          className="text-xs bg-blue-600 text-white rounded px-2.5 py-1 disabled:opacity-40 hover:bg-blue-500 transition-colors"
+          className="text-xs bg-accent text-white rounded px-2.5 py-1 disabled:opacity-40 hover:bg-accent-hover transition-colors"
         >
           Create & select
         </button>

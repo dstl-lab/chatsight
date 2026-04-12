@@ -1,3 +1,213 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 @plugin "@tailwindcss/typography";
+
+/* Theme: data-theme attribute on <html> */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ─── Light theme (default) ─── */
+:root {
+  /* Backgrounds */
+  --app-canvas: #ffffff;
+  --app-surface: #fafafa;
+  --app-elevated: #f5f5f5;
+  --app-elevated-hl: #e5e5e5;
+  --app-overlay: rgba(0, 0, 0, 0.4);
+  --app-message-student: #eff6ff;
+  --app-modal-deep: #ffffff;
+
+  /* Borders */
+  --app-edge: #d4d4d4;
+  --app-edge-subtle: #e5e5e5;
+  --app-edge-strong: #a3a3a3;
+
+  /* Text */
+  --app-on-canvas: #171717;
+  --app-on-surface: #404040;
+  --app-tertiary: #525252;
+  --app-muted: #737373;
+  --app-faint: #a3a3a3;
+  --app-disabled: #d4d4d4;
+
+  /* Accent (blue) */
+  --app-accent: #2563eb;
+  --app-accent-hover: #1d4ed8;
+  --app-accent-text: #2563eb;
+  --app-accent-surface: #dbeafe;
+  --app-accent-border: #93c5fd;
+  --app-accent-on-surface: #1d4ed8;
+  --app-accent-muted: #3b82f6;
+  --app-message-border: #bfdbfe;
+
+  /* Warning (amber) */
+  --app-warning: #d97706;
+  --app-warning-surface: #fef3c7;
+  --app-warning-border: #fde68a;
+  --app-warning-on-surface: #92400e;
+  --app-warning-name: #b45309;
+
+  /* Success (green) */
+  --app-success: #16a34a;
+  --app-success-surface: #dcfce7;
+  --app-success-border: #bbf7d0;
+  --app-success-on-surface: #166534;
+
+  /* Danger (red) */
+  --app-danger: #dc2626;
+  --app-danger-hover: #b91c1c;
+  --app-danger-text: #dc2626;
+  --app-danger-surface: #fee2e2;
+
+  /* AI (purple) */
+  --app-ai-action: #9333ea;
+  --app-ai-hover: #7e22ce;
+  --app-ai-text: #7e22ce;
+  --app-ai-surface: #f3e8ff;
+  --app-ai-border: #e9d5ff;
+  --app-ai-progress: #a855f7;
+
+  /* Discover (violet) */
+  --app-discover-text: #7c3aed;
+  --app-discover-strong: #6d28d9;
+  --app-discover-surface: #ede9fe;
+  --app-discover-border: #c4b5fd;
+  --app-discover-dot: #8b5cf6;
+}
+
+/* ─── Dark theme ─── */
+[data-theme="dark"] {
+  /* Backgrounds */
+  --app-canvas: #0a0a0a;
+  --app-surface: #171717;
+  --app-elevated: #262626;
+  --app-elevated-hl: #404040;
+  --app-overlay: rgba(0, 0, 0, 0.6);
+  --app-message-student: #0d1f33;
+  --app-modal-deep: #16161f;
+
+  /* Borders */
+  --app-edge: #404040;
+  --app-edge-subtle: #262626;
+  --app-edge-strong: #525252;
+
+  /* Text */
+  --app-on-canvas: #f5f5f5;
+  --app-on-surface: #e5e5e5;
+  --app-tertiary: #d4d4d4;
+  --app-muted: #a3a3a3;
+  --app-faint: #737373;
+  --app-disabled: #525252;
+
+  /* Accent (blue) */
+  --app-accent: #2563eb;
+  --app-accent-hover: #3b82f6;
+  --app-accent-text: #60a5fa;
+  --app-accent-surface: rgba(30, 58, 138, 0.5);
+  --app-accent-border: #3b82f6;
+  --app-accent-on-surface: #bfdbfe;
+  --app-accent-muted: #93c5fd;
+  --app-message-border: rgba(29, 78, 216, 0.6);
+
+  /* Warning (amber) */
+  --app-warning: #fbbf24;
+  --app-warning-surface: rgba(120, 53, 15, 0.4);
+  --app-warning-border: #b45309;
+  --app-warning-on-surface: #fde68a;
+  --app-warning-name: #fcd34d;
+
+  /* Success (green) */
+  --app-success: #4ade80;
+  --app-success-surface: rgba(20, 83, 45, 0.6);
+  --app-success-border: #166534;
+  --app-success-on-surface: #bbf7d0;
+
+  /* Danger (red) */
+  --app-danger: #dc2626;
+  --app-danger-hover: #ef4444;
+  --app-danger-text: #f87171;
+  --app-danger-surface: rgba(239, 68, 68, 0.15);
+
+  /* AI (purple) */
+  --app-ai-action: #9333ea;
+  --app-ai-hover: #a855f7;
+  --app-ai-text: #d8b4fe;
+  --app-ai-surface: rgba(147, 51, 234, 0.2);
+  --app-ai-border: #7e22ce;
+  --app-ai-progress: #a855f7;
+
+  /* Discover (violet) */
+  --app-discover-text: #a78bfa;
+  --app-discover-strong: #c4b5fd;
+  --app-discover-surface: rgba(139, 92, 246, 0.1);
+  --app-discover-border: rgba(139, 92, 246, 0.5);
+  --app-discover-dot: #8b5cf6;
+}
+
+/* ─── Register tokens with Tailwind v4 ─── */
+@theme inline {
+  /* Backgrounds */
+  --color-canvas: var(--app-canvas);
+  --color-surface: var(--app-surface);
+  --color-elevated: var(--app-elevated);
+  --color-elevated-hl: var(--app-elevated-hl);
+  --color-overlay: var(--app-overlay);
+  --color-message-student: var(--app-message-student);
+  --color-modal-deep: var(--app-modal-deep);
+
+  /* Borders */
+  --color-edge: var(--app-edge);
+  --color-edge-subtle: var(--app-edge-subtle);
+  --color-edge-strong: var(--app-edge-strong);
+
+  /* Text */
+  --color-on-canvas: var(--app-on-canvas);
+  --color-on-surface: var(--app-on-surface);
+  --color-tertiary: var(--app-tertiary);
+  --color-muted: var(--app-muted);
+  --color-faint: var(--app-faint);
+  --color-disabled: var(--app-disabled);
+
+  /* Accent (blue) */
+  --color-accent: var(--app-accent);
+  --color-accent-hover: var(--app-accent-hover);
+  --color-accent-text: var(--app-accent-text);
+  --color-accent-surface: var(--app-accent-surface);
+  --color-accent-border: var(--app-accent-border);
+  --color-accent-on-surface: var(--app-accent-on-surface);
+  --color-accent-muted: var(--app-accent-muted);
+  --color-message-border: var(--app-message-border);
+
+  /* Warning (amber) */
+  --color-warning: var(--app-warning);
+  --color-warning-surface: var(--app-warning-surface);
+  --color-warning-border: var(--app-warning-border);
+  --color-warning-on-surface: var(--app-warning-on-surface);
+  --color-warning-name: var(--app-warning-name);
+
+  /* Success (green) */
+  --color-success: var(--app-success);
+  --color-success-surface: var(--app-success-surface);
+  --color-success-border: var(--app-success-border);
+  --color-success-on-surface: var(--app-success-on-surface);
+
+  /* Danger (red) */
+  --color-danger: var(--app-danger);
+  --color-danger-hover: var(--app-danger-hover);
+  --color-danger-text: var(--app-danger-text);
+  --color-danger-surface: var(--app-danger-surface);
+
+  /* AI (purple) */
+  --color-ai-action: var(--app-ai-action);
+  --color-ai-hover: var(--app-ai-hover);
+  --color-ai-text: var(--app-ai-text);
+  --color-ai-surface: var(--app-ai-surface);
+  --color-ai-border: var(--app-ai-border);
+  --color-ai-progress: var(--app-ai-progress);
+
+  /* Discover (violet) */
+  --color-discover-text: var(--app-discover-text);
+  --color-discover-strong: var(--app-discover-strong);
+  --color-discover-surface: var(--app-discover-surface);
+  --color-discover-border: var(--app-discover-border);
+  --color-discover-dot: var(--app-discover-dot);
+}

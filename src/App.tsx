@@ -9,7 +9,7 @@ import { AnalysisPage } from './pages/AnalysisPage'
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col">
+      <div className="min-h-screen bg-canvas text-on-canvas flex flex-col">
         <Navigation />
         <main className="flex-1 flex flex-col min-h-0">
           <Routes>
