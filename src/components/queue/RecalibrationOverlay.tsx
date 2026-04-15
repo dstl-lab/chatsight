@@ -20,7 +20,7 @@ export function RecalibrationOverlay({ items, onDismiss }: Props) {
   }, [onDismiss])
 
   useEffect(() => {
-    const needsDef = items.filter(i => !i.description || i.description.startsWith('AI Generated:'))
+    const needsDef = items.filter(i => !i.description)
     if (needsDef.length === 0) return
     setGenerating(new Set(needsDef.map(i => i.label_id)))
     needsDef.forEach(item => {

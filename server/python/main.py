@@ -318,6 +318,12 @@ def generate_label_description(label_id: int, db: Session = Depends(get_session)
             detail="No human-labeled examples found — cannot generate a definition.",
         )
 
+    if label.description and not label.description.startswith("AI Generated:"):
+        raise HTTPException(
+            status_code=409,
+            detail="Label already has a manually-written description. Remove it before generating an AI one.",
+        )
+
     from definition_service import generate_label_definition
     raw = generate_label_definition(label.name, example_messages)
     label.description = f"AI Generated: {raw}"
