@@ -53,6 +53,11 @@ vi.mock('../services/api', () => ({
     getConversationMessages: vi.fn().mockResolvedValue([]),
     getAnalysisSummary: vi.fn().mockResolvedValue({}),
     getTemporalAnalysis: vi.fn().mockResolvedValue({}),
+    getRecalibration: vi.fn().mockResolvedValue(null),
+    getRecalibrationStats: vi.fn().mockResolvedValue(null),
+    saveRecalibration: vi.fn().mockResolvedValue({ matched: true, trend: 'steady' }),
+    resolveCandidate: vi.fn().mockResolvedValue(undefined),
+    getOrphanedMessages: vi.fn().mockResolvedValue({ messages: [], count: 0 }),
   },
 }))
 
