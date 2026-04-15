@@ -184,6 +184,17 @@ export const mockApi = {
       original_label_ids: [1, 3],
     }
   },
+  // DEV: always returns a recalibration item. Remove with the force trigger.
+  recalibrationForced(): RecalibrationItem {
+    return {
+      chatlog_id: 1,
+      message_index: 0,
+      message_text: "Can you explain what a DataFrame is and how it's different from a regular Python list?",
+      context_before: "You can think of it like a spreadsheet with rows and columns...",
+      context_after: "Great question! The key difference is that DataFrames are optimized for...",
+      original_label_ids: [1, 3],
+    }
+  },
 
   recalibrationStats: {
     recent_results: [true, false, true, true, true, false, true, true],

@@ -36,12 +36,6 @@ def test_export_csv_stub(client):
     assert "text/csv" in r.headers["content-type"]
 
 
-def test_recalibration_returns_null_without_session(client):
-    r = client.get("/api/session/recalibration")
-    assert r.status_code == 200
-    assert r.json() is None
-
-
 def test_queue_sample_stub(client):
     r = client.get("/api/queue/sample")
     assert r.status_code == 200

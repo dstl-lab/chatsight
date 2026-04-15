@@ -2234,7 +2234,8 @@ RECALIBRATION_MIN_INTERVAL = 5
 RECALIBRATION_MAX_INTERVAL = 30
 RECALIBRATION_WINDOW = 5
 RECALIBRATION_COOLDOWN = 50
-RECALIBRATION_MIN_LABELED = 5
+
+DEV_MODE = os.getenv("CHATSIGHT_DEV", "").lower() in ("1", "true", "yes")
 
 
 def _compute_recalibration_interval(events: list[RecalibrationEvent]) -> int:
@@ -2271,7 +2272,9 @@ def _compute_trend(events: list[RecalibrationEvent]) -> str:
 
 
 @app.get("/api/session/recalibration")
-def get_recalibration(db: Session = Depends(get_session)):
+def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
+    # `force=true` is honored only when CHATSIGHT_DEV is set; otherwise silently ignored.
+    force = force and DEV_MODE
     # 1. Check for active session
     labeling_session = db.exec(
         select(LabelingSession).order_by(LabelingSession.id.desc())
@@ -2299,22 +2302,10 @@ def get_recalibration(db: Session = Depends(get_session)):
         )
     ).one()
 
-    if labeled_since < interval:
+    if not force and labeled_since < interval:
         return None
 
-    # 4. Check minimum labeled messages threshold
-    total_labeled = db.exec(
-        select(func.count()).select_from(
-            select(LabelApplication.chatlog_id, LabelApplication.message_index)
-            .where(LabelApplication.applied_by == "human")
-            .distinct()
-            .subquery()
-        )
-    ).one()
-    if total_labeled < RECALIBRATION_MIN_LABELED:
-        return None
-
-    # 5. Select a message using stratified-by-label + age-weighted sampling
+    # 4. Select a message using stratified-by-label + age-weighted sampling
     import random
 
     # Get all human-labeled messages with their label IDs and timestamps

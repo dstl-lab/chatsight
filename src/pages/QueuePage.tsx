@@ -642,6 +642,17 @@ export function QueuePage() {
 		[labels],
 	);
 
+	const handleForceRecalibration = useCallback(async () => {
+		if (recalibration) return;
+		const item = await api.getRecalibration(true);
+		if (item) {
+			setRecalibration({ item, phase: 'blind', relabelIds: new Set() });
+			setAppliedLabelIds(new Set());
+		} else {
+			console.warn('[DEV] Force recalibration returned null — no labeled messages yet?');
+		}
+	}, [recalibration]);
+
 	const handleArchiveLabel = useCallback(
 		async (labelId: number) => {
 			const label = labels.find((l) => l.id === labelId);
@@ -1006,6 +1017,15 @@ export function QueuePage() {
 					items={labelReviewItems}
 					onDismiss={handleDismissLabelReview}
 				/>
+			)}
+			{import.meta.env.DEV && !recalibration && (
+				<button
+					onClick={handleForceRecalibration}
+					className="fixed bottom-4 right-4 z-50 text-[10px] font-mono text-purple-300 bg-purple-900/40 border border-purple-500/50 rounded px-2.5 py-1.5 hover:bg-purple-900/60 hover:border-purple-400 transition-colors"
+					title="Dev-only: force-trigger a recalibration round"
+				>
+					DEV · trigger recalibration
+				</button>
 			)}
 		</div>
 	);

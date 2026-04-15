@@ -223,9 +223,9 @@ export const api = {
   },
 
   // ── Recalibration ──────────────────────────────────────────────
-  getRecalibration: (): Promise<RecalibrationItem | null> =>
-    USE_MOCK ? Promise.resolve(mockApi.recalibration())
-             : req('/api/session/recalibration'),
+  getRecalibration: (force = false): Promise<RecalibrationItem | null> =>
+    USE_MOCK ? Promise.resolve(force ? mockApi.recalibrationForced() : mockApi.recalibration())
+             : req(`/api/session/recalibration${force ? '?force=true' : ''}`),
 
   saveRecalibration: (body: SaveRecalibrationRequest): Promise<SaveRecalibrationResponse> =>
     USE_MOCK ? Promise.resolve({ matched: false, trend: 'steady' as const })

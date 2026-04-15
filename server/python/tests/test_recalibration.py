@@ -58,18 +58,6 @@ def test_recalibration_returns_null_without_session(client):
     assert r.json() is None
 
 
-def test_recalibration_returns_null_when_not_enough_labeled(client, session):
-    _seed_session(session)
-    labels = _seed_labels(session, 2)
-    msgs = _seed_messages(session, 3)
-    # Only 3 labeled messages, below threshold of 5
-    for i, msg in enumerate(msgs):
-        _apply_label(session, msg.chatlog_id, msg.message_index, labels[i % 2].id)
-    r = client.get("/api/session/recalibration")
-    assert r.status_code == 200
-    assert r.json() is None
-
-
 def test_recalibration_returns_null_when_interval_not_reached(client, session):
     ls = _seed_session(session)
     labels = _seed_labels(session, 2)
