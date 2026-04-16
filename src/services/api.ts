@@ -2,7 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  LabelExample, SplitAutoLabelRequest
+  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -84,6 +84,10 @@ export const api = {
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
 
+  getConciseMessage: (chatlog_id: number, message_index: number): Promise<ConciseResponse> =>
+    USE_MOCK ? Promise.resolve({ concise_text: "Concise summary from AI." })
+             : req('/api/queue/concise', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
   getLabelExamples: (labelId: number, limit = 50): Promise<LabelExample[]> =>
     USE_MOCK ? Promise.resolve([])
              : req(`/api/labels/${labelId}/examples?limit=${limit}`),
@@ -95,4 +99,12 @@ export const api = {
   splitLabelAutoLabel: (body: SplitAutoLabelRequest): Promise<LabelDefinition[]> =>
     USE_MOCK ? Promise.resolve([])
              : req('/api/labels/split-autolabel', { method: 'POST', ...json(body) }),
+
+  deleteLabel: (id: number, force = false): Promise<{ ok: boolean, deleted_applications: number }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, deleted_applications: 0 })
+             : req(`/api/labels/${id}?force=${force}`, { method: 'DELETE' }),
+
+  applyBatch: (body: ApplyBatchRequest): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req('/api/queue/apply-batch', { method: 'POST', ...json(body) }),
 }

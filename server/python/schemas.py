@@ -53,6 +53,11 @@ class UndoRequest(BaseModel):
     message_index: int
 
 
+class ConciseRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
 class ApplyBatchRequest(BaseModel):
     assignments: dict[str, int]  # "chatlog_id:message_index" -> label_id
     delete_original_label_id: Optional[int] = None
@@ -73,6 +78,9 @@ class LabelExampleResponse(BaseModel):
     message_text: str
     label_id: int
     applied_by: str
+
+class ConciseResponse(BaseModel):
+    concise_text: str
 
 class LabelDefinitionResponse(BaseModel):
     id: int

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest } from '../../types'
+import type { LabelDefinition, QueueStats, UpdateLabelRequest } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 
 interface AutolabelStatus {
@@ -10,7 +10,6 @@ interface AutolabelStatus {
 }
 
 interface Props {
-  session: LabelingSession | null
   labels: LabelDefinition[]
   stats: QueueStats | null
   skippedCount: number
@@ -23,9 +22,8 @@ interface Props {
 }
 
 export function ProgressSidebar({
-  session, labels, stats, skippedCount,
-  appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
-  onStartAutolabel, autolabelStatus,
+  labels, stats, skippedCount,
+  appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel, onStartAutolabel, autolabelStatus
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest } from '../types'
+import type { QueueItem, LabelDefinition, QueueStats, SuggestResponse, UpdateLabelRequest } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -13,7 +13,6 @@ export function QueuePage() {
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
   const [labels, setLabels] = useState<LabelDefinition[]>([])
-  const [session, setSession] = useState<LabelingSession | null>(null)
   const [stats, setStats] = useState<QueueStats | null>(null)
   const [skippedCount, setSkippedCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -40,8 +39,7 @@ export function QueuePage() {
       api.getLabels(),
       api.getQueue(20),
       api.getQueueStats(),
-    ]).then(([sess, lbls, q, st]) => {
-      setSession(sess)
+    ]).then(([_sess, lbls, q, st]) => {
       setLabels(lbls)
       setQueue(q)
       setStats(st)
@@ -105,7 +103,6 @@ export function QueuePage() {
       const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
       setUndoState({ message: currentMessage, labelNames })
       await api.advanceMessage(currentMessage.chatlog_id, currentMessage.message_index)
-      setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
       setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
       setTimeout(() => setUndoState(prev => prev?.message === currentMessage ? null : prev), 8000)
     } else {
@@ -118,7 +115,6 @@ export function QueuePage() {
   const handleUndo = async () => {
     if (!undoState) return
     await api.undoLabels(undoState.message.chatlog_id, undoState.message.message_index)
-    setSession(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
     setStats(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
     // Re-insert the message at current position
     setQueue(q => {
@@ -180,7 +176,6 @@ export function QueuePage() {
   return (
     <div className="flex-1 flex min-h-0">
       <ProgressSidebar
-        session={session}
         labels={labels}
         stats={stats}
         skippedCount={skippedCount}
