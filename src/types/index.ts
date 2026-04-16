@@ -31,6 +31,8 @@ export interface SuggestResponse {
 
 export interface AnalysisSummary {
   label_counts: Record<string, number>
+  human_label_counts: Record<string, number>
+  ai_label_counts: Record<string, number>
   notebook_breakdown: Record<string, Record<string, number>>
   coverage: {
     human_labeled: number
@@ -38,6 +40,33 @@ export interface AnalysisSummary {
     unlabeled: number
     total: number
   }
+  position_distribution: Record<string, { early: number; mid: number; late: number }>
+}
+
+/** Weekday 0 = Sunday … 6 = Saturday (PostgreSQL DOW). */
+export interface TemporalAnalysis {
+  tutor_usage: {
+    by_hour: Array<{ hour: number; count: number }>
+    by_weekday: Array<{ weekday: number; count: number }>
+    /** One row per calendar day from `calendar_from` … `calendar_to` (inclusive). */
+    by_day: Array<{ date: string; count: number }>
+    timezone_note: string
+    /** Set when Postgres could not be queried (otherwise null/omitted). */
+    error?: string | null
+  }
+  notebook_label_heatmap: {
+    labels: string[]
+    notebooks: string[]
+    raw_counts: number[][]
+    row_normalized: number[][]
+    column_normalized: number[][]
+  }
+  labeling_throughput: Array<{
+    date: string
+    human: number
+    ai: number
+    total: number
+  }>
 }
 
 export interface QueueStats {

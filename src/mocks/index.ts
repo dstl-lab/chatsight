@@ -1,5 +1,8 @@
 // src/mocks/index.ts
-import type { LabelDefinition, QueueItem, LabelingSession, SuggestResponse, HistoryItem } from '../types'
+import type {
+  LabelDefinition, QueueItem, LabelingSession, SuggestResponse, HistoryItem, AnalysisSummary,
+  TemporalAnalysis,
+} from '../types'
 
 export const mockApi = {
   queue: [
@@ -39,6 +42,96 @@ export const mockApi = {
   } satisfies SuggestResponse,
 
   queuePosition: { position: 15, total_remaining: 85 },
+
+  analysisSummary: {
+    label_counts: {
+      'Concept Question': 45,
+      Clarification: 28,
+      'Debug Help': 22,
+      'Syntax / API': 12,
+    },
+    human_label_counts: {
+      'Concept Question': 28,
+      Clarification: 19,
+      'Debug Help': 10,
+      'Syntax / API': 4,
+    },
+    ai_label_counts: {
+      'Concept Question': 17,
+      Clarification: 9,
+      'Debug Help': 12,
+      'Syntax / API': 8,
+    },
+    notebook_breakdown: {
+      lab01: { 'Concept Question': 12, Clarification: 8, 'Debug Help': 5 },
+      lab02: { 'Concept Question': 18, Clarification: 11, 'Debug Help': 9, 'Syntax / API': 6 },
+      homework03: { 'Concept Question': 15, Clarification: 9, 'Syntax / API': 6 },
+    },
+    coverage: {
+      human_labeled: 52,
+      ai_labeled: 38,
+      unlabeled: 210,
+      total: 300,
+    },
+    position_distribution: {
+      'Concept Question': { early: 18, mid: 15, late: 12 },
+      Clarification: { early: 10, mid: 12, late: 6 },
+      'Debug Help': { early: 6, mid: 9, late: 7 },
+      'Syntax / API': { early: 8, mid: 3, late: 1 },
+    },
+  } satisfies AnalysisSummary,
+
+  temporalAnalysis: {
+    tutor_usage: {
+      by_hour: Array.from({ length: 24 }, (_, hour) => ({
+        hour,
+        count: hour >= 9 && hour <= 22 ? 12 + (hour % 5) : 2,
+      })),
+      by_weekday: [
+        { weekday: 0, count: 45 },
+        { weekday: 1, count: 120 },
+        { weekday: 2, count: 110 },
+        { weekday: 3, count: 95 },
+        { weekday: 4, count: 88 },
+        { weekday: 5, count: 40 },
+        { weekday: 6, count: 30 },
+      ],
+      timezone_note: 'Mock data — connect to Postgres for real tutor_query timestamps.',
+      error: null,
+      by_day: Array.from({ length: 31 }, (_, i) => {
+        const day = i + 1
+        return {
+          date: `2026-03-${String(day).padStart(2, '0')}`,
+          count: day % 7 === 0 ? 42 + day : day % 3 === 0 ? 15 : 5,
+        }
+      }),
+    },
+    notebook_label_heatmap: {
+      labels: ['Concept Question', 'Clarification', 'Debug Help'],
+      notebooks: ['homework03', 'lab01', 'lab02'],
+      raw_counts: [
+        [10, 8, 4],
+        [12, 6, 5],
+        [18, 11, 9],
+      ],
+      row_normalized: [
+        [0.45, 0.36, 0.18],
+        [0.52, 0.26, 0.22],
+        [0.47, 0.29, 0.24],
+      ],
+      column_normalized: [
+        [0.25, 0.36, 0.39],
+        [0.29, 0.27, 0.44],
+        [0.45, 0.37, 0.18],
+      ],
+    },
+    labeling_throughput: [
+      { date: '2026-03-20', human: 5, ai: 0, total: 5 },
+      { date: '2026-03-21', human: 12, ai: 0, total: 12 },
+      { date: '2026-03-22', human: 8, ai: 15, total: 23 },
+      { date: '2026-03-23', human: 3, ai: 42, total: 45 },
+    ],
+  } satisfies TemporalAnalysis,
 
   history: [
     {
