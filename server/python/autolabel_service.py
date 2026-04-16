@@ -103,3 +103,27 @@ def classify_batch(
             return list(args.get("classifications", []))
 
     return []
+
+def summarize_message(message_text: str) -> str:
+    """Summarize a student message to be concise."""
+    if not message_text.strip():
+        return ""
+    
+    config = types.GenerateContentConfig(
+        system_instruction=(
+            "You are an expert at simplifying and summarizing student messages in AI tutoring chatlogs. "
+            "Rewrite the following message to be very concise and clear, maintaining the core intent and context. "
+            "Return ONLY the concise text, nothing else. Max 2 sentences."
+        ),
+        temperature=0,
+    )
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=message_text,
+            config=config,
+        )
+        return response.text.strip()
+    except Exception as e:
+        return f"Error summarizing: {e}"

@@ -12,11 +12,11 @@ import json as json_mod
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
-    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
-    SplitAutoLabelRequest, ReorderLabelsRequest, AdvanceRequest, UndoRequest,
-    LabelExampleResponse, LabelDefinitionResponse, QueueItemResponse, SessionResponse,
-    LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
-    OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
+    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
+    MergeLabelRequest, SplitLabelRequest, SplitAutoLabelRequest, ReorderLabelsRequest,
+    AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse,
+    QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
+    ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
 )
 from sqlmodel import Session, select
@@ -1211,6 +1211,35 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
         "evidence": message_text[:100],
         "rationale": "Fallback suggestion.",
     }
+
+
+@app.post("/api/queue/concise", response_model=ConciseResponse)
+def get_concise_message(req: ConciseRequest, db: Session = Depends(get_session)):
+    with ext_engine.connect() as conn:
+        row = conn.execute(
+            text("""
+            WITH student AS (
+                SELECT payload->>'question' AS msg,
+                       (ROW_NUMBER() OVER (
+                           PARTITION BY payload->>'conversation_id' ORDER BY id
+                       )) - 1 AS idx
+                FROM events
+                WHERE event_type = 'tutor_query'
+                  AND payload->>'conversation_id' = (
+                      SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                  )
+            )
+            SELECT msg FROM student WHERE idx = :midx
+        """),
+            {"cid": req.chatlog_id, "midx": req.message_index},
+        ).first()
+
+    if not row or not row[0]:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    from autolabel_service import summarize_message
+    concise = summarize_message(row[0])
+    return {"concise_text": concise}
 
 
 @app.post("/api/labels/merge")
