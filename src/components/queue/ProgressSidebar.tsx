@@ -16,6 +16,7 @@ interface AutolabelStatus {
 }
 
 interface Props {
+  session: LabelingSession | null
   labels: LabelDefinition[]
   stats: QueueStats | null
   skippedCount: number

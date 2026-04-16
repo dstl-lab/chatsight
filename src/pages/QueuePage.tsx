@@ -463,7 +463,6 @@ export function QueuePage() {
   }
 
   return (
-<<<<<<< HEAD
     <div className="flex-1 flex flex-col min-h-0">
       {archiveReview && (
         <ArchiveReviewBanner
@@ -472,39 +471,6 @@ export function QueuePage() {
           onSkipAndArchive={handleSkipAndArchive}
           onCompleteArchive={handleCompleteArchive}
           onCancel={handleCancelArchiveReview}
-=======
-    <div className="flex-1 flex min-h-0">
-      <ProgressSidebar
-        labels={labels}
-        stats={stats}
-        skippedCount={skippedCount}
-        appliedLabelIds={appliedLabelIds}
-        onToggleLabel={handleToggleLabel}
-        onCreateAndApply={handleCreateAndApply}
-        onUpdateLabel={handleUpdateLabel}
-        onStartAutolabel={handleStartAutolabel}
-        autolabelStatus={autolabelStatus}
-      />
-      <div className="flex-1 flex flex-col min-h-0">
-        {undoState && (
-          <div className="mx-4 mt-3 flex items-center justify-between bg-neutral-900 border border-neutral-700 rounded px-4 py-2">
-            <span className="text-xs text-neutral-300">
-              Labeled as <span className="text-neutral-100 font-medium">{undoState.labelNames.join(', ')}</span>
-            </span>
-            <button onClick={handleUndo} className="text-xs text-blue-400 hover:text-blue-300 ml-4 shrink-0">
-              Undo
-            </button>
-          </div>
-        )}
-        <MessageCard
-          key={`${currentMessage.chatlog_id}-${currentMessage.message_index}`}
-          item={currentMessage}
-          aiUnlocked={aiUnlocked}
-          suggestion={suggestion}
-          onSkip={handleSkip}
-          onNext={handleNext}
-          hasLabelsApplied={appliedLabelIds.size > 0}
->>>>>>> 02f3228 (temp checkpoint labels-frontend)
         />
       )}
       <div className="flex-1 flex min-h-0">
