@@ -12,7 +12,7 @@ import json as json_mod
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
-    SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
+    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
     SplitAutoLabelRequest, ReorderLabelsRequest, AdvanceRequest, UndoRequest,
     LabelExampleResponse, LabelDefinitionResponse, QueueItemResponse, SessionResponse,
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
@@ -458,6 +458,44 @@ def get_applied_labels(
         )
     ).all()
     return {"label_ids": [r.label_id for r in rows]}
+
+
+@app.post("/api/queue/apply-batch")
+def apply_batch(req: ApplyBatchRequest, db: Session = Depends(get_session)):
+    for key, label_id in req.assignments.items():
+        cid_str, midx_str = key.split(":")
+        cid, midx = int(cid_str), int(midx_str)
+
+        # Check for duplicate
+        existing = db.exec(
+            select(LabelApplication).where(
+                LabelApplication.label_id == label_id,
+                LabelApplication.chatlog_id == cid,
+                LabelApplication.message_index == midx,
+            )
+        ).first()
+        if not existing:
+            db.add(
+                LabelApplication(
+                    label_id=label_id,
+                    chatlog_id=cid,
+                    message_index=midx,
+                    applied_by="human",
+                )
+            )
+
+    if req.delete_original_label_id:
+        original = db.get(LabelDefinition, req.delete_original_label_id)
+        if original:
+            # Delete apps of original label that weren't reassigned (if any)
+            db.exec(
+                text("DELETE FROM labelapplication WHERE label_id = :lid"),
+                {"lid": req.delete_original_label_id}
+            )
+            db.delete(original)
+
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/api/queue/advance")

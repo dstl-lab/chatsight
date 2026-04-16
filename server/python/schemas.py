@@ -57,6 +57,11 @@ class UndoRequest(BaseModel):
     message_index: int
 
 
+class ApplyBatchRequest(BaseModel):
+    assignments: dict[str, int]  # "chatlog_id:message_index" -> label_id
+    delete_original_label_id: Optional[int] = None
+
+
 class SplitAutoLabelRequest(BaseModel):
     label_id: int
     name_a: str
