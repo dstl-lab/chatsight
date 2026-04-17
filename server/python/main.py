@@ -18,6 +18,7 @@ from schemas import (
     LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
     OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
+    RecalibrationResponse,
 )
 from sqlmodel import Session, select
 
@@ -273,6 +274,63 @@ def update_label(
     db.add(label)
     db.commit()
     db.refresh(label)
+    count = db.exec(
+        select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+    ).one()
+    return LabelDefinitionResponse(
+        id=label.id, name=label.name, description=label.description,
+        created_at=label.created_at, count=count,
+    )
+
+
+@app.post("/api/labels/{label_id}/generate-description", response_model=LabelDefinitionResponse)
+def generate_label_description(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    # Fetch up to 10 most recent human-labeled examples for this label
+    applications = db.exec(
+        select(LabelApplication)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+        )
+        .order_by(LabelApplication.created_at.desc())
+        .limit(10)
+    ).all()
+
+    # Join with MessageCache to get message text
+    example_messages = []
+    for app_row in applications:
+        cache = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == app_row.chatlog_id,
+                MessageCache.message_index == app_row.message_index,
+            )
+        ).first()
+        if cache:
+            example_messages.append(cache.message_text)
+
+    if not example_messages:
+        raise HTTPException(
+            status_code=422,
+            detail="No human-labeled examples found — cannot generate a definition.",
+        )
+
+    if label.description and not label.description.startswith("AI Generated:"):
+        raise HTTPException(
+            status_code=409,
+            detail="Label already has a manually-written description. Remove it before generating an AI one.",
+        )
+
+    from definition_service import generate_label_definition
+    raw = generate_label_definition(label.name, example_messages)
+    label.description = f"AI Generated: {raw}"
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+
     count = db.exec(
         select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
     ).one()
@@ -555,6 +613,31 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/queue/skipped", response_model=List[QueueItemResponse])
+def get_skipped_queue(db: Session = Depends(get_session)):
+    skipped_rows = db.exec(
+        select(SkippedMessage).order_by(SkippedMessage.created_at.asc())
+    ).all()
+    results = []
+    for row in skipped_rows:
+        cache = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == row.chatlog_id,
+                MessageCache.message_index == row.message_index,
+            )
+        ).first()
+        if not cache:
+            continue
+        results.append(QueueItemResponse(
+            chatlog_id=cache.chatlog_id,
+            message_index=cache.message_index,
+            message_text=cache.message_text,
+            context_before=cache.context_before,
+            context_after=cache.context_after,
+        ))
+    return results
 
 
 # ── Queue fetch route ─────────────────────────────────────────────────────────
@@ -1320,9 +1403,64 @@ def export_csv():
     )
 
 
-@app.get("/api/session/recalibration")
-def get_recalibration():
-    return []
+@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
+def get_recalibration(db: Session = Depends(get_session)):
+    from concurrent.futures import ThreadPoolExecutor
+    from definition_service import generate_label_definition, select_best_example
+
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.archived_at == None)
+        .order_by(LabelDefinition.created_at.desc())
+    ).all()
+
+    # Collect all DB data first (before spawning threads — db session is not thread-safe)
+    label_data = []
+    for label in labels:
+        app_rows = db.exec(
+            select(LabelApplication)
+            .where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "human",
+            )
+            .order_by(LabelApplication.created_at.desc())
+            .limit(20)
+        ).all()
+
+        example_messages = []
+        for app_row in app_rows:
+            cache_row = db.exec(
+                select(MessageCache).where(
+                    MessageCache.chatlog_id == app_row.chatlog_id,
+                    MessageCache.message_index == app_row.message_index,
+                )
+            ).first()
+            if cache_row:
+                example_messages.append(cache_row.message_text)
+
+        label_data.append((label, example_messages))
+
+    # Run Gemini calls for all labels in parallel
+    def process(item):
+        label, example_messages = item
+        if not example_messages:
+            return label.id, None
+        description = label.description or generate_label_definition(label.name, example_messages)
+        example_text = select_best_example(label.name, description, example_messages)
+        return label.id, example_text
+
+    with ThreadPoolExecutor() as executor:
+        example_map = dict(executor.map(process, label_data))
+
+    return [
+        RecalibrationResponse(
+            label_id=label.id,
+            name=label.name,
+            description=label.description,
+            example_text=example_map.get(label.id),
+        )
+        for label, _ in label_data
+    ]
 
 
 @app.get("/api/queue/sample")

@@ -2,7 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
   ConceptCandidate, EmbedStatus,
 } from '../types'
 import { mockApi } from '../mocks'
@@ -48,6 +48,9 @@ export const api = {
   updateLabel: (id: number, body: UpdateLabelRequest): Promise<LabelDefinition> =>
     USE_MOCK ? Promise.resolve(mockApi.labels[0])
              : req(`/api/labels/${id}`, { method: 'PUT', ...json(body) }),
+
+  generateLabelDescription: (labelId: number): Promise<LabelDefinition> =>
+    req(`/api/labels/${labelId}/generate-description`, { method: 'POST' }),
 
   getSession: (): Promise<LabelingSession> =>
     USE_MOCK ? Promise.resolve(mockApi.session)
@@ -145,4 +148,12 @@ export const api = {
   getEmbedStatus: (): Promise<EmbedStatus> =>
     USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
              : req('/api/concepts/embed-status'),
+
+  getRecalibration: (): Promise<RecalibrationItem[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/session/recalibration'),
+
+  getSkippedMessages: (): Promise<QueueItem[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/queue/skipped'),
 }
