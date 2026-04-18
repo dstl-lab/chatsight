@@ -1019,8 +1019,16 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     if not labels:
         return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
 
-    # Compute a hash of current label names so cache entries are invalidated when labels change
-    labels_hash = hashlib.md5(",".join(sorted(l.name for l in labels)).encode()).hexdigest()
+counts = dict(db.exec(
+    select(LabelApplication.label_id, func.count(LabelApplication.id))
+    .where(LabelApplication.applied_by == "human")
+    .group_by(LabelApplication.label_id)
+).all())
+
+cache_key_input = "|".join(
+    f"{l.name}:{counts.get(l.id, 0)}" for l in sorted(labels, key=lambda x: x.id)
+)
+labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
 
     # Check cache
     cached = db.exec(
