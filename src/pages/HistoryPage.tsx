@@ -41,7 +41,11 @@ export function HistoryPage() {
   }
 
   const handleClick = (item: HistoryItem) => {
-    navigate(`/queue?review=${item.chatlog_id}-${item.message_index}`)
+    if (filter === 'skipped') {
+      navigate(`/queue?review=${item.chatlog_id}-${item.message_index}&mode=skipped`)
+    } else {
+      navigate(`/queue?review=${item.chatlog_id}-${item.message_index}`)
+    }
   }
 
   const totalLabeled = stats?.labeled_count ?? 0

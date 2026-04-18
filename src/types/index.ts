@@ -116,6 +116,13 @@ export interface ArchiveReviewState {
   completedMessageKeys: Set<string>
 }
 
+export interface RecalibrationItem {
+  label_id: number
+  name: string
+  description: string | null
+  example_text: string | null
+}
+
 export interface HistoryItem {
   chatlog_id: number
   message_index: number
