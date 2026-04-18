@@ -3,7 +3,7 @@ import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
-  ConceptCandidate, EmbedStatus,
+  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -156,4 +156,31 @@ export const api = {
   getSkippedMessages: (): Promise<QueueItem[]> =>
     USE_MOCK ? Promise.resolve([])
              : req('/api/queue/skipped'),
+
+  getAnalysisSummary: (): Promise<AnalysisSummary> =>
+    USE_MOCK ? Promise.resolve(mockApi.analysisSummary)
+             : req('/api/analysis/summary'),
+
+  getTemporalAnalysis: (opts?: { calendarFrom: string; calendarTo: string }): Promise<TemporalAnalysis> => {
+    if (USE_MOCK) return Promise.resolve(mockApi.temporalAnalysis)
+    const q = new URLSearchParams()
+    if (opts) {
+      q.set('calendar_from', opts.calendarFrom)
+      q.set('calendar_to', opts.calendarTo)
+    }
+    const suffix = q.toString() ? `?${q.toString()}` : ''
+    return req(`/api/analysis/temporal${suffix}`)
+  },
+
+  exportCsv: async (): Promise<Blob> => {
+    if (USE_MOCK) {
+      const header = 'chatlog_id,message_index,message_text,label_name,applied_by,created_at\n'
+      return new Blob([header + '1,0,"Hello",Concept Question,human,2026-01-01T00:00:00\n'], {
+        type: 'text/csv',
+      })
+    }
+    const res = await fetch('/api/export/csv')
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.blob()
+  },
 }
