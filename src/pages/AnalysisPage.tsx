@@ -3,12 +3,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,8 +13,6 @@ import {
 } from 'recharts'
 import type { AnalysisSummary, TemporalAnalysis } from '../types'
 import { api } from '../services/api'
-
-const PIE_COLORS = ['#22c55e', '#6366f1', '#737373']
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -262,11 +257,15 @@ export function AnalysisPage() {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
 
-  const coverageData = [
-    { name: 'Human-labeled', value: summary.coverage.human_labeled },
-    { name: 'AI-labeled', value: summary.coverage.ai_labeled },
-    { name: 'Unlabeled', value: summary.coverage.unlabeled },
-  ]
+  const covTotal = Math.max(1, summary.coverage.total)
+  const covHuman = summary.coverage.human_labeled
+  const covAi = summary.coverage.ai_labeled
+  const covUnlabeled = summary.coverage.unlabeled
+  const pctOfTotal = (n: number) => (n / covTotal) * 100
+  /** Stacked bar: scale if human+AI+unlabeled shares exceed 100% of total (rare overlap). */
+  const rawBarPctSum = pctOfTotal(covHuman) + pctOfTotal(covAi) + pctOfTotal(covUnlabeled)
+  const barScale = rawBarPctSum > 100 ? 100 / rawBarPctSum : 1
+  const barPct = (n: number) => pctOfTotal(n) * barScale
 
   const posData = Object.entries(summary.position_distribution)
     .map(([label, buckets]) => ({
@@ -344,7 +343,7 @@ export function AnalysisPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
           <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="text-sm font-medium text-neutral-300">Label Frequency</h2>
@@ -411,30 +410,84 @@ export function AnalysisPage() {
           </section>
 
           <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
-            <h2 className="text-sm font-medium text-neutral-300 mb-4">Coverage</h2>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={coverageData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={88}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                >
-                  {coverageData.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="#262626" />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#171717', border: '1px solid #404040', borderRadius: 8 }}
+            <h2 className="text-sm font-medium text-neutral-300 mb-1">Coverage</h2>
+            <p className="text-xs text-neutral-500 mb-4">
+              Share of all student messages in Postgres (<code className="text-neutral-400">tutor_query</code> total).
+              Human vs AI counts are unique messages with at least one label from that source.
+            </p>
+            <div className="space-y-4">
+              <div
+                className="flex h-10 w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900"
+                role="img"
+                aria-label="Coverage stacked bar: human, AI, unlabeled"
+              >
+                <div
+                  className="h-full bg-emerald-500 min-w-0 transition-[width] duration-300"
+                  style={{ width: `${barPct(covHuman)}%` }}
+                  title={`Human-labeled: ${covHuman}`}
                 />
-              </PieChart>
-            </ResponsiveContainer>
+                <div
+                  className="h-full bg-indigo-500 min-w-0 transition-[width] duration-300"
+                  style={{ width: `${barPct(covAi)}%` }}
+                  title={`AI-labeled: ${covAi}`}
+                />
+                <div
+                  className="h-full bg-neutral-600 min-w-0 transition-[width] duration-300"
+                  style={{ width: `${barPct(covUnlabeled)}%` }}
+                  title={`Unlabeled: ${covUnlabeled}`}
+                />
+              </div>
+              <div className="flex flex-wrap gap-4 text-xs text-neutral-400">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
+                  Human-labeled
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-sm bg-indigo-500" />
+                  AI-labeled
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-sm bg-neutral-600" />
+                  Unlabeled
+                </span>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-neutral-800">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-neutral-900/80 text-neutral-400">
+                    <tr>
+                      <th className="p-2 font-medium">Category</th>
+                      <th className="p-2 font-medium text-right tabular-nums">Count</th>
+                      <th className="p-2 font-medium text-right tabular-nums">% of total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-neutral-200">
+                    <tr className="border-t border-neutral-800">
+                      <td className="p-2">Human-labeled</td>
+                      <td className="p-2 text-right tabular-nums">{covHuman.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covHuman).toFixed(1)}%</td>
+                    </tr>
+                    <tr className="border-t border-neutral-800">
+                      <td className="p-2">AI-labeled</td>
+                      <td className="p-2 text-right tabular-nums">{covAi.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covAi).toFixed(1)}%</td>
+                    </tr>
+                    <tr className="border-t border-neutral-800">
+                      <td className="p-2">Unlabeled</td>
+                      <td className="p-2 text-right tabular-nums">{covUnlabeled.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covUnlabeled).toFixed(1)}%</td>
+                    </tr>
+                    <tr className="border-t border-neutral-800 bg-neutral-900/60 font-medium text-neutral-100">
+                      <td className="p-2">Total messages</td>
+                      <td className="p-2 text-right tabular-nums">{summary.coverage.total.toLocaleString()}</td>
+                      <td className="p-2 text-right tabular-nums">100%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px]">
+          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px] lg:col-span-2">
             <h2 className="text-sm font-medium text-neutral-300 mb-4">Conversation Position</h2>
             {posData.length === 0 ? (
               <p className="text-sm text-neutral-500">No position data yet.</p>
@@ -454,7 +507,7 @@ export function AnalysisPage() {
                     Late (7+)
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[480px] overflow-y-auto pr-1">
                   {posData.map((row) => (
                     <div key={row.label} className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
                       <p className="text-xs text-neutral-200 truncate mb-2" title={row.label}>{row.label}</p>
