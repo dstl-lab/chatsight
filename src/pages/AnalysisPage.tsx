@@ -246,16 +246,43 @@ export function AnalysisPage() {
 
   if (!summary) return null
 
-  const selectedLabelCounts =
-    labelFreqMode === 'human'
-      ? summary.human_label_counts
-      : labelFreqMode === 'ai'
-        ? summary.ai_label_counts
-        : summary.label_counts
+  /** `label` = category (Y-axis). Avoid `name` on rows — it conflicts with Recharts `<Bar name="…">` for stacked series. */
+  let freqData: { label: string; count: number; human: number; ai: number }[]
+  if (labelFreqMode === 'human') {
+    freqData = Object.entries(summary.human_label_counts)
+      .map(([label, count]) => ({
+        label,
+        count: Number(count),
+        human: Number(count),
+        ai: 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+  } else if (labelFreqMode === 'ai') {
+    freqData = Object.entries(summary.ai_label_counts)
+      .map(([label, count]) => ({
+        label,
+        count: Number(count),
+        human: 0,
+        ai: Number(count),
+      }))
+      .sort((a, b) => b.count - a.count)
+  } else {
+    const names = new Set([
+      ...Object.keys(summary.human_label_counts),
+      ...Object.keys(summary.ai_label_counts),
+      ...Object.keys(summary.label_counts),
+    ])
+    freqData = [...names]
+      .map((label) => {
+        const human = Number(summary.human_label_counts[label] ?? 0)
+        const ai = Number(summary.ai_label_counts[label] ?? 0)
+        const count = human + ai
+        return { label, human, ai, count }
+      })
+      .sort((a, b) => b.count - a.count)
+  }
 
-  const freqData = Object.entries(selectedLabelCounts)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
+  const freqChartMax = freqData.length ? Math.max(1, ...freqData.map((d) => d.count)) : 1
 
   const covTotal = Math.max(1, summary.coverage.total)
   const covHuman = summary.coverage.human_labeled
@@ -387,14 +414,89 @@ export function AnalysisPage() {
               <p className="text-sm text-neutral-500">
                 No labels for this source yet.
               </p>
+            ) : labelFreqMode === 'combined' ? (
+              <div className="space-y-2">
+                <p className="text-[10px] text-neutral-500 pl-[138px] pr-12">
+                  Bar length is vs the largest label total (human + AI). Green / indigo split is the mix within that
+                  label.
+                </p>
+                <div
+                  className="max-h-[min(520px,60vh)] overflow-y-auto pr-1 space-y-1.5"
+                  role="list"
+                  aria-label="Label counts by human vs AI"
+                >
+                  {freqData.map((row) => {
+                    const denom = row.count > 0 ? row.count : 1
+                    const wHuman = (row.human / denom) * 100
+                    const wAi = (row.ai / denom) * 100
+                    const lenPct = row.count === 0 ? 0 : Math.max((row.count / freqChartMax) * 100, 1.2)
+                    return (
+                      <div key={row.label} className="flex items-center gap-2 text-xs min-h-[26px]">
+                        <div
+                          className="w-[130px] shrink-0 truncate text-neutral-300 text-right pr-1"
+                          title={row.label}
+                        >
+                          {row.label}
+                        </div>
+                        <div className="flex-1 min-w-0 h-6 rounded-md bg-neutral-800/60 border border-neutral-800/80 relative">
+                          {row.count > 0 && (
+                            <div
+                              className="absolute left-0 top-0 bottom-0 flex rounded overflow-hidden border border-neutral-800 shadow-sm"
+                              style={{
+                                width: `${lenPct}%`,
+                                minWidth: row.count > 0 ? 3 : 0,
+                              }}
+                              title={`${row.label}: human ${row.human}, AI ${row.ai}, total ${row.count} (${lenPct.toFixed(0)}% of max label)`}
+                            >
+                              {row.human > 0 && (
+                                <div
+                                  className="h-full bg-emerald-500 min-w-0 shrink-0"
+                                  style={{ width: `${wHuman}%` }}
+                                  title={`Human: ${row.human}`}
+                                />
+                              )}
+                              {row.ai > 0 && (
+                                <div
+                                  className="h-full bg-indigo-500 min-w-0 shrink-0"
+                                  style={{ width: `${wAi}%` }}
+                                  title={`AI: ${row.ai}`}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <span className="w-10 shrink-0 text-right tabular-nums text-neutral-400">
+                          {row.count.toLocaleString()}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-4 pt-1 text-xs text-neutral-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
+                    Human
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-sm bg-indigo-500" />
+                    AI
+                  </span>
+                </div>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={Math.max(220, freqData.length * 36)}>
                 <BarChart data={freqData} layout="vertical" margin={{ left: 8, right: 16, top: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" horizontal={false} />
-                  <XAxis type="number" stroke="#737373" tick={{ fill: '#a3a3a3', fontSize: 11 }} />
+                  <XAxis
+                    type="number"
+                    domain={[0, freqChartMax]}
+                    allowDecimals={false}
+                    stroke="#737373"
+                    tick={{ fill: '#a3a3a3', fontSize: 11 }}
+                  />
                   <YAxis
                     type="category"
-                    dataKey="name"
+                    dataKey="label"
                     width={130}
                     stroke="#737373"
                     tick={{ fill: '#a3a3a3', fontSize: 11 }}
@@ -403,7 +505,12 @@ export function AnalysisPage() {
                     contentStyle={{ backgroundColor: '#171717', border: '1px solid #404040', borderRadius: 8 }}
                     labelStyle={{ color: '#e5e5e5' }}
                   />
-                  <Bar dataKey="count" fill="#60a5fa" radius={[0, 4, 4, 0]} />
+                  <Bar
+                    dataKey="count"
+                    fill={labelFreqMode === 'human' ? '#22c55e' : '#6366f1'}
+                    radius={[0, 4, 4, 0]}
+                    isAnimationActive={false}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
