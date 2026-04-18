@@ -512,7 +512,11 @@ export function AnalysisPage() {
                   <h3 className="text-sm font-medium text-neutral-300 mb-4">Tutor usage (hour of day)</h3>
                   <p className="text-xs text-neutral-500 mb-2">
                     Aggregate student messages (<code className="text-neutral-400">tutor_query</code>) from
-                    Postgres.
+                    Postgres. Hours are local wall clock in{' '}
+                    <code className="text-neutral-400">
+                      {temporal.tutor_usage.display_timezone ?? 'America/Los_Angeles'}
+                    </code>{' '}
+                    (see note above).
                   </p>
                   {tutorUsageErr ? (
                     <p className="text-sm text-amber-500/90">{tutorUsageErr}</p>
@@ -558,7 +562,13 @@ export function AnalysisPage() {
 
                 <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[260px]">
                   <h3 className="text-sm font-medium text-neutral-300 mb-4">Tutor usage (day of week)</h3>
-                  <p className="text-xs text-neutral-500 mb-2">0 = Sunday … 6 = Saturday (Postgres DOW).</p>
+                  <p className="text-xs text-neutral-500 mb-2">
+                    0 = Sunday … 6 = Saturday in{' '}
+                    <code className="text-neutral-400">
+                      {temporal.tutor_usage.display_timezone ?? 'America/Los_Angeles'}
+                    </code>
+                    .
+                  </p>
                   {tutorUsageErr ? (
                     <p className="text-sm text-amber-500/90">{tutorUsageErr}</p>
                   ) : tutorUsageEmpty ? (

@@ -96,6 +96,7 @@ export const mockApi = {
         { weekday: 5, count: 40 },
         { weekday: 6, count: 30 },
       ],
+      display_timezone: 'America/Los_Angeles',
       timezone_note: 'Mock data — connect to Postgres for real tutor_query timestamps.',
       error: null,
       by_day: Array.from({ length: 31 }, (_, i) => {

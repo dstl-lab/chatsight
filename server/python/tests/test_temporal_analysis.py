@@ -25,6 +25,7 @@ def test_temporal_response_shape(client):
     assert len(data["tutor_usage"]["by_weekday"]) == 7
     assert data["tutor_usage"]["by_weekday"][0]["weekday"] == 0
     assert "timezone_note" in data["tutor_usage"]
+    assert data["tutor_usage"].get("display_timezone")
     assert "by_day" in data["tutor_usage"]
     assert isinstance(data["tutor_usage"]["by_day"], list)
 

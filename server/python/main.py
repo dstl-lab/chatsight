@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 import csv
+import os
 import io
 import logging
 import threading
@@ -1455,12 +1456,15 @@ def get_analysis_temporal(
     if cal_from > cal_to:
         raise HTTPException(status_code=400, detail="calendar_from must be <= calendar_to")
 
+    analysis_tz = (os.getenv("ANALYSIS_TIMEZONE") or "America/Los_Angeles").strip() or "America/Los_Angeles"
+
     by_hour = [{"hour": h, "count": 0} for h in range(24)]
     by_weekday = [{"weekday": w, "count": 0} for w in range(7)]
     tutor_usage_by_day: list = []
     timezone_note = (
-        "Timestamps come from PostgreSQL `events.created_at` (typically UTC). "
-        "Hour, weekday, and daily counts use the database session time zone for `DATE` / `EXTRACT`."
+        f"Tutor usage uses PostgreSQL `events.created_at` (stored as timestamptz, usually UTC). "
+        f"Hours, weekdays, and calendar days are grouped in `{analysis_tz}` so the axes match that "
+        "zone’s local wall clock (set `ANALYSIS_TIMEZONE` to another IANA name to change)."
     )
     tutor_usage_error: Optional[str] = None
 
@@ -1468,11 +1472,13 @@ def get_analysis_temporal(
         with ext_engine.connect() as conn:
             hour_rows = conn.execute(
                 text("""
-                    SELECT EXTRACT(HOUR FROM created_at)::int AS hour, COUNT(*)::bigint AS cnt
+                    SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE :tz))::int AS hour,
+                           COUNT(*)::bigint AS cnt
                     FROM events
                     WHERE event_type = 'tutor_query'
                     GROUP BY 1
-                """)
+                """),
+                {"tz": analysis_tz},
             ).mappings().all()
             for r in hour_rows:
                 h = int(r["hour"])
@@ -1481,11 +1487,13 @@ def get_analysis_temporal(
 
             dow_rows = conn.execute(
                 text("""
-                    SELECT EXTRACT(DOW FROM created_at)::int AS weekday, COUNT(*)::bigint AS cnt
+                    SELECT EXTRACT(DOW FROM (created_at AT TIME ZONE :tz))::int AS weekday,
+                           COUNT(*)::bigint AS cnt
                     FROM events
                     WHERE event_type = 'tutor_query'
                     GROUP BY 1
-                """)
+                """),
+                {"tz": analysis_tz},
             ).mappings().all()
             for r in dow_rows:
                 w = int(r["weekday"])
@@ -1494,14 +1502,14 @@ def get_analysis_temporal(
 
             tutor_daily_rows = conn.execute(
                 text("""
-                    SELECT created_at::date AS d, COUNT(*)::bigint AS cnt
+                    SELECT (created_at AT TIME ZONE :tz)::date AS d, COUNT(*)::bigint AS cnt
                     FROM events
                     WHERE event_type = 'tutor_query'
-                      AND created_at::date >= :d0
-                      AND created_at::date <= :d1
+                      AND (created_at AT TIME ZONE :tz)::date >= :d0
+                      AND (created_at AT TIME ZONE :tz)::date <= :d1
                     GROUP BY 1
                 """),
-                {"d0": cal_from, "d1": cal_to},
+                {"tz": analysis_tz, "d0": cal_from, "d1": cal_to},
             ).mappings().all()
             day_counts: dict[str, int] = {}
             for r in tutor_daily_rows:
@@ -1606,6 +1614,7 @@ def get_analysis_temporal(
             "by_hour": by_hour,
             "by_weekday": by_weekday,
             "by_day": tutor_usage_by_day,
+            "display_timezone": analysis_tz,
             "timezone_note": timezone_note,
             "error": tutor_usage_error,
         },

@@ -43,13 +43,15 @@ export interface AnalysisSummary {
   position_distribution: Record<string, { early: number; mid: number; late: number }>
 }
 
-/** Weekday 0 = Sunday … 6 = Saturday (PostgreSQL DOW). */
+/** Weekday 0 = Sunday … 6 = Saturday in `display_timezone` (same convention as PostgreSQL DOW). */
 export interface TemporalAnalysis {
   tutor_usage: {
     by_hour: Array<{ hour: number; count: number }>
     by_weekday: Array<{ weekday: number; count: number }>
     /** One row per calendar day from `calendar_from` … `calendar_to` (inclusive). */
     by_day: Array<{ date: string; count: number }>
+    /** IANA zone used to bucket tutor_query timestamps (e.g. America/Los_Angeles). */
+    display_timezone?: string
     timezone_note: string
     /** Set when Postgres could not be queried (otherwise null/omitted). */
     error?: string | null
