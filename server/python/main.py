@@ -643,47 +643,28 @@ def get_label_examples(label_id: int, limit: int = 50, db: Session = Depends(get
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
 
-    apps = db.exec(
-        select(LabelApplication)
+    rows = db.exec(
+        select(LabelApplication, MessageCache.message_text)
+        .join(
+            MessageCache,
+            (LabelApplication.chatlog_id == MessageCache.chatlog_id) &
+            (LabelApplication.message_index == MessageCache.message_index)
+        )
         .where(LabelApplication.label_id == label_id)
         .order_by(func.random())
         .limit(limit)
     ).all()
 
-    if not apps:
-        return []
-
-    results = []
-    with ext_engine.connect() as conn:
-        for app_ in apps:
-            row = conn.execute(
-                text("""
-                WITH student AS (
-                    SELECT payload->>'question' AS msg,
-                           (ROW_NUMBER() OVER (
-                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                           )) - 1 AS idx
-                    FROM events
-                    WHERE event_type = 'tutor_query'
-                      AND payload->>'conversation_id' = (
-                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                      )
-                )
-                SELECT msg FROM student WHERE idx = :midx
-                """),
-                {"cid": app_.chatlog_id, "midx": app_.message_index},
-            ).first()
-            msg_text = row[0] if row and row[0] else ""
-            results.append(
-                LabelExampleResponse(
-                    chatlog_id=app_.chatlog_id,
-                    message_index=app_.message_index,
-                    message_text=msg_text,
-                    label_id=app_.label_id,
-                    applied_by=app_.applied_by
-                )
-            )
-    return results
+    return [
+        LabelExampleResponse(
+            chatlog_id=app_.chatlog_id,
+            message_index=app_.message_index,
+            message_text=msg_text,
+            label_id=app_.label_id,
+            applied_by=app_.applied_by
+        )
+        for app_, msg_text in rows
+    ]
 
 
 @app.post("/api/queue/skip")
