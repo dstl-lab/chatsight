@@ -1,8 +1,14 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
+import csv
+import os
+import io
+import logging
 import threading
-from fastapi import FastAPI, Depends, HTTPException, Response, BackgroundTasks
+from calendar import monthrange
+from fastapi import FastAPI, Depends, HTTPException, Query, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, text, update
 from sqlalchemy.engine import Connection
@@ -18,6 +24,7 @@ from schemas import (
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
+    RecalibrationResponse,
 )
 from sqlmodel import Session, select
 
@@ -81,6 +88,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -273,6 +282,63 @@ def update_label(
     db.add(label)
     db.commit()
     db.refresh(label)
+    count = db.exec(
+        select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+    ).one()
+    return LabelDefinitionResponse(
+        id=label.id, name=label.name, description=label.description,
+        created_at=label.created_at, count=count,
+    )
+
+
+@app.post("/api/labels/{label_id}/generate-description", response_model=LabelDefinitionResponse)
+def generate_label_description(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    # Fetch up to 10 most recent human-labeled examples for this label
+    applications = db.exec(
+        select(LabelApplication)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+        )
+        .order_by(LabelApplication.created_at.desc())
+        .limit(10)
+    ).all()
+
+    # Join with MessageCache to get message text
+    example_messages = []
+    for app_row in applications:
+        cache = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == app_row.chatlog_id,
+                MessageCache.message_index == app_row.message_index,
+            )
+        ).first()
+        if cache:
+            example_messages.append(cache.message_text)
+
+    if not example_messages:
+        raise HTTPException(
+            status_code=422,
+            detail="No human-labeled examples found — cannot generate a definition.",
+        )
+
+    if label.description and not label.description.startswith("AI Generated:"):
+        raise HTTPException(
+            status_code=409,
+            detail="Label already has a manually-written description. Remove it before generating an AI one.",
+        )
+
+    from definition_service import generate_label_definition
+    raw = generate_label_definition(label.name, example_messages)
+    label.description = f"AI Generated: {raw}"
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+
     count = db.exec(
         select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
     ).one()
@@ -646,6 +712,31 @@ def unskip_message(chatlog_id: int, message_index: int, db: Session = Depends(ge
     return {"ok": True}
 
 
+@app.get("/api/queue/skipped", response_model=List[QueueItemResponse])
+def get_skipped_queue(db: Session = Depends(get_session)):
+    skipped_rows = db.exec(
+        select(SkippedMessage).order_by(SkippedMessage.created_at.asc())
+    ).all()
+    results = []
+    for row in skipped_rows:
+        cache = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == row.chatlog_id,
+                MessageCache.message_index == row.message_index,
+            )
+        ).first()
+        if not cache:
+            continue
+        results.append(QueueItemResponse(
+            chatlog_id=cache.chatlog_id,
+            message_index=cache.message_index,
+            message_text=cache.message_text,
+            context_before=cache.context_before,
+            context_after=cache.context_after,
+        ))
+    return results
+
+
 # ── Queue fetch route ─────────────────────────────────────────────────────────
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
@@ -816,6 +907,7 @@ def get_queue_history(
 
     # Batch fetch message text from cache (one query for all page items)
     page_keys = [(e["chatlog_id"], e["message_index"]) for e in page]
+    page_key_set = set(page_keys)
     cached_msgs = db.exec(select(MessageCache)).all()
     cache_lookup = {(c.chatlog_id, c.message_index): c for c in cached_msgs}
 
@@ -834,7 +926,7 @@ def get_queue_history(
         ).all()
         for cid, midx, name in label_rows:
             key = (cid, midx)
-            if key in {(e["chatlog_id"], e["message_index"]) for e in page}:
+            if key in page_key_set:
                 labels_by_msg.setdefault(key, []).append(name)
 
     result = []
@@ -1632,31 +1724,438 @@ def get_embed_status(db: Session = Depends(get_session)):
 
 
 @app.get("/api/analysis/summary")
-def get_analysis_summary():
+def get_analysis_summary(db: Session = Depends(get_session)):
+    label_rows = db.exec(
+        select(LabelDefinition.name, func.count(LabelApplication.id))
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .group_by(LabelDefinition.name)
+    ).all()
+    label_counts = {name: int(cnt) for name, cnt in label_rows}
+
+    human_rows = db.exec(
+        select(LabelDefinition.name, func.count(LabelApplication.id))
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .where(LabelApplication.applied_by == "human")
+        .group_by(LabelDefinition.name)
+    ).all()
+    human_label_counts = {name: int(cnt) for name, cnt in human_rows}
+
+    ai_rows = db.exec(
+        select(LabelDefinition.name, func.count(LabelApplication.id))
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .where(LabelApplication.applied_by == "ai")
+        .group_by(LabelDefinition.name)
+    ).all()
+    ai_label_counts = {name: int(cnt) for name, cnt in ai_rows}
+
+    pos_rows = db.exec(
+        select(LabelApplication.message_index, LabelDefinition.name)
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+    ).all()
+    pos_acc: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
+    for msg_idx, lbl_name in pos_rows:
+        if msg_idx <= 2:
+            pos_acc[lbl_name]["early"] += 1
+        elif msg_idx <= 6:
+            pos_acc[lbl_name]["mid"] += 1
+        else:
+            pos_acc[lbl_name]["late"] += 1
+    position_distribution = {k: dict(v) for k, v in pos_acc.items()}
+
+    human_pairs = set()
+    ai_pairs = set()
+    for row in db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index, LabelApplication.applied_by)
+    ).all():
+        cid, mid, applied_by = row
+        if applied_by == "human":
+            human_pairs.add((cid, mid))
+        elif applied_by == "ai":
+            ai_pairs.add((cid, mid))
+    human_labeled = len(human_pairs)
+    ai_labeled = len(ai_pairs)
+    labeled_any = len(human_pairs | ai_pairs)
+
+    notebook_breakdown: dict = {}
+    total = 0
+    try:
+        with ext_engine.connect() as conn:
+            total = int(
+                conn.execute(text("SELECT COUNT(*) FROM events WHERE event_type = 'tutor_query'")).scalar_one()
+            )
+            nb_rows = conn.execute(
+                text("""
+                    SELECT MIN(id) AS chatlog_id, MAX(payload->>'notebook') AS notebook
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                      AND payload->>'conversation_id' IS NOT NULL
+                    GROUP BY payload->>'conversation_id'
+                """)
+            ).mappings().all()
+            chatlog_notebook = {}
+            for r in nb_rows:
+                cid = int(r["chatlog_id"])
+                nb = r["notebook"] if r["notebook"] else "unknown"
+                chatlog_notebook[cid] = nb
+
+            nb_counts: dict = defaultdict(lambda: defaultdict(int))
+            for lbl_name, chatlog_id in db.exec(
+                select(LabelDefinition.name, LabelApplication.chatlog_id)
+                .select_from(LabelApplication)
+                .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+            ).all():
+                nb_key = chatlog_notebook.get(int(chatlog_id), "unknown")
+                nb_counts[nb_key][lbl_name] += 1
+            notebook_breakdown = {k: dict(v) for k, v in nb_counts.items()}
+    except Exception:
+        total = 0
+        notebook_breakdown = {}
+
+    unlabeled = max(0, total - labeled_any)
+
     return {
-        "label_counts": {"Concept Question": 22, "Clarification": 18},
-        "notebook_breakdown": {"lab01": {"Concept Question": 10}},
+        "label_counts": label_counts,
+        "human_label_counts": human_label_counts,
+        "ai_label_counts": ai_label_counts,
+        "notebook_breakdown": notebook_breakdown,
         "coverage": {
-            "human_labeled": 40,
-            "ai_labeled": 0,
-            "unlabeled": 260,
-            "total": 300,
+            "human_labeled": human_labeled,
+            "ai_labeled": ai_labeled,
+            "unlabeled": unlabeled,
+            "total": total,
         },
+        "position_distribution": position_distribution,
+    }
+
+
+def _normalize_heatmap_rows(raw: list[list[float]]) -> list[list[float]]:
+    out = []
+    for row in raw:
+        s = sum(row)
+        out.append([float(x) / s if s > 0 else 0.0 for x in row])
+    return out
+
+
+def _normalize_heatmap_columns(raw: list[list[float]]) -> list[list[float]]:
+    if not raw:
+        return []
+    rows_n = len(raw)
+    cols_n = len(raw[0])
+    col_sums = [sum(raw[r][c] for r in range(rows_n)) for c in range(cols_n)]
+    return [
+        [float(raw[r][c]) / col_sums[c] if col_sums[c] > 0 else 0.0 for c in range(cols_n)]
+        for r in range(rows_n)
+    ]
+
+
+@app.get("/api/analysis/temporal")
+def get_analysis_temporal(
+    db: Session = Depends(get_session),
+    calendar_from: Optional[date] = Query(None, alias="calendar_from"),
+    calendar_to: Optional[date] = Query(None, alias="calendar_to"),
+):
+    today = date.today()
+    if calendar_from is None and calendar_to is None:
+        cal_from = date(today.year, today.month, 1)
+        cal_to = date(today.year, today.month, monthrange(today.year, today.month)[1])
+    elif calendar_from is None or calendar_to is None:
+        raise HTTPException(
+            status_code=400,
+            detail="calendar_from and calendar_to must both be set, or both omitted (defaults to current month).",
+        )
+    else:
+        cal_from = calendar_from
+        cal_to = calendar_to
+    if cal_from > cal_to:
+        raise HTTPException(status_code=400, detail="calendar_from must be <= calendar_to")
+
+    analysis_tz = (os.getenv("ANALYSIS_TIMEZONE") or "America/Los_Angeles").strip() or "America/Los_Angeles"
+
+    by_hour = [{"hour": h, "count": 0} for h in range(24)]
+    by_weekday = [{"weekday": w, "count": 0} for w in range(7)]
+    tutor_usage_by_day: list = []
+    timezone_note = (
+        f"Tutor usage uses PostgreSQL `events.created_at` (stored as timestamptz, usually UTC). "
+        f"Hours, weekdays, and calendar days are grouped in `{analysis_tz}` so the axes match that "
+        "zone’s local wall clock (set `ANALYSIS_TIMEZONE` to another IANA name to change)."
+    )
+    tutor_usage_error: Optional[str] = None
+
+    try:
+        with ext_engine.connect() as conn:
+            hour_rows = conn.execute(
+                text("""
+                    SELECT EXTRACT(HOUR FROM (created_at AT TIME ZONE :tz))::int AS hour,
+                           COUNT(*)::bigint AS cnt
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                    GROUP BY 1
+                """),
+                {"tz": analysis_tz},
+            ).mappings().all()
+            for r in hour_rows:
+                h = int(r["hour"])
+                if 0 <= h <= 23:
+                    by_hour[h]["count"] = int(r["cnt"])
+
+            dow_rows = conn.execute(
+                text("""
+                    SELECT EXTRACT(DOW FROM (created_at AT TIME ZONE :tz))::int AS weekday,
+                           COUNT(*)::bigint AS cnt
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                    GROUP BY 1
+                """),
+                {"tz": analysis_tz},
+            ).mappings().all()
+            for r in dow_rows:
+                w = int(r["weekday"])
+                if 0 <= w <= 6:
+                    by_weekday[w]["count"] = int(r["cnt"])
+
+            tutor_daily_rows = conn.execute(
+                text("""
+                    SELECT (created_at AT TIME ZONE :tz)::date AS d, COUNT(*)::bigint AS cnt
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                      AND (created_at AT TIME ZONE :tz)::date >= :d0
+                      AND (created_at AT TIME ZONE :tz)::date <= :d1
+                    GROUP BY 1
+                """),
+                {"tz": analysis_tz, "d0": cal_from, "d1": cal_to},
+            ).mappings().all()
+            day_counts: dict[str, int] = {}
+            for r in tutor_daily_rows:
+                d = r["d"]
+                dk = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                day_counts[dk] = int(r["cnt"])
+            cur = cal_from
+            while cur <= cal_to:
+                ds = cur.isoformat()
+                tutor_usage_by_day.append({"date": ds, "count": day_counts.get(ds, 0)})
+                cur += timedelta(days=1)
+    except Exception as e:
+        logger.warning("tutor_usage aggregates skipped: %s", e)
+        tutor_usage_error = str(e)[:300]
+        tutor_usage_by_day = []
+
+    labels_list: list[str] = []
+    notebooks_list: list[str] = []
+    raw_matrix: list[list[int]] = []
+    row_norm: list[list[float]] = []
+    col_norm: list[list[float]] = []
+
+    try:
+        with ext_engine.connect() as conn:
+            nb_rows = conn.execute(
+                text("""
+                    SELECT MIN(id) AS chatlog_id, MAX(payload->>'notebook') AS notebook
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                      AND payload->>'conversation_id' IS NOT NULL
+                    GROUP BY payload->>'conversation_id'
+                """)
+            ).mappings().all()
+            chatlog_notebook: dict[int, str] = {}
+            for r in nb_rows:
+                cid = int(r["chatlog_id"])
+                nb = r["notebook"] if r["notebook"] else "unknown"
+                chatlog_notebook[cid] = nb
+
+            pair_counts: dict = defaultdict(lambda: defaultdict(int))
+            label_names_seen: set = set()
+            notebook_names_seen: set = set()
+            for lbl_name, chatlog_id in db.exec(
+                select(LabelDefinition.name, LabelApplication.chatlog_id)
+                .select_from(LabelApplication)
+                .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+            ).all():
+                nb_key = chatlog_notebook.get(int(chatlog_id), "unknown")
+                pair_counts[nb_key][lbl_name] += 1
+                label_names_seen.add(lbl_name)
+                notebook_names_seen.add(nb_key)
+
+            labels_list = sorted(label_names_seen)
+            notebooks_list = sorted(notebook_names_seen)
+            raw_matrix = [
+                [int(pair_counts[nb].get(lbl, 0)) for lbl in labels_list] for nb in notebooks_list
+            ]
+            raw_float = [[float(x) for x in row] for row in raw_matrix]
+            row_norm = _normalize_heatmap_rows(raw_float)
+            col_norm = _normalize_heatmap_columns(raw_float)
+    except Exception:
+        labels_list = []
+        notebooks_list = []
+        raw_matrix = []
+        row_norm = []
+        col_norm = []
+
+    daily: dict = defaultdict(lambda: {"human": 0, "ai": 0})
+    for row in db.exec(
+        select(
+            func.date(LabelApplication.created_at),
+            LabelApplication.applied_by,
+            func.count(LabelApplication.id),
+        )
+        .select_from(LabelApplication)
+        .group_by(func.date(LabelApplication.created_at), LabelApplication.applied_by)
+    ).all():
+        d_raw, applied_by, cnt = row
+        if d_raw is None:
+            continue
+        ds = d_raw.isoformat() if hasattr(d_raw, "isoformat") else str(d_raw)
+        if applied_by == "human":
+            daily[ds]["human"] += int(cnt)
+        elif applied_by == "ai":
+            daily[ds]["ai"] += int(cnt)
+
+    labeling_throughput: list = []
+    if daily:
+        dates_sorted = sorted(daily.keys())
+        d0 = date.fromisoformat(dates_sorted[0])
+        d1 = date.fromisoformat(dates_sorted[-1])
+        cur = d0
+        while cur <= d1:
+            ds = cur.isoformat()
+            h = daily[ds]["human"]
+            a = daily[ds]["ai"]
+            labeling_throughput.append({"date": ds, "human": h, "ai": a, "total": h + a})
+            cur += timedelta(days=1)
+
+    return {
+        "tutor_usage": {
+            "by_hour": by_hour,
+            "by_weekday": by_weekday,
+            "by_day": tutor_usage_by_day,
+            "display_timezone": analysis_tz,
+            "timezone_note": timezone_note,
+            "error": tutor_usage_error,
+        },
+        "notebook_label_heatmap": {
+            "labels": labels_list,
+            "notebooks": notebooks_list,
+            "raw_counts": raw_matrix,
+            "row_normalized": row_norm,
+            "column_normalized": col_norm,
+        },
+        "labeling_throughput": labeling_throughput,
     }
 
 
 @app.get("/api/export/csv")
-def export_csv():
+def export_csv(db: Session = Depends(get_session)):
+    rows = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelDefinition.name,
+            LabelApplication.applied_by,
+            LabelApplication.created_at,
+        )
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .order_by(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelApplication.id,
+        )
+    ).all()
+
+    keys = {(r[0], r[1]) for r in rows}
+    text_by_key: dict = {}
+    if keys:
+        for mc in db.exec(select(MessageCache)).all():
+            k = (mc.chatlog_id, mc.message_index)
+            if k in keys:
+                text_by_key[k] = mc.message_text or ""
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        ["chatlog_id", "message_index", "message_text", "label_name", "applied_by", "created_at"]
+    )
+    for chatlog_id, message_index, label_name, applied_by, created_at in rows:
+        msg_text = text_by_key.get((chatlog_id, message_index), "")
+        writer.writerow(
+            [
+                chatlog_id,
+                message_index,
+                msg_text,
+                label_name,
+                applied_by,
+                created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+            ]
+        )
+
     return Response(
-        content="chatlog_id,message_index,label,applied_by\n",
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=labels.csv"},
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=chatsight-labels.csv"},
     )
 
 
-@app.get("/api/session/recalibration")
-def get_recalibration():
-    return []
+@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
+def get_recalibration(db: Session = Depends(get_session)):
+    from concurrent.futures import ThreadPoolExecutor
+    from definition_service import generate_label_definition, select_best_example
+
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.archived_at == None)
+        .order_by(LabelDefinition.created_at.desc())
+    ).all()
+
+    # Collect all DB data first (before spawning threads — db session is not thread-safe)
+    label_data = []
+    for label in labels:
+        app_rows = db.exec(
+            select(LabelApplication)
+            .where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "human",
+            )
+            .order_by(LabelApplication.created_at.desc())
+            .limit(20)
+        ).all()
+
+        example_messages = []
+        for app_row in app_rows:
+            cache_row = db.exec(
+                select(MessageCache).where(
+                    MessageCache.chatlog_id == app_row.chatlog_id,
+                    MessageCache.message_index == app_row.message_index,
+                )
+            ).first()
+            if cache_row:
+                example_messages.append(cache_row.message_text)
+
+        label_data.append((label, example_messages))
+
+    # Run Gemini calls for all labels in parallel
+    def process(item):
+        label, example_messages = item
+        if not example_messages:
+            return label.id, None
+        description = label.description or generate_label_definition(label.name, example_messages)
+        example_text = select_best_example(label.name, description, example_messages)
+        return label.id, example_text
+
+    with ThreadPoolExecutor() as executor:
+        example_map = dict(executor.map(process, label_data))
+
+    return [
+        RecalibrationResponse(
+            label_id=label.id,
+            name=label.name,
+            description=label.description,
+            example_text=example_map.get(label.id),
+        )
+        for label, _ in label_data
+    ]
 
 
 @app.get("/api/queue/sample")

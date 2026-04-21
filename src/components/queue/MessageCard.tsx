@@ -42,11 +42,13 @@ interface Props {
   suggestion: SuggestResponse | null
   onSkip: () => void
   onNext: () => void
+  onBackToQueue?: () => void
   hasLabelsApplied: boolean
   isReviewing?: boolean
+  isSkippedReview?: boolean
 }
 
-export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasLabelsApplied, isReviewing }: Props) {
+export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, onBackToQueue, hasLabelsApplied, isReviewing, isSkippedReview }: Props) {
   const [showRationale, setShowRationale] = useState(false)
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [afterExpanded, setAfterExpanded] = useState(false)
@@ -139,22 +141,57 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, hasL
         </div>
       )}
 
-      <div className="flex justify-end gap-2 pt-1">
-        {!isReviewing && (
+      <div className={`flex pt-1 gap-2 ${isSkippedReview ? 'justify-between' : 'justify-end'}`}>
+        {isSkippedReview && (
           <button
-            onClick={onSkip}
+            onClick={onBackToQueue}
             className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
           >
-            Skip
+            ← Back to Queue
           </button>
         )}
-        <button
-          onClick={onNext}
-          disabled={!isReviewing && !hasLabelsApplied}
-          className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {isReviewing ? 'Back to queue' : 'Next →'}
-        </button>
+        <div className="flex gap-2">
+          {isSkippedReview ? (
+            <>
+              <button
+                onClick={onSkip}
+                className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                onClick={onNext}
+                disabled={!hasLabelsApplied}
+                className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next →
+              </button>
+            </>
+          ) : isReviewing ? (
+            <button
+              onClick={onNext}
+              className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 transition-colors"
+            >
+              Back to queue
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onSkip}
+                className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+              >
+                Skip
+              </button>
+              <button
+                onClick={onNext}
+                disabled={!hasLabelsApplied}
+                className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next →
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

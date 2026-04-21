@@ -138,6 +138,13 @@ class ArchiveResponse(BaseModel):
     messages_returned_to_queue: int
 
 
+class RecalibrationResponse(BaseModel):
+    label_id: int
+    name: str
+    description: Optional[str]
+    example_text: Optional[str]
+
+
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────
 
 class ChatlogSummary(BaseModel):
