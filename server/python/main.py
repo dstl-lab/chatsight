@@ -1246,16 +1246,16 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     if not labels:
         return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
 
-counts = dict(db.exec(
-    select(LabelApplication.label_id, func.count(LabelApplication.id))
-    .where(LabelApplication.applied_by == "human")
-    .group_by(LabelApplication.label_id)
-).all())
+    counts = dict(db.exec(
+        select(LabelApplication.label_id, func.count(LabelApplication.id))
+        .where(LabelApplication.applied_by == "human")
+        .group_by(LabelApplication.label_id)
+    ).all())
 
-cache_key_input = "|".join(
-    f"{l.name}:{counts.get(l.id, 0)}" for l in sorted(labels, key=lambda x: x.id)
-)
-labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
+    cache_key_input = "|".join(
+        f"{l.name}:{counts.get(l.id, 0)}" for l in sorted(labels, key=lambda x: x.id)
+    )
+    labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
 
     # Check cache
     cached = db.exec(
@@ -1286,14 +1286,14 @@ labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
                         text("""
                         WITH student AS (
                             SELECT payload->>'question' AS msg,
-                                   (ROW_NUMBER() OVER (
-                                       PARTITION BY payload->>'conversation_id' ORDER BY id
-                                   )) - 1 AS idx
+                                    (ROW_NUMBER() OVER (
+                                        PARTITION BY payload->>'conversation_id' ORDER BY id
+                                    )) - 1 AS idx
                             FROM events
                             WHERE event_type = 'tutor_query'
-                              AND payload->>'conversation_id' = (
-                                  SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                              )
+                                AND payload->>'conversation_id' = (
+                                    SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                                )
                         )
                         SELECT msg FROM student WHERE idx = :midx
                     """),
@@ -1310,14 +1310,14 @@ labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
             text("""
             WITH student AS (
                 SELECT payload->>'question' AS msg,
-                       (ROW_NUMBER() OVER (
-                           PARTITION BY payload->>'conversation_id' ORDER BY id
-                       )) - 1 AS idx
+                        (ROW_NUMBER() OVER (
+                            PARTITION BY payload->>'conversation_id' ORDER BY id
+                        )) - 1 AS idx
                 FROM events
                 WHERE event_type = 'tutor_query'
-                  AND payload->>'conversation_id' = (
-                      SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                  )
+                    AND payload->>'conversation_id' = (
+                        SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                    )
             )
             SELECT msg FROM student WHERE idx = :midx
         """),
