@@ -17,6 +17,10 @@ def create_db_and_tables():
         if "sort_order" not in cols:
             conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"))
             conn.commit()
+        # Migrate: add archived_at column if missing
+        if "archived_at" not in cols:
+            conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN archived_at DATETIME"))
+            conn.commit()
         # Migrate: add confidence column if missing
         cols_la = [c["name"] for c in inspect(conn).get_columns("labelapplication")]
         if "confidence" not in cols_la:

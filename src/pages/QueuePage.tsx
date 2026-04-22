@@ -224,7 +224,6 @@ export function QueuePage() {
       const labelNames = labels.filter(l => appliedLabelIds.has(l.id)).map(l => l.name)
       setUndoState({ message: currentMessage, labelNames, fromSkippedTab: false })
       await api.advanceMessage(currentMessage.chatlog_id, currentMessage.message_index)
-      setSession(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
       setStats(s => s ? { ...s, labeled_count: s.labeled_count + 1 } : s)
       setTimeout(() => setUndoState(prev => prev?.message === currentMessage ? null : prev), 8000)
     } else {
@@ -239,7 +238,6 @@ export function QueuePage() {
   const handleUndo = useCallback(async () => {
     if (!undoState) return
     await api.undoLabels(undoState.message.chatlog_id, undoState.message.message_index)
-    setSession(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
     setStats(s => s ? { ...s, labeled_count: Math.max(0, s.labeled_count - 1) } : s)
     if (undoState.fromSkippedTab) {
       await api.skipMessage(undoState.message.chatlog_id, undoState.message.message_index)

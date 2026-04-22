@@ -8,6 +8,30 @@ export interface LabelDefinition {
   count: number
 }
 
+export interface LabelExample {
+  chatlog_id: number
+  message_index: number
+  message_text: string
+  label_id: number
+  applied_by: string
+}
+
+export interface ConciseResponse {
+  concise_text: string
+}
+
+export interface SplitAutoLabelRequest {
+  label_id: number
+  name_a: string
+  name_b: string
+  assignments: Record<string, string> // "chatlog_id:message_index" -> "name_a" | "name_b"
+}
+
+export interface ApplyBatchRequest {
+  assignments: Record<string, number> // "cid:midx" -> label_id
+  delete_original_label_id?: number
+}
+
 export interface QueueItem {
   chatlog_id: number
   message_index: number

@@ -15,6 +15,12 @@ vi.mock('../services/api', () => ({
   api: {
     getHistory: vi.fn().mockResolvedValue({ items: mockHistory, total: 3 }),
     getQueueStats: vi.fn().mockResolvedValue({ total_messages: 100, labeled_count: 50, skipped_count: 10 }),
+    getCandidates: vi.fn().mockResolvedValue([]),
+    discoverConcepts: vi.fn().mockResolvedValue({ run_id: '123', status: 'running' }),
+    getEmbedStatus: vi.fn().mockResolvedValue({ cached: 0, total_unlabeled: 0, running: false }),
+    archiveLabel: vi.fn().mockResolvedValue({ archived_at: '', messages_returned_to_queue: 0 }),
+    getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 50 }),
+    getRecentHistory: vi.fn().mockResolvedValue([]),
   },
 }))
 

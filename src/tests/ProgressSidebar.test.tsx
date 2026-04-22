@@ -13,7 +13,7 @@ const defaultProps = {
   appliedLabelIds: new Set<number>(),
   onToggleLabel: noop,
   onCreateAndApply: noop,
-  onUpdateLabel: noop as (id: number, body: { description?: string }) => void,
+  onUpdateLabel: noop as (id: number, body: { name?: string; description?: string }) => void,
   onStartAutolabel: noop,
   autolabelStatus: null,
   remaining: null,
@@ -21,6 +21,11 @@ const defaultProps = {
   onSelectHistoryItem: noop as (item: import('../types').HistoryItem) => void,
   reviewingKey: null as string | null,
   onReorderLabels: noop as (ids: number[]) => void,
+  onArchiveLabel: noop,
+  candidates: [],
+  onDiscover: noop,
+  onOpenDiscoverModal: noop,
+  discovering: false,
 }
 
 test('shows labeled count and total', () => {
