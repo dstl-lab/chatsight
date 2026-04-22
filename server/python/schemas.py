@@ -57,7 +57,34 @@ class UndoRequest(BaseModel):
     message_index: int
 
 
+class ConciseRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class ApplyBatchRequest(BaseModel):
+    assignments: dict[str, int]  # "chatlog_id:message_index" -> label_id
+    delete_original_label_id: Optional[int] = None
+
+
+class SplitAutoLabelRequest(BaseModel):
+    label_id: int
+    name_a: str
+    name_b: str
+    assignments: dict[str, str]  # e.g., "chatlog_id:message_index" -> "name_a" or "name_b"
+
+
 # ── Response shapes ───────────────────────────────────────────────────────────
+
+class LabelExampleResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    label_id: int
+    applied_by: str
+
+class ConciseResponse(BaseModel):
+    concise_text: str
 
 class LabelDefinitionResponse(BaseModel):
     id: int
@@ -109,6 +136,13 @@ class OrphanedMessagesResponse(BaseModel):
 class ArchiveResponse(BaseModel):
     archived_at: datetime
     messages_returned_to_queue: int
+
+
+class RecalibrationResponse(BaseModel):
+    label_id: int
+    name: str
+    description: Optional[str]
+    example_text: Optional[str]
 
 
 # ── Kept from old code (chatlog read routes) ──────────────────────────────────
