@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Color-prefixed output: each line gets a labeled tag
+prefix() {
+  local label="$1" color="$2" reset=$'\033[0m'
+  sed -u "s/^/$(printf "${color}[%-8s]${reset} " "$label")/"
+}
+
+PIDS=()
+
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  for pid in "${PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null
+  echo "All processes stopped."
+}
+
+trap cleanup EXIT INT TERM
+
+# 1) kubectl port-forward (auto-reconnect on drop)
+(
+  while true; do
+    kubectl port-forward pod/dsc10-tutor-logs-prod-0 5432:5432 \
+      -n dsc-10-llm 2>&1 | prefix "kubectl" $'\033[36m'
+    echo -e "\033[36m[kubectl ]\033[0m Connection lost. Reconnecting in 3s..."
+    sleep 3
+  done
+) &
+PIDS+=($!)
+
+# 2) Vite dev server
+(cd "$ROOT_DIR" && npm run dev 2>&1 | prefix "vite" $'\033[35m') &
+PIDS+=($!)
+
+# 3) Uvicorn backend
+(cd "$ROOT_DIR/server/python" && uv run uvicorn main:app --reload 2>&1 | prefix "uvicorn" $'\033[32m') &
+PIDS+=($!)
+
+echo -e "\033[1m[dev]\033[0m All processes started. Press Ctrl+C to stop."
+wait
