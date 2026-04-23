@@ -54,7 +54,9 @@ def populate_message_cache():
                 ),
                 chatlog_ids AS (
                     SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events GROUP BY payload->>'conversation_id'
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                    GROUP BY payload->>'conversation_id'
                 )
                 SELECT s.message_text, s.message_index, ci.chatlog_id,
                     (SELECT e2.payload->>'response' FROM events e2
@@ -1146,7 +1148,9 @@ def _run_autolabel():
                 ),
                 chatlog_ids AS (
                     SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events GROUP BY payload->>'conversation_id'
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                    GROUP BY payload->>'conversation_id'
                 )
                 SELECT s.message_text, s.message_index, ci.chatlog_id,
                     (SELECT e2.payload->>'response' FROM events e2
