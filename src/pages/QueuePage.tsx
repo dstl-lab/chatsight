@@ -61,6 +61,7 @@ export function QueuePage() {
 	const [remaining, setRemaining] = useState<number | null>(null);
 	const [history, setHistory] = useState<HistoryItem[]>([]);
 	const [reviewTarget, setReviewTarget] = useState<QueueItem | null>(null);
+	const [showConversation, setShowConversation] = useState(false);
 	const [archiveReview, setArchiveReview] = useState<ArchiveReviewState | null>(
 		null,
 	);
@@ -686,6 +687,16 @@ export function QueuePage() {
 		});
 	}, []);
 
+	const handleSelectConversationMessage = useCallback(
+		(chatlogId: number, messageIndex: number) => {
+			api.getMessage(chatlogId, messageIndex).then((msg) => {
+				setReviewTarget(msg);
+				setNavPos(null);
+			});
+		},
+		[],
+	);
+
 	const reviewingKey = reviewTarget
 		? `${reviewTarget.chatlog_id}-${reviewTarget.message_index}`
 		: null;
@@ -823,6 +834,9 @@ export function QueuePage() {
 						conversationMessages={conversationMessages}
 						conversationLoading={conversationLoading}
 						conversationError={conversationError}
+						showConversation={showConversation}
+						onToggleConversation={() => setShowConversation((v) => !v)}
+						onSelectConversationMessage={handleSelectConversationMessage}
 					/>
 				</div>
 			</div>

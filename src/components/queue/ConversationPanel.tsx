@@ -7,7 +7,9 @@ import type { ConversationMessage } from '../../types'
 interface Props {
   messages: ConversationMessage[]
   currentMessageIndex: number
+  chatlogId: number
   onClose: () => void
+  onSelectMessage?: (chatlogId: number, messageIndex: number) => void
 }
 
 function AssistantMessage({ text }: { text: string }) {
@@ -30,7 +32,7 @@ function AssistantMessage({ text }: { text: string }) {
   )
 }
 
-export function ConversationPanel({ messages, currentMessageIndex, onClose }: Props) {
+export function ConversationPanel({ messages, currentMessageIndex, chatlogId, onClose, onSelectMessage }: Props) {
   const currentRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export function ConversationPanel({ messages, currentMessageIndex, onClose }: Pr
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         {messages.map((msg, i) => {
           const isCurrent = msg.role === 'student' && msg.message_index === currentMessageIndex
+          const isClickable = !isCurrent && msg.message_index !== null && !!onSelectMessage
 
           if (msg.role === 'assistant') {
             return <AssistantMessage key={i} text={msg.text} />
@@ -62,10 +65,13 @@ export function ConversationPanel({ messages, currentMessageIndex, onClose }: Pr
             <div
               key={i}
               ref={isCurrent ? currentRef : null}
-              className={`rounded px-3 py-2 ${
+              onClick={isClickable ? () => onSelectMessage!(chatlogId, msg.message_index!) : undefined}
+              className={`rounded px-3 py-2 transition-colors ${
                 isCurrent
                   ? 'bg-[#0d1f33] border border-blue-600/70 ring-1 ring-blue-500/30'
-                  : 'bg-neutral-900/40 border border-neutral-800'
+                  : isClickable
+                    ? 'bg-neutral-900/40 border border-neutral-800 cursor-pointer hover:border-blue-500/40 hover:bg-[#0d1f33]/40'
+                    : 'bg-neutral-900/40 border border-neutral-800'
               }`}
             >
               <span className="text-[9px] uppercase tracking-wide text-blue-400 block mb-1">

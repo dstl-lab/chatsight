@@ -67,6 +67,9 @@ interface Props {
 	conversationMessages?: ConversationMessage[];
 	conversationLoading?: boolean;
 	conversationError?: boolean;
+	showConversation?: boolean;
+	onToggleConversation?: () => void;
+	onSelectConversationMessage?: (chatlogId: number, messageIndex: number) => void;
 }
 
 export function MessageCard({
@@ -89,11 +92,13 @@ export function MessageCard({
 	conversationMessages,
 	conversationLoading,
 	conversationError,
+	showConversation,
+	onToggleConversation,
+	onSelectConversationMessage,
 }: Props) {
 	const [showRationale, setShowRationale] = useState(false);
 	const [beforeExpanded, setBeforeExpanded] = useState(false);
 	const [afterExpanded, setAfterExpanded] = useState(false);
-	const [showConversation, setShowConversation] = useState(false);
 
 	const suggestionLabelId =
 		suggestion && labels
@@ -158,7 +163,7 @@ export function MessageCard({
 							onClick={() =>
 								!conversationLoading &&
 								!conversationError &&
-								setShowConversation((v) => !v)
+								onToggleConversation?.()
 							}
 							disabled={conversationLoading || conversationError}
 							className={`flex items-center gap-1 text-[9px] transition-colors ${
@@ -345,7 +350,9 @@ export function MessageCard({
 					<ConversationPanel
 						messages={conversationMessages}
 						currentMessageIndex={item.message_index}
-						onClose={() => setShowConversation(false)}
+						chatlogId={item.chatlog_id}
+						onClose={() => onToggleConversation?.()}
+						onSelectMessage={onSelectConversationMessage}
 					/>
 				)}
 		</div>
