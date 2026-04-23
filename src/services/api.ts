@@ -2,11 +2,10 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
-  ConceptCandidate, EmbedStatus, ConversationMessage,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
-  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
-  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, LabelReviewItem,
+  ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
+  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
+  RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -156,9 +155,9 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ok: true })
              : req('/api/queue/apply-batch', { method: 'POST', ...json(body) }),
 
-  getRecalibration: (): Promise<RecalibrationItem[]> =>
+  getLabelReview: (): Promise<LabelReviewItem[]> =>
     USE_MOCK ? Promise.resolve([])
-             : req('/api/session/recalibration'),
+             : req('/api/session/label-review'),
 
   getAppliedLabels: (chatlog_id: number, message_index: number): Promise<number[]> =>
     USE_MOCK ? Promise.resolve([])
@@ -222,4 +221,17 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
     return res.blob()
   },
+
+  // ── Recalibration ──────────────────────────────────────────────
+  getRecalibration: (force = false): Promise<RecalibrationItem | null> =>
+    USE_MOCK ? Promise.resolve(force ? mockApi.recalibrationForced() : mockApi.recalibration())
+             : req(`/api/session/recalibration${force ? '?force=true' : ''}`),
+
+  saveRecalibration: (body: SaveRecalibrationRequest): Promise<SaveRecalibrationResponse> =>
+    USE_MOCK ? Promise.resolve({ matched: false, trend: 'steady' as const })
+             : req('/api/session/recalibration', { method: 'POST', ...json(body) }),
+
+  getRecalibrationStats: (): Promise<RecalibrationStats> =>
+    USE_MOCK ? Promise.resolve(mockApi.recalibrationStats)
+             : req('/api/session/recalibration/stats'),
 }

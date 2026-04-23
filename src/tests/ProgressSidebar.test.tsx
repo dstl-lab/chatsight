@@ -21,11 +21,13 @@ const defaultProps = {
   onSelectHistoryItem: noop as (item: import('../types').HistoryItem) => void,
   reviewingKey: null as string | null,
   onReorderLabels: noop as (ids: number[]) => void,
-  onArchiveLabel: noop,
+  onArchiveLabel: noop as (id: number) => void,
   candidates: [],
   onDiscover: noop,
   onOpenDiscoverModal: noop,
   discovering: false,
+  recalibration: null,
+  recalibrationStats: null,
 }
 
 test('shows labeled count and total', () => {

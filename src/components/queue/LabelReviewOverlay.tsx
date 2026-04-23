@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
-import type { RecalibrationItem } from '../../types'
+import type { LabelReviewItem } from '../../types'
 import { api } from '../../services/api'
 
 interface Props {
-  items: RecalibrationItem[]
+  items: LabelReviewItem[]
   onDismiss: () => void
 }
 
-export function RecalibrationOverlay({ items, onDismiss }: Props) {
+export function LabelReviewOverlay({ items, onDismiss }: Props) {
   const [descriptions, setDescriptions] = useState<Record<number, string>>({})
   const [generating, setGenerating] = useState<Set<number>>(new Set())
 
@@ -48,7 +48,7 @@ export function RecalibrationOverlay({ items, onDismiss }: Props) {
         onClick={e => e.stopPropagation()}
       >
         <p className="text-xs text-neutral-500 uppercase tracking-wide mb-4 shrink-0">
-          Recalibration reminder
+          Label review
         </p>
 
         <div className="flex flex-col gap-4 overflow-y-auto min-h-0 pr-1">

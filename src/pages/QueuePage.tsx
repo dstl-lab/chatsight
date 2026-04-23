@@ -12,7 +12,9 @@ import type {
 	ArchiveReviewState,
 	ConceptCandidate,
 	ConversationMessage,
+	LabelReviewItem,
 	RecalibrationItem,
+	RecalibrationStats,
 } from "../types";
 import { api } from "../services/api";
 import { ProgressSidebar } from "../components/queue/ProgressSidebar";
@@ -21,12 +23,18 @@ import { ArchiveConfirmModal } from "../components/queue/ArchiveConfirmModal";
 import { ArchiveReviewBanner } from "../components/queue/ArchiveReviewBanner";
 import { ArchiveReviewSidebar } from "../components/queue/ArchiveReviewSidebar";
 import DiscoverModal from "../components/queue/DiscoverModal";
-import { RecalibrationOverlay } from "../components/queue/RecalibrationOverlay";
+import { LabelReviewOverlay } from "../components/queue/LabelReviewOverlay";
 
 interface UndoState {
 	message: QueueItem;
 	labelNames: string[];
 	fromSkippedTab: boolean;
+}
+
+interface RecalibrationState {
+  item: RecalibrationItem
+  phase: 'blind' | 'reconcile'
+  relabelIds: Set<number>
 }
 
 export function QueuePage() {
@@ -77,19 +85,28 @@ export function QueuePage() {
 	const [discoverModalOpen, setDiscoverModalOpen] = useState(false);
 	const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-	const [showRecalibration, setShowRecalibration] = useState(false);
-	const [recalibrationItems, setRecalibrationItems] = useState<
-		RecalibrationItem[]
+	const [showLabelReview, setShowLabelReview] = useState(false);
+	const [labelReviewItems, setLabelReviewItems] = useState<
+		LabelReviewItem[]
 	>([]);
 	const [isSkippedReview, setIsSkippedReview] = useState(false);
 	const [skippedQueue, setSkippedQueue] = useState<QueueItem[]>([]);
 	const [skippedIdx, setSkippedIdx] = useState(0);
 
+	interface RecalibrationState {
+		item: RecalibrationItem;
+		phase: 'blind' | 'reconcile';
+		relabelIds: Set<number>;
+	}
+	const [recalibration, setRecalibration] = useState<RecalibrationState | null>(null);
+	const [recalibrationStats, setRecalibrationStats] = useState<RecalibrationStats | null>(null);
+	const [recalibrationToast, setRecalibrationToast] = useState<'match' | null>(null);
+
 	const currentMessage = queue[currentIdx] ?? null;
 	const isBackNav = navPos !== null;
-	const displayedMessage = isBackNav
-		? navStack[navPos!]
-		: (reviewTarget ?? currentMessage);
+	const isRecalibrating = recalibration !== null;
+	const displayedMessage = recalibration?.item
+		?? (isBackNav ? navStack[navPos!] : (reviewTarget ?? currentMessage));
 	const isReviewing = reviewTarget !== null;
 	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
 
@@ -121,6 +138,7 @@ export function QueuePage() {
 				setHistory(hist);
 				setCandidates(cands);
 				setLoading(false);
+				api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
 			})
 			.catch((err) => {
 				console.error("Failed to load queue data:", err);
@@ -134,16 +152,29 @@ export function QueuePage() {
 		};
 	}, []);
 
-	// Show recalibration overlay once per browser session
+	useEffect(() => {
+		if (!displayedMessage) return;
+		if (recalibration) return;
+		api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
+			.then(ids => setAppliedLabelIds(new Set(ids)));
+		setSuggestion(null);
+		if (aiUnlocked) {
+			api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
+				.then(s => { if (s.label_name) setSuggestion(s); })
+				.catch(() => {});
+		}
+	}, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked, recalibration]);
+
+	// Show label review overlay once per browser session
 	useEffect(() => {
 		if (loading) return;
-		if (sessionStorage.getItem("recalibration_shown")) return;
+		if (sessionStorage.getItem("label_review_shown")) return;
 		api
-			.getRecalibration()
+			.getLabelReview()
 			.then((items) => {
 				if (items.length > 0) {
-					setRecalibrationItems(items);
-					setShowRecalibration(true);
+					setLabelReviewItems(items);
+					setShowLabelReview(true);
 				}
 			})
 			.catch(() => {});
@@ -309,12 +340,51 @@ export function QueuePage() {
 	};
 
 	const handleNext = useCallback(async () => {
+		// Recalibration: blind phase → check match → reconcile or auto-advance
+		if (recalibration && recalibration.phase === 'blind') {
+			const relabelIds = new Set(appliedLabelIds);
+			const originalSet = new Set(recalibration.item.original_label_ids);
+			const matched = relabelIds.size === originalSet.size && [...relabelIds].every(id => originalSet.has(id));
+
+			if (matched) {
+				await api.saveRecalibration({
+					chatlog_id: recalibration.item.chatlog_id,
+					message_index: recalibration.item.message_index,
+					original_label_ids: recalibration.item.original_label_ids,
+					relabel_ids: [...relabelIds],
+					final_label_ids: [...relabelIds],
+				});
+				setRecalibration(null);
+				setRecalibrationToast('match');
+				setTimeout(() => setRecalibrationToast(null), 2000);
+				setAppliedLabelIds(new Set());
+				api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+			} else {
+				setRecalibration(prev => prev ? { ...prev, phase: 'reconcile', relabelIds } : prev);
+			}
+			return;
+		}
+
+		// Recalibration: reconcile phase → save final labels and exit
+		if (recalibration && recalibration.phase === 'reconcile') {
+			await api.saveRecalibration({
+				chatlog_id: recalibration.item.chatlog_id,
+				message_index: recalibration.item.message_index,
+				original_label_ids: recalibration.item.original_label_ids,
+				relabel_ids: [...recalibration.relabelIds],
+				final_label_ids: [...appliedLabelIds],
+			});
+			setRecalibration(null);
+			setAppliedLabelIds(new Set());
+			api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+			return;
+		}
+
 		if (isBackNav) {
 			setNavPos(null);
 			return;
 		}
 		if (isReviewing && reviewTarget) {
-			// Exit review mode — unskip if labels were applied to a previously-skipped message
 			if (appliedLabelIds.size > 0) {
 				await api
 					.unskipMessage(reviewTarget.chatlog_id, reviewTarget.message_index)
@@ -356,7 +426,17 @@ export function QueuePage() {
 		advance();
 		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
 		api.getRecentHistory(5).then(setHistory);
+
+		// Check if recalibration is due after advancing
+		api.getRecalibration().then(item => {
+			if (item) {
+				setRecalibration({ item, phase: 'blind', relabelIds: new Set() });
+				setAppliedLabelIds(new Set());
+			}
+		}).catch(() => {});
 	}, [
+		recalibration,
+		isBackNav,
 		isSkippedReview,
 		skippedQueue,
 		skippedIdx,
@@ -458,6 +538,25 @@ export function QueuePage() {
 				handleUndo();
 				return;
 			}
+			if (e.key === "Escape" && recalibration) {
+				if (recalibration.phase === "blind") {
+					setRecalibration(null);
+					setAppliedLabelIds(new Set());
+				} else {
+					api.saveRecalibration({
+						chatlog_id: recalibration.item.chatlog_id,
+						message_index: recalibration.item.message_index,
+						original_label_ids: recalibration.item.original_label_ids,
+						relabel_ids: [...recalibration.relabelIds],
+						final_label_ids: recalibration.item.original_label_ids,
+					}).then(() => {
+						api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+					});
+					setRecalibration(null);
+					setAppliedLabelIds(new Set());
+				}
+				return;
+			}
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
@@ -467,6 +566,7 @@ export function QueuePage() {
 		isReviewing,
 		isBackNav,
 		archiveReview,
+		recalibration,
 		handleToggleLabel,
 		handleNext,
 		handleSkip,
@@ -541,6 +641,17 @@ export function QueuePage() {
 		},
 		[labels],
 	);
+
+	const handleForceRecalibration = useCallback(async () => {
+		if (recalibration) return;
+		const item = await api.getRecalibration(true);
+		if (item) {
+			setRecalibration({ item, phase: 'blind', relabelIds: new Set() });
+			setAppliedLabelIds(new Set());
+		} else {
+			console.warn('[DEV] Force recalibration returned null — no labeled messages yet?');
+		}
+	}, [recalibration]);
 
 	const handleArchiveLabel = useCallback(
 		async (labelId: number) => {
@@ -672,9 +783,9 @@ export function QueuePage() {
 		setReviewTarget(null);
 	}, []);
 
-	const handleDismissRecalibration = useCallback(() => {
-		setShowRecalibration(false);
-		sessionStorage.setItem("recalibration_shown", "1");
+	const handleDismissLabelReview = useCallback(() => {
+		setShowLabelReview(false);
+		sessionStorage.setItem("label_review_shown", "1");
 	}, []);
 
 	const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
@@ -745,6 +856,38 @@ export function QueuePage() {
 
 	return (
 		<div className="flex-1 flex flex-col min-h-0">
+			{recalibration && recalibration.phase === 'blind' && (
+				<div className="bg-purple-500/10 border-b border-purple-500/30 px-4 py-2 flex items-center justify-between">
+					<div className="flex items-center gap-2">
+						<span className="bg-purple-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded">RECALIBRATION</span>
+						<span className="text-purple-300 text-xs">Re-label this previously seen message to check consistency</span>
+					</div>
+					<div className="flex gap-3 text-[10px] text-neutral-500">
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">1-9</kbd> toggle</span>
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">Enter</kbd> submit</span>
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">Esc</kbd> cancel</span>
+					</div>
+				</div>
+			)}
+			{recalibration && recalibration.phase === 'reconcile' && (
+				<div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
+					<div className="flex items-center gap-2">
+						<span className="bg-amber-500 text-black text-[10px] font-semibold px-2 py-0.5 rounded">MISMATCH</span>
+						<span className="text-amber-300 text-xs">Labels differ from original — toggle labels to reconcile, then press Enter</span>
+					</div>
+					<div className="flex gap-3 text-[10px] text-neutral-500">
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">1-9</kbd> toggle</span>
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">Enter</kbd> confirm</span>
+						<span><kbd className="bg-neutral-800 px-1 rounded text-neutral-400">Esc</kbd> keep original</span>
+					</div>
+				</div>
+			)}
+			{recalibrationToast === 'match' && (
+				<div className="bg-green-500/10 border-b border-green-500/30 px-4 py-2 flex items-center gap-2">
+					<span className="text-green-400 text-sm">✓</span>
+					<span className="text-green-400 text-xs font-medium">Consistent! Your labels matched your original labeling.</span>
+				</div>
+			)}
 			{archiveReview && (
 				<ArchiveReviewBanner
 					labelName={archiveReview.labelName}
@@ -794,6 +937,12 @@ export function QueuePage() {
 						onDiscover={handleDiscover}
 						onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
 						discovering={discovering}
+						recalibration={recalibration ? {
+							phase: recalibration.phase,
+							originalLabelIds: new Set(recalibration.item.original_label_ids),
+							relabelIds: recalibration.relabelIds,
+						} : null}
+						recalibrationStats={recalibrationStats}
 					/>
 				)}
 				<div className="flex-1 flex flex-col min-h-0">
@@ -817,8 +966,8 @@ export function QueuePage() {
 						key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
 						item={displayedMessage}
 						aiUnlocked={aiUnlocked}
-						suggestion={archiveReview ? null : suggestion}
-						suggestionLoading={!archiveReview && suggestionLoading}
+						suggestion={archiveReview || isRecalibrating ? null : suggestion}
+						suggestionLoading={!archiveReview && !isRecalibrating && suggestionLoading}
 						onSkip={handleSkip}
 						onNext={handleNext}
 						onBack={handleNavBack}
@@ -827,6 +976,8 @@ export function QueuePage() {
 						isBackNav={isBackNav}
 						hasLabelsApplied={appliedLabelIds.size > 0}
 						isReviewing={isReviewing}
+						isRecalibrating={isRecalibrating}
+						recalibrationPhase={recalibration?.phase ?? null}
 						labels={labels}
 						appliedLabelIds={appliedLabelIds}
 						onToggleLabel={handleToggleLabel}
@@ -861,11 +1012,20 @@ export function QueuePage() {
 					discovering={discovering}
 				/>
 			)}
-			{showRecalibration && (
-				<RecalibrationOverlay
-					items={recalibrationItems}
-					onDismiss={handleDismissRecalibration}
+			{showLabelReview && (
+				<LabelReviewOverlay
+					items={labelReviewItems}
+					onDismiss={handleDismissLabelReview}
 				/>
+			)}
+			{import.meta.env.DEV && !recalibration && (
+				<button
+					onClick={handleForceRecalibration}
+					className="fixed bottom-4 right-4 z-50 text-[10px] font-mono text-purple-300 bg-purple-900/40 border border-purple-500/50 rounded px-2.5 py-1.5 hover:bg-purple-900/60 hover:border-purple-400 transition-colors"
+					title="Dev-only: force-trigger a recalibration round"
+				>
+					DEV · trigger recalibration
+				</button>
 			)}
 		</div>
 	);

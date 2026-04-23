@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -27,7 +27,8 @@ from schemas import (
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
-    RecalibrationResponse,
+    LabelReviewResponse,
+    RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
 )
 from sqlmodel import Session, select
 
@@ -2166,8 +2167,8 @@ def export_csv(db: Session = Depends(get_session)):
     )
 
 
-@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
-def get_recalibration(db: Session = Depends(get_session)):
+@app.get("/api/session/label-review", response_model=List[LabelReviewResponse])
+def get_label_review(db: Session = Depends(get_session)):
     from concurrent.futures import ThreadPoolExecutor
     from definition_service import generate_label_definition, select_best_example
 
@@ -2216,7 +2217,7 @@ def get_recalibration(db: Session = Depends(get_session)):
         example_map = dict(executor.map(process, label_data))
 
     return [
-        RecalibrationResponse(
+        LabelReviewResponse(
             label_id=label.id,
             name=label.name,
             description=label.description,
@@ -2224,6 +2225,260 @@ def get_recalibration(db: Session = Depends(get_session)):
         )
         for label, _ in label_data
     ]
+
+
+# ── Recalibration ────────────────────────────────────────────────────────────
+
+RECALIBRATION_BASE_INTERVAL = 10
+RECALIBRATION_MIN_INTERVAL = 5
+RECALIBRATION_MAX_INTERVAL = 30
+RECALIBRATION_WINDOW = 5
+RECALIBRATION_COOLDOWN = 50
+
+DEV_MODE = os.getenv("CHATSIGHT_DEV", "").lower() in ("1", "true", "yes")
+
+
+def _compute_recalibration_interval(events: list[RecalibrationEvent]) -> int:
+    """Replay recalibration history to derive the current adaptive interval."""
+    interval = RECALIBRATION_BASE_INTERVAL
+    if len(events) < RECALIBRATION_WINDOW:
+        return interval
+    for i in range(RECALIBRATION_WINDOW, len(events) + 1):
+        window = events[i - RECALIBRATION_WINDOW : i]
+        matches = sum(1 for e in window if e.matched)
+        consistency = matches / RECALIBRATION_WINDOW
+        if consistency >= 0.90:
+            interval = min(interval + 5, RECALIBRATION_MAX_INTERVAL)
+        elif consistency < 0.70:
+            interval = max(interval - 5, RECALIBRATION_MIN_INTERVAL)
+    return interval
+
+
+def _compute_trend(events: list[RecalibrationEvent]) -> str:
+    """Compare match rate of last 4 events vs prior 4 to determine trend."""
+    if len(events) < 4:
+        return "steady"
+    recent = events[-4:]
+    prior = events[-8:-4] if len(events) >= 8 else events[: len(events) - 4]
+    if not prior:
+        return "steady"
+    recent_matches = sum(1 for e in recent if e.matched)
+    prior_matches = sum(1 for e in prior if e.matched)
+    if recent_matches - prior_matches > 1:
+        return "improving"
+    elif prior_matches - recent_matches > 1:
+        return "shifting"
+    return "steady"
+
+
+@app.get("/api/session/recalibration")
+def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
+    # `force=true` is honored only when CHATSIGHT_DEV is set; otherwise silently ignored.
+    force = force and DEV_MODE
+    # 1. Check for active session
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+    if not labeling_session:
+        return None
+
+    # 2. Get all recalibration events (chronological) for interval computation
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+    interval = _compute_recalibration_interval(all_events)
+
+    # 3. Count human-labeled messages since last recalibration
+    last_event = all_events[-1] if all_events else None
+    cutoff = last_event.created_at if last_event else labeling_session.started_at
+
+    labeled_since = db.exec(
+        select(func.count()).select_from(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .where(LabelApplication.applied_by == "human")
+            .where(LabelApplication.created_at > cutoff)
+            .distinct()
+            .subquery()
+        )
+    ).one()
+
+    if not force and labeled_since < interval:
+        return None
+
+    # 4. Select a message using stratified-by-label + age-weighted sampling
+    import random
+
+    # Get all human-labeled messages with their label IDs and timestamps
+    labeled_messages = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelApplication.label_id,
+            LabelApplication.created_at,
+        )
+        .where(LabelApplication.applied_by == "human")
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
+
+    # Build message -> labels and message -> oldest timestamp maps
+    msg_labels: dict[tuple[int, int], list[int]] = {}
+    msg_oldest: dict[tuple[int, int], datetime] = {}
+    for chatlog_id, message_index, label_id, created_at in labeled_messages:
+        key = (chatlog_id, message_index)
+        msg_labels.setdefault(key, []).append(label_id)
+        if key not in msg_oldest or created_at < msg_oldest[key]:
+            msg_oldest[key] = created_at
+
+    # Exclude messages on cooldown (recalibrated recently)
+    if all_events:
+        for event in all_events:
+            ekey = (event.chatlog_id, event.message_index)
+            # Count labeled messages since this event
+            since_count = db.exec(
+                select(func.count()).select_from(
+                    select(LabelApplication.chatlog_id, LabelApplication.message_index)
+                    .where(LabelApplication.applied_by == "human")
+                    .where(LabelApplication.created_at > event.created_at)
+                    .distinct()
+                    .subquery()
+                )
+            ).one()
+            if since_count < RECALIBRATION_COOLDOWN:
+                msg_labels.pop(ekey, None)
+                msg_oldest.pop(ekey, None)
+
+    if not msg_labels:
+        return None
+
+    # Compute label deficit for stratification
+    total_recal = len(all_events) if all_events else 0
+    label_msg_count: dict[int, int] = {}
+    for labels in msg_labels.values():
+        for lid in labels:
+            label_msg_count[lid] = label_msg_count.get(lid, 0) + 1
+
+    total_msg_count = len(msg_labels)
+    recal_label_count: dict[int, int] = {}
+    if all_events:
+        for event in all_events:
+            for lid in json_mod.loads(event.original_label_ids):
+                recal_label_count[lid] = recal_label_count.get(lid, 0) + 1
+
+    label_deficit: dict[int, float] = {}
+    for lid, count in label_msg_count.items():
+        expected = count / total_msg_count if total_msg_count > 0 else 0
+        actual = (recal_label_count.get(lid, 0) / total_recal) if total_recal > 0 else 0
+        label_deficit[lid] = max(0.0, expected - actual)
+
+    # Weight each message by: label deficit (sum across its labels) * age
+    now = datetime.utcnow()
+    candidates = []
+    weights = []
+    for key, labels in msg_labels.items():
+        deficit_weight = sum(label_deficit.get(lid, 0) for lid in labels)
+        if deficit_weight == 0:
+            deficit_weight = 0.1  # small floor so all messages have a chance
+        age_seconds = max(1.0, (now - msg_oldest[key]).total_seconds())
+        candidates.append(key)
+        weights.append(deficit_weight * age_seconds)
+
+    selected = random.choices(candidates, weights=weights, k=1)[0]
+
+    # Fetch the message and its labels
+    cached = db.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == selected[0],
+            MessageCache.message_index == selected[1],
+        )
+    ).first()
+    if not cached:
+        return None
+
+    original_ids = sorted(msg_labels[selected])
+
+    return RecalibrationItemResponse(
+        chatlog_id=cached.chatlog_id,
+        message_index=cached.message_index,
+        message_text=cached.message_text,
+        context_before=cached.context_before,
+        context_after=cached.context_after,
+        original_label_ids=original_ids,
+    )
+
+
+@app.post("/api/session/recalibration", response_model=SaveRecalibrationResponse)
+def save_recalibration(req: SaveRecalibrationRequest, db: Session = Depends(get_session)):
+    # Get current session
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+
+    matched = sorted(req.original_label_ids) == sorted(req.relabel_ids)
+
+    event = RecalibrationEvent(
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+        original_label_ids=json_mod.dumps(sorted(req.original_label_ids)),
+        relabel_ids=json_mod.dumps(sorted(req.relabel_ids)),
+        final_label_ids=json_mod.dumps(sorted(req.final_label_ids)),
+        matched=matched,
+        session_id=labeling_session.id if labeling_session else None,
+    )
+    db.add(event)
+
+    # Reconcile LabelApplication rows to match final_label_ids
+    current_apps = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+            LabelApplication.applied_by == "human",
+        )
+    ).all()
+    current_label_ids = {app.label_id for app in current_apps}
+    final_set = set(req.final_label_ids)
+
+    # Delete labels not in final set
+    for app in current_apps:
+        if app.label_id not in final_set:
+            db.delete(app)
+
+    # Add labels in final set but not currently applied
+    for lid in final_set - current_label_ids:
+        db.add(LabelApplication(
+            label_id=lid,
+            chatlog_id=req.chatlog_id,
+            message_index=req.message_index,
+            applied_by="human",
+        ))
+
+    db.commit()
+
+    # Compute trend for response
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+    trend = _compute_trend(all_events)
+
+    return SaveRecalibrationResponse(matched=matched, trend=trend)
+
+
+@app.get("/api/session/recalibration/stats", response_model=RecalibrationStatsResponse)
+def get_recalibration_stats(db: Session = Depends(get_session)):
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+
+    recent_results = [e.matched for e in all_events[-8:]]
+    trend = _compute_trend(all_events)
+    interval = _compute_recalibration_interval(all_events)
+
+    return RecalibrationStatsResponse(
+        recent_results=recent_results,
+        trend=trend,
+        current_interval=interval,
+        total_recalibrations=len(all_events),
+    )
 
 
 @app.get("/api/queue/sample")

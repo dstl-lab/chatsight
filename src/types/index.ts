@@ -140,7 +140,7 @@ export interface ArchiveReviewState {
   completedMessageKeys: Set<string>
 }
 
-export interface RecalibrationItem {
+export interface LabelReviewItem {
   label_id: number
   name: string
   description: string | null
@@ -187,4 +187,28 @@ export interface ConversationMessage {
   text: string
   message_index: number | null
   labels: ConversationMessageLabel[]
+}
+
+export interface RecalibrationItem extends QueueItem {
+  original_label_ids: number[]
+}
+
+export interface RecalibrationStats {
+  recent_results: boolean[]
+  trend: 'improving' | 'steady' | 'shifting'
+  current_interval: number
+  total_recalibrations: number
+}
+
+export interface SaveRecalibrationRequest {
+  chatlog_id: number
+  message_index: number
+  original_label_ids: number[]
+  relabel_ids: number[]
+  final_label_ids: number[]
+}
+
+export interface SaveRecalibrationResponse {
+  matched: boolean
+  trend: 'improving' | 'steady' | 'shifting'
 }
