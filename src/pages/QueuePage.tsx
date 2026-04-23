@@ -46,6 +46,7 @@ export function QueuePage() {
 		ConversationMessage[]
 	>([]);
 	const [conversationLoading, setConversationLoading] = useState(false);
+	const [conversationError, setConversationError] = useState(false);
 	const [undoState, setUndoState] = useState<UndoState | null>(null);
 	const [navStack, setNavStack] = useState<QueueItem[]>([]);
 	const [navPos, setNavPos] = useState<number | null>(null);
@@ -56,6 +57,7 @@ export function QueuePage() {
 		error: string | null;
 	} | null>(null);
 	const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const suggestionCacheRef = useRef<Map<string, SuggestResponse>>(new Map());
 	const [remaining, setRemaining] = useState<number | null>(null);
 	const [history, setHistory] = useState<HistoryItem[]>([]);
 	const [reviewTarget, setReviewTarget] = useState<QueueItem | null>(null);
@@ -185,11 +187,12 @@ export function QueuePage() {
 	useEffect(() => {
 		if (!displayedMessage) return;
 		setConversationMessages([]);
+		setConversationError(false);
 		setConversationLoading(true);
 		api
 			.getConversationMessages(displayedMessage.chatlog_id)
 			.then(setConversationMessages)
-			.catch(() => {})
+			.catch(() => setConversationError(true))
 			.finally(() => setConversationLoading(false));
 	}, [displayedMessage?.chatlog_id]);
 
@@ -202,19 +205,28 @@ export function QueuePage() {
 				displayedMessage.message_index,
 			)
 			.then((ids) => setAppliedLabelIds(new Set(ids)));
-		setSuggestion(null);
-		if (aiUnlocked) {
-			setSuggestionLoading(true);
-			api
-				.suggestLabel(
-					displayedMessage.chatlog_id,
-					displayedMessage.message_index,
-				)
-				.then((s) => {
-					if (s.label_name) setSuggestion(s);
-				})
-				.catch(() => {})
-				.finally(() => setSuggestionLoading(false));
+		const cacheKey = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`;
+		const cached = suggestionCacheRef.current.get(cacheKey);
+		if (cached) {
+			setSuggestion(cached);
+		} else {
+			setSuggestion(null);
+			if (aiUnlocked) {
+				setSuggestionLoading(true);
+				api
+					.suggestLabel(
+						displayedMessage.chatlog_id,
+						displayedMessage.message_index,
+					)
+					.then((s) => {
+						if (s.label_name) {
+							suggestionCacheRef.current.set(cacheKey, s);
+							setSuggestion(s);
+						}
+					})
+					.catch(() => {})
+					.finally(() => setSuggestionLoading(false));
+			}
 		}
 	}, [
 		displayedMessage?.chatlog_id,
@@ -257,6 +269,31 @@ export function QueuePage() {
 		},
 		[displayedMessage, appliedLabelIds, archiveReview],
 	);
+
+	const handleApplySuggestionAndNext = useCallback(async (labelId: number) => {
+		if (!currentMessage) return;
+		await api.applyLabel({
+			chatlog_id: currentMessage.chatlog_id,
+			message_index: currentMessage.message_index,
+			label_id: labelId,
+		});
+		const appliedLabel = labels.find((l) => l.id === labelId);
+		const allLabelNames = [
+			...labels.filter((l) => appliedLabelIds.has(l.id)).map((l) => l.name),
+			...(appliedLabel ? [appliedLabel.name] : []),
+		];
+		setNavStack((prev) => [...prev, currentMessage]);
+		setNavPos(null);
+		setUndoState({ message: currentMessage, labelNames: allLabelNames, fromSkippedTab: false });
+		await api.advanceMessage(currentMessage.chatlog_id, currentMessage.message_index);
+		setStats((s) => (s ? { ...s, labeled_count: s.labeled_count + 1 } : s));
+		setTimeout(() => setUndoState((prev) => prev?.message === currentMessage ? null : prev), 8000);
+		setAppliedLabelIds(new Set());
+		advance();
+		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
+		api.getRecentHistory(5).then(setHistory);
+		api.getLabels().then(setLabels);
+	}, [currentMessage, labels, appliedLabelIds, advance]);
 
 	const handleCreateAndApply = async (name: string, description?: string) => {
 		if (!displayedMessage) return;
@@ -385,6 +422,8 @@ export function QueuePage() {
 		setSkippedCount((s) => s + 1);
 		setStats((s) => (s ? { ...s, skipped_count: s.skipped_count + 1 } : s));
 		setAppliedLabelIds(new Set());
+		setNavStack((prev) => [...prev, currentMessage]);
+		setNavPos(null);
 		advance();
 	}, [isReviewing, isBackNav, currentMessage, advance]);
 
@@ -404,8 +443,10 @@ export function QueuePage() {
 				return;
 			}
 			if (e.key === "Enter" || e.key === "n") {
-				if (!isBackNav && (isReviewing || appliedLabelIds.size > 0))
+				if (!isBackNav && (isReviewing || appliedLabelIds.size > 0)) {
+					e.preventDefault(); // prevent focused button from firing a click
 					handleNext();
+				}
 				return;
 			}
 			if (e.key === "s") {
@@ -778,8 +819,10 @@ export function QueuePage() {
 						labels={labels}
 						appliedLabelIds={appliedLabelIds}
 						onToggleLabel={handleToggleLabel}
+						onApplySuggestionAndNext={handleApplySuggestionAndNext}
 						conversationMessages={conversationMessages}
 						conversationLoading={conversationLoading}
+						conversationError={conversationError}
 					/>
 				</div>
 			</div>

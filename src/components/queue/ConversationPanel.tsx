@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import type { ConversationMessage } from '../../types'
 
 interface Props {
@@ -12,7 +15,11 @@ function AssistantMessage({ text }: { text: string }) {
   return (
     <div className="bg-neutral-900/60 rounded px-3 py-2">
       <span className="text-[9px] uppercase tracking-wide text-neutral-500 block mb-1">AI Tutor</span>
-      <p className={`text-xs text-neutral-400 leading-relaxed ${expanded ? '' : 'line-clamp-6'}`}>{text}</p>
+      <div className={`prose prose-sm prose-invert prose-p:text-neutral-400 prose-headings:text-neutral-300 prose-li:text-neutral-400 prose-strong:text-neutral-300 prose-code:text-blue-300 max-w-none text-neutral-400 leading-relaxed text-xs ${expanded ? '' : 'line-clamp-6'}`}>
+        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+          {text}
+        </ReactMarkdown>
+      </div>
       <button
         onClick={() => setExpanded(v => !v)}
         className="mt-1 text-[9px] text-neutral-600 hover:text-neutral-400 transition-colors"

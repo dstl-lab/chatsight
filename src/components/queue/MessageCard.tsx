@@ -63,8 +63,10 @@ interface Props {
 	labels?: LabelDefinition[];
 	appliedLabelIds?: Set<number>;
 	onToggleLabel?: (labelId: number) => void;
+	onApplySuggestionAndNext?: (labelId: number) => void;
 	conversationMessages?: ConversationMessage[];
 	conversationLoading?: boolean;
+	conversationError?: boolean;
 }
 
 export function MessageCard({
@@ -83,8 +85,10 @@ export function MessageCard({
 	labels,
 	appliedLabelIds,
 	onToggleLabel,
+	onApplySuggestionAndNext,
 	conversationMessages,
 	conversationLoading,
+	conversationError,
 }: Props) {
 	const [showRationale, setShowRationale] = useState(false);
 	const [beforeExpanded, setBeforeExpanded] = useState(false);
@@ -148,23 +152,36 @@ export function MessageCard({
 						Student · message {item.message_index}
 					</span>
 					{(conversationLoading ||
+						conversationError ||
 						(conversationMessages && conversationMessages.length > 0)) && (
 						<button
 							onClick={() =>
-								!conversationLoading && setShowConversation((v) => !v)
+								!conversationLoading &&
+								!conversationError &&
+								setShowConversation((v) => !v)
 							}
-							disabled={conversationLoading}
+							disabled={conversationLoading || conversationError}
 							className={`flex items-center gap-1 text-[9px] transition-colors ${
 								conversationLoading
 									? "text-neutral-600 cursor-default"
-									: showConversation
-										? "text-blue-300 hover:text-blue-200"
-										: "text-blue-400 hover:text-blue-300"
+									: conversationError
+										? "text-neutral-500 cursor-default"
+										: showConversation
+											? "text-blue-300 hover:text-blue-200"
+											: "text-blue-400 hover:text-blue-300"
 							}`}
-							title="View full conversation"
+							title={
+								conversationError
+									? "Conversation unavailable in database"
+									: "View full conversation"
+							}
 						>
 							<MessageSquare size={11} />
-							<span>View full conversation</span>
+							<span>
+								{conversationError
+									? "Conversation unavailable"
+									: "View full conversation"}
+							</span>
 						</button>
 					)}
 				</div>
@@ -187,6 +204,13 @@ export function MessageCard({
 						>
 							<button
 								onClick={handleApplySuggestion}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && suggestionLabelId && onApplySuggestionAndNext) {
+										e.preventDefault();
+										e.stopPropagation();
+										isSuggestionApplied ? onNext() : onApplySuggestionAndNext(suggestionLabelId);
+									}
+								}}
 								className={`px-1.5 py-0.5 transition-colors ${
 									isSuggestionApplied
 										? "text-blue-200 hover:text-blue-100"
@@ -198,6 +222,13 @@ export function MessageCard({
 							</button>
 							<button
 								onClick={() => setShowRationale((v) => !v)}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && suggestionLabelId && onApplySuggestionAndNext) {
+										e.preventDefault();
+										e.stopPropagation();
+										isSuggestionApplied ? onNext() : onApplySuggestionAndNext(suggestionLabelId);
+									}
+								}}
 								className={`px-1.5 py-0.5 transition-colors border-l ${
 									isSuggestionApplied
 										? "border-blue-700 text-blue-400 hover:text-blue-200"
