@@ -21,3 +21,6 @@ server/python/*.pyc
 .DS_Store
 .superpowers/
 .claude/
+
+# Agents
+.agents/

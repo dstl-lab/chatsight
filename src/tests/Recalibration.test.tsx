@@ -53,6 +53,9 @@ vi.mock('../services/api', () => ({
       chatlog_id: 1, message_index: 0, message_text: 'Test',
       context_before: null, context_after: null,
     }),
+    getLabelReview: vi.fn().mockResolvedValue([]),
+    getSkippedMessages: vi.fn().mockResolvedValue([]),
+    getConversationMessages: vi.fn().mockResolvedValue([]),
   },
 }))
 

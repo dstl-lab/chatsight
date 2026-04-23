@@ -68,10 +68,12 @@ test('pressing "1" applies the first label', async () => {
   mockApplyLabel.mockClear()
   renderQueue()
   await waitFor(() => screen.getByText('Test message'))
-  fireEvent.keyDown(document, { key: '1' })
-  expect(mockApplyLabel).toHaveBeenCalledWith(
-    expect.objectContaining({ label_id: 1 })
-  )
+  await waitFor(() => {
+    fireEvent.keyDown(document, { key: '1' })
+    expect(mockApplyLabel).toHaveBeenCalledWith(
+      expect.objectContaining({ label_id: 1 })
+    )
+  })
 })
 
 test('pressing "2" applies the second label', async () => {
