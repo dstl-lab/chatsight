@@ -2,10 +2,8 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
-  ConceptCandidate, EmbedStatus, ConversationMessage,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
-  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, LabelReviewItem,
+  ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
 } from '../types'
 import { mockApi } from '../mocks'
@@ -156,9 +154,9 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ok: true })
              : req('/api/queue/apply-batch', { method: 'POST', ...json(body) }),
 
-  getRecalibration: (): Promise<RecalibrationItem[]> =>
+  getLabelReview: (): Promise<LabelReviewItem[]> =>
     USE_MOCK ? Promise.resolve([])
-             : req('/api/session/recalibration'),
+             : req('/api/session/label-review'),
 
   getAppliedLabels: (chatlog_id: number, message_index: number): Promise<number[]> =>
     USE_MOCK ? Promise.resolve([])

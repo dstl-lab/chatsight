@@ -27,7 +27,7 @@ from schemas import (
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
-    RecalibrationResponse,
+    LabelReviewResponse,
 )
 from sqlmodel import Session, select
 
@@ -2166,8 +2166,8 @@ def export_csv(db: Session = Depends(get_session)):
     )
 
 
-@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
-def get_recalibration(db: Session = Depends(get_session)):
+@app.get("/api/session/label-review", response_model=List[LabelReviewResponse])
+def get_label_review(db: Session = Depends(get_session)):
     from concurrent.futures import ThreadPoolExecutor
     from definition_service import generate_label_definition, select_best_example
 
@@ -2216,7 +2216,7 @@ def get_recalibration(db: Session = Depends(get_session)):
         example_map = dict(executor.map(process, label_data))
 
     return [
-        RecalibrationResponse(
+        LabelReviewResponse(
             label_id=label.id,
             name=label.name,
             description=label.description,

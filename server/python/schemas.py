@@ -138,7 +138,7 @@ class ArchiveResponse(BaseModel):
     messages_returned_to_queue: int
 
 
-class RecalibrationResponse(BaseModel):
+class LabelReviewResponse(BaseModel):
     label_id: int
     name: str
     description: Optional[str]

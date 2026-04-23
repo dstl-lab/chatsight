@@ -140,7 +140,7 @@ export interface ArchiveReviewState {
   completedMessageKeys: Set<string>
 }
 
-export interface RecalibrationItem {
+export interface LabelReviewItem {
   label_id: number
   name: string
   description: string | null

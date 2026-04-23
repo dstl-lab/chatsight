@@ -12,7 +12,7 @@ import type {
 	ArchiveReviewState,
 	ConceptCandidate,
 	ConversationMessage,
-	RecalibrationItem,
+	LabelReviewItem,
 } from "../types";
 import { api } from "../services/api";
 import { ProgressSidebar } from "../components/queue/ProgressSidebar";
@@ -21,7 +21,7 @@ import { ArchiveConfirmModal } from "../components/queue/ArchiveConfirmModal";
 import { ArchiveReviewBanner } from "../components/queue/ArchiveReviewBanner";
 import { ArchiveReviewSidebar } from "../components/queue/ArchiveReviewSidebar";
 import DiscoverModal from "../components/queue/DiscoverModal";
-import { RecalibrationOverlay } from "../components/queue/RecalibrationOverlay";
+import { LabelReviewOverlay } from "../components/queue/LabelReviewOverlay";
 
 interface UndoState {
 	message: QueueItem;
@@ -77,9 +77,9 @@ export function QueuePage() {
 	const [discoverModalOpen, setDiscoverModalOpen] = useState(false);
 	const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-	const [showRecalibration, setShowRecalibration] = useState(false);
-	const [recalibrationItems, setRecalibrationItems] = useState<
-		RecalibrationItem[]
+	const [showLabelReview, setShowLabelReview] = useState(false);
+	const [labelReviewItems, setLabelReviewItems] = useState<
+		LabelReviewItem[]
 	>([]);
 	const [isSkippedReview, setIsSkippedReview] = useState(false);
 	const [skippedQueue, setSkippedQueue] = useState<QueueItem[]>([]);
@@ -134,16 +134,16 @@ export function QueuePage() {
 		};
 	}, []);
 
-	// Show recalibration overlay once per browser session
+	// Show label review overlay once per browser session
 	useEffect(() => {
 		if (loading) return;
-		if (sessionStorage.getItem("recalibration_shown")) return;
+		if (sessionStorage.getItem("label_review_shown")) return;
 		api
-			.getRecalibration()
+			.getLabelReview()
 			.then((items) => {
 				if (items.length > 0) {
-					setRecalibrationItems(items);
-					setShowRecalibration(true);
+					setLabelReviewItems(items);
+					setShowLabelReview(true);
 				}
 			})
 			.catch(() => {});
@@ -672,9 +672,9 @@ export function QueuePage() {
 		setReviewTarget(null);
 	}, []);
 
-	const handleDismissRecalibration = useCallback(() => {
-		setShowRecalibration(false);
-		sessionStorage.setItem("recalibration_shown", "1");
+	const handleDismissLabelReview = useCallback(() => {
+		setShowLabelReview(false);
+		sessionStorage.setItem("label_review_shown", "1");
 	}, []);
 
 	const handleSelectHistoryItem = useCallback((item: HistoryItem) => {
@@ -861,10 +861,10 @@ export function QueuePage() {
 					discovering={discovering}
 				/>
 			)}
-			{showRecalibration && (
-				<RecalibrationOverlay
-					items={recalibrationItems}
-					onDismiss={handleDismissRecalibration}
+			{showLabelReview && (
+				<LabelReviewOverlay
+					items={labelReviewItems}
+					onDismiss={handleDismissLabelReview}
 				/>
 			)}
 		</div>
