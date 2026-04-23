@@ -176,3 +176,15 @@ export interface EmbedStatus {
   total_unlabeled: number
   running: boolean
 }
+
+export interface ConversationMessageLabel {
+  label_name: string
+  applied_by: string
+}
+
+export interface ConversationMessage {
+  role: "student" | "assistant"
+  text: string
+  message_index: number | null
+  labels: ConversationMessageLabel[]
+}

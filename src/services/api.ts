@@ -2,6 +2,8 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
+  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
+  ConceptCandidate, EmbedStatus, ConversationMessage,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
   ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
@@ -127,6 +129,9 @@ export const api = {
     USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
              : req('/api/concepts/embed-status'),
 
+  getConversationMessages: (chatlogId: number): Promise<ConversationMessage[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req(`/api/chatlogs/${chatlogId}/messages`),
   getConciseMessage: (chatlog_id: number, message_index: number): Promise<ConciseResponse> =>
     USE_MOCK ? Promise.resolve({ concise_text: "Concise summary from AI." })
              : req('/api/queue/concise', { method: 'POST', ...json({ chatlog_id, message_index }) }),

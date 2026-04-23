@@ -20,3 +20,4 @@ server/python/*.pyc
 # OS
 .DS_Store
 .superpowers/
+.claude/
