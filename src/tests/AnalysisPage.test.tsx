@@ -26,6 +26,7 @@ vi.mock('../services/api', () => ({
     getAnalysisSummary: vi.fn(),
     getTemporalAnalysis: vi.fn(),
     exportCsv: vi.fn(),
+    getAnalysisLabelMessages: vi.fn(),
   },
 }))
 
@@ -33,6 +34,7 @@ const mockedApi = api as {
   getAnalysisSummary: ReturnType<typeof vi.fn>
   getTemporalAnalysis: ReturnType<typeof vi.fn>
   exportCsv: ReturnType<typeof vi.fn>
+  getAnalysisLabelMessages: ReturnType<typeof vi.fn>
 }
 
 function renderPage() {
@@ -43,6 +45,14 @@ beforeEach(() => {
   mockedApi.getAnalysisSummary.mockResolvedValue(mockApi.analysisSummary)
   mockedApi.getTemporalAnalysis.mockResolvedValue(mockApi.temporalAnalysis)
   mockedApi.exportCsv.mockResolvedValue(new Blob(['test'], { type: 'text/csv' }))
+  mockedApi.getAnalysisLabelMessages.mockResolvedValue({
+    label_name: 'Concept Question',
+    source: 'human_only',
+    total_count: 1,
+    returned_count: 1,
+    truncated: false,
+    messages: [{ chatlog_id: 1, message_index: 0, preview: 'Preview line' }],
+  })
 })
 
 test('shows loading state initially', () => {
@@ -57,8 +67,9 @@ test('renders main chart headings after data loads', async () => {
   await waitFor(() => {
     expect(screen.getByText('Label Frequency')).toBeInTheDocument()
   })
-  expect(screen.getByText('Coverage')).toBeInTheDocument()
-  expect(screen.getByText('Conversation Position')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Coverage' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Messages per label (human vs AI)' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Conversation Position' })).toBeInTheDocument()
 })
 
 test('renders temporal section headings after data loads', async () => {

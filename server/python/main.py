@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 from typing import List, Optional
 import csv
 import os
@@ -10,7 +10,7 @@ import threading
 from calendar import monthrange
 from fastapi import FastAPI, Depends, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, text, update
+from sqlalchemy import and_, func, or_, text, update
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
@@ -1389,6 +1389,14 @@ def get_embed_status(db: Session = Depends(get_session)):
     }
 
 
+def _position_bucket(message_index: int) -> str:
+    if message_index <= 2:
+        return "early"
+    if message_index <= 6:
+        return "mid"
+    return "late"
+
+
 @app.get("/api/analysis/summary")
 def get_analysis_summary(db: Session = Depends(get_session)):
     label_rows = db.exec(
@@ -1417,20 +1425,42 @@ def get_analysis_summary(db: Session = Depends(get_session)):
     ).all()
     ai_label_counts = {name: int(cnt) for name, cnt in ai_rows}
 
-    pos_rows = db.exec(
-        select(LabelApplication.message_index, LabelDefinition.name)
+    app_detail_rows = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelDefinition.name,
+            LabelApplication.applied_by,
+        )
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
     ).all()
     pos_acc: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
-    for msg_idx, lbl_name in pos_rows:
-        if msg_idx <= 2:
-            pos_acc[lbl_name]["early"] += 1
-        elif msg_idx <= 6:
-            pos_acc[lbl_name]["mid"] += 1
-        else:
-            pos_acc[lbl_name]["late"] += 1
+    pos_human: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
+    pos_ai: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
+    human_by_label: dict = defaultdict(set)
+    ai_by_label: dict = defaultdict(set)
+    for cid, msg_idx, lbl_name, src in app_detail_rows:
+        b = _position_bucket(int(msg_idx))
+        pos_acc[lbl_name][b] += 1
+        if src == "human":
+            pos_human[lbl_name][b] += 1
+            human_by_label[lbl_name].add((cid, msg_idx))
+        elif src == "ai":
+            pos_ai[lbl_name][b] += 1
+            ai_by_label[lbl_name].add((cid, msg_idx))
     position_distribution = {k: dict(v) for k, v in pos_acc.items()}
+    position_distribution_human = {k: dict(v) for k, v in pos_human.items()}
+    position_distribution_ai = {k: dict(v) for k, v in pos_ai.items()}
+
+    label_source_mix: dict = {}
+    for nm in set(human_by_label) | set(ai_by_label):
+        h, a = human_by_label[nm], ai_by_label[nm]
+        label_source_mix[nm] = {
+            "human_only": len(h - a),
+            "ai_only": len(a - h),
+            "both": len(h & a),
+        }
 
     human_pairs = set()
     ai_pairs = set()
@@ -1495,6 +1525,75 @@ def get_analysis_summary(db: Session = Depends(get_session)):
             "total": total,
         },
         "position_distribution": position_distribution,
+        "position_distribution_human": position_distribution_human,
+        "position_distribution_ai": position_distribution_ai,
+        "label_source_mix": label_source_mix,
+    }
+
+
+@app.get("/api/analysis/label-messages")
+def get_analysis_label_messages(
+    label_name: str = Query(..., min_length=1),
+    source: str = Query(..., description="human_only, ai_only, or both"),
+    limit: int = Query(300, ge=1, le=500),
+    db: Session = Depends(get_session),
+):
+    """List student message previews for messages in a label × source bucket (see summary `label_source_mix`)."""
+    if source not in ("human_only", "ai_only", "both"):
+        raise HTTPException(status_code=400, detail="source must be human_only, ai_only, or both")
+    label = db.exec(select(LabelDefinition).where(LabelDefinition.name == label_name)).first()
+    if label is None:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index, LabelApplication.applied_by).where(
+            LabelApplication.label_id == label.id
+        )
+    ).all()
+    human_pairs: set[tuple[int, int]] = set()
+    ai_pairs: set[tuple[int, int]] = set()
+    for cid, mid, src in rows:
+        if src == "human":
+            human_pairs.add((int(cid), int(mid)))
+        elif src == "ai":
+            ai_pairs.add((int(cid), int(mid)))
+
+    if source == "human_only":
+        target_pairs = human_pairs - ai_pairs
+    elif source == "ai_only":
+        target_pairs = ai_pairs - human_pairs
+    else:
+        target_pairs = human_pairs & ai_pairs
+
+    total_count = len(target_pairs)
+    sorted_pairs = sorted(target_pairs)
+    limited_pairs = sorted_pairs[:limit]
+    truncated = total_count > len(limited_pairs)
+
+    text_map: dict[tuple[int, int], str] = {}
+    if limited_pairs:
+        or_clauses = [
+            and_(MessageCache.chatlog_id == cid, MessageCache.message_index == mid) for cid, mid in limited_pairs
+        ]
+        for mc in db.exec(select(MessageCache).where(or_(*or_clauses))).all():
+            text_map[(mc.chatlog_id, mc.message_index)] = mc.message_text or ""
+
+    messages = [
+        {
+            "chatlog_id": cid,
+            "message_index": mid,
+            "preview": text_map.get((cid, mid), ""),
+        }
+        for cid, mid in limited_pairs
+    ]
+
+    return {
+        "label_name": label_name,
+        "source": source,
+        "total_count": total_count,
+        "returned_count": len(messages),
+        "truncated": truncated,
+        "messages": messages,
     }
 
 
@@ -1713,8 +1812,23 @@ def get_analysis_temporal(
 
 
 @app.get("/api/export/csv")
-def export_csv(db: Session = Depends(get_session)):
-    rows = db.exec(
+def export_csv(
+    db: Session = Depends(get_session),
+    applied_by: Optional[str] = Query(None, description="If set, only human or only ai"),
+    calendar_from: Optional[date] = Query(None, alias="calendar_from"),
+    calendar_to: Optional[date] = Query(None, alias="calendar_to"),
+):
+    if applied_by is not None and applied_by not in ("human", "ai"):
+        raise HTTPException(status_code=400, detail="applied_by must be human, ai, or omitted")
+    if (calendar_from is None) ^ (calendar_to is None):
+        raise HTTPException(
+            status_code=400,
+            detail="calendar_from and calendar_to must both be set, or both omitted",
+        )
+    if calendar_from is not None and calendar_to is not None and calendar_from > calendar_to:
+        raise HTTPException(status_code=400, detail="calendar_from must be <= calendar_to")
+
+    stmt = (
         select(
             LabelApplication.chatlog_id,
             LabelApplication.message_index,
@@ -1729,7 +1843,18 @@ def export_csv(db: Session = Depends(get_session)):
             LabelApplication.message_index,
             LabelApplication.id,
         )
-    ).all()
+    )
+    if applied_by in ("human", "ai"):
+        stmt = stmt.where(LabelApplication.applied_by == applied_by)
+    if calendar_from is not None:
+        start_dt = datetime.combine(calendar_from, time.min)
+        end_dt = datetime.combine(calendar_to + timedelta(days=1), time.min)
+        stmt = stmt.where(
+            LabelApplication.created_at >= start_dt,
+            LabelApplication.created_at < end_dt,
+        )
+
+    rows = db.exec(stmt).all()
 
     keys = {(r[0], r[1]) for r in rows}
     text_by_key: dict = {}
@@ -1757,10 +1882,19 @@ def export_csv(db: Session = Depends(get_session)):
             ]
         )
 
+    fname = "chatsight-labels"
+    if applied_by == "human":
+        fname += "-human"
+    elif applied_by == "ai":
+        fname += "-ai"
+    if calendar_from is not None:
+        fname += f"-{calendar_from.isoformat()}_to_{calendar_to.isoformat()}"
+    fname += ".csv"
+
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=chatsight-labels.csv"},
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
 
 

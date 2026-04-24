@@ -102,7 +102,7 @@ chatsight/
 │   ├── pages/
 │   │   ├── QueuePage.tsx             # Main labeling screen
 │   │   ├── LabelsPage.tsx            # Label management (placeholder)
-│   │   └── AnalysisPage.tsx          # Analysis dashboard (placeholder)
+│   │   └── AnalysisPage.tsx          # Analysis dashboard (human vs AI, coverage, temporal)
 │   ├── components/
 │   │   ├── Navigation.tsx            # Top nav bar (Queue / Labels / Analysis)
 │   │   └── queue/
@@ -131,6 +131,7 @@ chatsight/
 │       └── test_models_smoke.py      # Model import smoke test
 │
 ├── WORKFLOW.md                       # Research context and design rationale
+├── ANALYSIS_AI_VS_HUMAN_PLAN.md      # Analysis tab roadmap (human vs AI metrics)
 ├── CLAUDE.md                         # AI assistant instructions
 └── vite.config.ts                    # Vite config (proxy, Tailwind, test setup)
 ```
@@ -220,14 +221,21 @@ All routes are defined in `server/python/main.py`.
 | `POST` | `/api/queue/autolabel` | Start background auto-labeling of all unlabeled messages |
 | `GET` | `/api/queue/autolabel/status` | Poll auto-labeling progress (`processed`, `total`, `running`) |
 
+### Analysis and export
+
+| Method | Path | What it does |
+|--------|------|----------------|
+| `GET` | `/api/analysis/summary` | Label counts, human/AI splits, coverage, position buckets, `label_source_mix` |
+| `GET` | `/api/analysis/label-messages` | Message previews for a label bucket (`label_name`, `source` = `human_only` / `ai_only` / `both`, optional `limit`) |
+| `GET` | `/api/analysis/temporal` | Tutor usage, notebook heatmap, labeling throughput (optional `calendar_from` / `calendar_to`) |
+| `GET` | `/api/export/csv` | CSV of applications; optional `applied_by` (`human` / `ai`), optional `calendar_from` + `calendar_to` |
+
 ### Stub routes (return placeholder data)
 
 | Method | Path | Planned feature |
 |--------|------|-----------------|
 | `POST` | `/api/labels/merge` | Merge two labels into one |
 | `POST` | `/api/labels/split` | Split a label into two |
-| `GET` | `/api/analysis/summary` | Label distribution and coverage stats |
-| `GET` | `/api/export/csv` | Download all labels as CSV |
 | `GET` | `/api/session/recalibration` | Suggest labels to review for consistency |
 | `GET` | `/api/queue/sample` | Smart sampling strategy |
 

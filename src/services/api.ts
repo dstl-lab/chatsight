@@ -3,7 +3,7 @@ import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
-  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
+  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis, LabelMessagesResponse, LabelMessageSource,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -161,6 +161,34 @@ export const api = {
     USE_MOCK ? Promise.resolve(mockApi.analysisSummary)
              : req('/api/analysis/summary'),
 
+  getAnalysisLabelMessages: (opts: {
+    labelName: string
+    source: LabelMessageSource
+  }): Promise<LabelMessagesResponse> => {
+    if (USE_MOCK) {
+      return Promise.resolve({
+        label_name: opts.labelName,
+        source: opts.source,
+        total_count: 2,
+        returned_count: 2,
+        truncated: false,
+        messages: [
+          { chatlog_id: 1, message_index: 0, preview: 'Short preview text for the student question.' },
+          {
+            chatlog_id: 2,
+            message_index: 1,
+            preview:
+              'A longer question that would be truncated in the modal row layout when displayed in the narrow column.',
+          },
+        ],
+      })
+    }
+    const q = new URLSearchParams()
+    q.set('label_name', opts.labelName)
+    q.set('source', opts.source)
+    return req(`/api/analysis/label-messages?${q.toString()}`)
+  },
+
   getTemporalAnalysis: (opts?: { calendarFrom: string; calendarTo: string }): Promise<TemporalAnalysis> => {
     if (USE_MOCK) return Promise.resolve(mockApi.temporalAnalysis)
     const q = new URLSearchParams()
@@ -172,14 +200,27 @@ export const api = {
     return req(`/api/analysis/temporal${suffix}`)
   },
 
-  exportCsv: async (): Promise<Blob> => {
+  exportCsv: async (opts?: {
+    appliedBy?: 'human' | 'ai'
+    calendarFrom?: string
+    calendarTo?: string
+  }): Promise<Blob> => {
     if (USE_MOCK) {
       const header = 'chatlog_id,message_index,message_text,label_name,applied_by,created_at\n'
-      return new Blob([header + '1,0,"Hello",Concept Question,human,2026-01-01T00:00:00\n'], {
-        type: 'text/csv',
-      })
+      const row =
+        opts?.appliedBy === 'ai'
+          ? '1,0,"Hello",Concept Question,ai,2026-01-01T00:00:00\n'
+          : '1,0,"Hello",Concept Question,human,2026-01-01T00:00:00\n'
+      return new Blob([header + row], { type: 'text/csv' })
     }
-    const res = await fetch('/api/export/csv')
+    const q = new URLSearchParams()
+    if (opts?.appliedBy) q.set('applied_by', opts.appliedBy)
+    if (opts?.calendarFrom && opts?.calendarTo) {
+      q.set('calendar_from', opts.calendarFrom)
+      q.set('calendar_to', opts.calendarTo)
+    }
+    const suffix = q.toString() ? `?${q.toString()}` : ''
+    const res = await fetch(`/api/export/csv${suffix}`)
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
     return res.blob()
   },

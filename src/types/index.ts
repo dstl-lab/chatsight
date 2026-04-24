@@ -29,6 +29,30 @@ export interface SuggestResponse {
   rationale: string
 }
 
+/** Distinct messages (chatlog + index) that have this label from human only, AI only, or both. */
+export interface LabelSourceMixRow {
+  human_only: number
+  ai_only: number
+  both: number
+}
+
+export type LabelMessageSource = 'human_only' | 'ai_only' | 'both'
+
+export interface LabelMessagePreviewItem {
+  chatlog_id: number
+  message_index: number
+  preview: string
+}
+
+export interface LabelMessagesResponse {
+  label_name: string
+  source: LabelMessageSource
+  total_count: number
+  returned_count: number
+  truncated: boolean
+  messages: LabelMessagePreviewItem[]
+}
+
 export interface AnalysisSummary {
   label_counts: Record<string, number>
   human_label_counts: Record<string, number>
@@ -41,6 +65,9 @@ export interface AnalysisSummary {
     total: number
   }
   position_distribution: Record<string, { early: number; mid: number; late: number }>
+  position_distribution_human: Record<string, { early: number; mid: number; late: number }>
+  position_distribution_ai: Record<string, { early: number; mid: number; late: number }>
+  label_source_mix: Record<string, LabelSourceMixRow>
 }
 
 /** Weekday 0 = Sunday … 6 = Saturday in `display_timezone` (same convention as PostgreSQL DOW). */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { AnalysisSummary, TemporalAnalysis } from '../types'
+import type { AnalysisSummary, LabelMessageSource, LabelMessagesResponse, TemporalAnalysis } from '../types'
 import { api } from '../services/api'
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -19,6 +19,24 @@ const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 type HeatmapMode = 'raw' | 'row' | 'column'
 type AssignmentKind = 'due' | 'late' | 'release'
 type LabelFreqMode = 'combined' | 'human' | 'ai'
+type PositionViewMode = 'all' | 'human' | 'ai' | 'split'
+
+interface PosRow {
+  label: string
+  early: number
+  mid: number
+  late: number
+}
+
+interface PosSplitRow {
+  label: string
+  earlyH: number
+  earlyA: number
+  midH: number
+  midA: number
+  lateH: number
+  lateA: number
+}
 
 interface AssignmentMilestone {
   title: string
@@ -100,6 +118,109 @@ export function AnalysisPage() {
     const n = new Date()
     return new Date(n.getFullYear(), n.getMonth(), 1)
   })
+  const [positionViewMode, setPositionViewMode] = useState<PositionViewMode>('all')
+  const [exportAppliedBy, setExportAppliedBy] = useState<'all' | 'human' | 'ai'>('all')
+  const [exportDateFrom, setExportDateFrom] = useState('')
+  const [exportDateTo, setExportDateTo] = useState('')
+  const [labelMsgModal, setLabelMsgModal] = useState<null | { label: string; source: LabelMessageSource }>(null)
+  const [labelMsgData, setLabelMsgData] = useState<LabelMessagesResponse | null>(null)
+  const [labelMsgLoading, setLabelMsgLoading] = useState(false)
+  const [labelMsgError, setLabelMsgError] = useState<string | null>(null)
+  /** `chatlog_id-message_index` → expanded full preview in modal */
+  const [expandedLabelMsgKeys, setExpandedLabelMsgKeys] = useState<Record<string, boolean>>({})
+
+  const positionBlock = useMemo(() => {
+    if (!summary) return null
+    const distAll = summary.position_distribution
+    const distH = summary.position_distribution_human ?? {}
+    const distA = summary.position_distribution_ai ?? {}
+    const labelNames = new Set([
+      ...Object.keys(distAll),
+      ...Object.keys(distH),
+      ...Object.keys(distA),
+    ])
+    const posDataAll: PosRow[] = [...labelNames]
+      .map((label) => {
+        const b = distAll[label] ?? { early: 0, mid: 0, late: 0 }
+        return { label, early: b.early, mid: b.mid, late: b.late }
+      })
+      .sort((a, b) => b.early + b.mid + b.late - (a.early + a.mid + a.late))
+    const posMax = posDataAll.length
+      ? Math.max(...posDataAll.flatMap((d) => [d.early, d.mid, d.late]))
+      : 1
+    const fromDist = (dist: Record<string, { early: number; mid: number; late: number }>): PosRow[] =>
+      [...labelNames]
+        .map((label) => {
+          const b = dist[label] ?? { early: 0, mid: 0, late: 0 }
+          return { label, early: b.early, mid: b.mid, late: b.late }
+        })
+        .sort((a, b) => b.early + b.mid + b.late - (a.early + a.mid + a.late))
+    const posSplitData: PosSplitRow[] = [...labelNames]
+      .map((label) => ({
+        label,
+        earlyH: distH[label]?.early ?? 0,
+        earlyA: distA[label]?.early ?? 0,
+        midH: distH[label]?.mid ?? 0,
+        midA: distA[label]?.mid ?? 0,
+        lateH: distH[label]?.late ?? 0,
+        lateA: distA[label]?.late ?? 0,
+      }))
+      .sort((a, b) => {
+        const ta = a.earlyH + a.earlyA + a.midH + a.midA + a.lateH + a.lateA
+        const tb = b.earlyH + b.earlyA + b.midH + b.midA + b.lateH + b.lateA
+        return tb - ta
+      })
+    return {
+      posDataAll,
+      posDataHuman: fromDist(distH),
+      posDataAi: fromDist(distA),
+      posSplitData,
+      posMax,
+    }
+  }, [summary])
+
+  const labelSourceRows = useMemo(() => {
+    if (!summary?.label_source_mix) return []
+    return Object.entries(summary.label_source_mix)
+      .map(([label, m]) => ({
+        label,
+        human_only: m.human_only,
+        ai_only: m.ai_only,
+        both: m.both,
+        total: m.human_only + m.ai_only + m.both,
+      }))
+      .sort((a, b) => b.total - a.total)
+  }, [summary])
+
+  const openLabelMessages = useCallback((label: string, source: LabelMessageSource) => {
+    setExpandedLabelMsgKeys({})
+    setLabelMsgModal({ label, source })
+    setLabelMsgData(null)
+    setLabelMsgError(null)
+    setLabelMsgLoading(true)
+    void api
+      .getAnalysisLabelMessages({ labelName: label, source })
+      .then((d) => setLabelMsgData(d))
+      .catch((e) => setLabelMsgError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLabelMsgLoading(false))
+  }, [])
+
+  const closeLabelMessages = useCallback(() => {
+    setLabelMsgModal(null)
+    setLabelMsgData(null)
+    setLabelMsgError(null)
+    setLabelMsgLoading(false)
+    setExpandedLabelMsgKeys({})
+  }, [])
+
+  useEffect(() => {
+    if (!labelMsgModal) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLabelMessages()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [labelMsgModal, closeLabelMessages])
 
   useEffect(() => {
     let cancelled = false
@@ -216,11 +337,22 @@ export function AnalysisPage() {
 
   async function handleExport() {
     try {
-      const blob = await api.exportCsv()
+      const useDates = exportDateFrom && exportDateTo
+      const blob = await api.exportCsv({
+        appliedBy: exportAppliedBy === 'all' ? undefined : exportAppliedBy,
+        calendarFrom: useDates ? exportDateFrom : undefined,
+        calendarTo: useDates ? exportDateTo : undefined,
+      })
+      let fname = 'chatsight-labels.csv'
+      if (exportAppliedBy === 'human') fname = 'chatsight-labels-human.csv'
+      else if (exportAppliedBy === 'ai') fname = 'chatsight-labels-ai.csv'
+      if (useDates) {
+        fname = fname.replace('.csv', `-${exportDateFrom}_to_${exportDateTo}.csv`)
+      }
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'chatsight-labels.csv'
+      a.download = fname
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
@@ -244,7 +376,17 @@ export function AnalysisPage() {
     )
   }
 
-  if (!summary) return null
+  if (!summary || !positionBlock) return null
+
+  const { posDataAll, posDataHuman, posDataAi, posSplitData, posMax } = positionBlock
+  const posData: PosRow[] =
+    positionViewMode === 'all'
+      ? posDataAll
+      : positionViewMode === 'human'
+        ? posDataHuman
+        : positionViewMode === 'ai'
+          ? posDataAi
+          : posDataAll
 
   /** `label` = category (Y-axis). Avoid `name` on rows — it conflicts with Recharts `<Bar name="…">` for stacked series. */
   let freqData: { label: string; count: number; human: number; ai: number }[]
@@ -294,18 +436,6 @@ export function AnalysisPage() {
   const barScale = rawBarPctSum > 100 ? 100 / rawBarPctSum : 1
   const barPct = (n: number) => pctOfTotal(n) * barScale
 
-  const posData = Object.entries(summary.position_distribution)
-    .map(([label, buckets]) => ({
-      label,
-      early: buckets.early,
-      mid: buckets.mid,
-      late: buckets.late,
-    }))
-    .sort((a, b) => b.early + b.mid + b.late - (a.early + a.mid + a.late))
-  const posMax = posData.length
-    ? Math.max(...posData.flatMap((d) => [d.early, d.mid, d.late]))
-    : 1
-
   const hourChartData =
     temporal?.tutor_usage.by_hour.map((h) => ({
       label: `${h.hour}:00`,
@@ -352,22 +482,84 @@ export function AnalysisPage() {
   }
 
   return (
+    <>
     <div className="flex-1 overflow-auto p-6 bg-neutral-950 text-neutral-100 min-h-0">
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold text-neutral-100">Analysis</h1>
             <p className="text-sm text-neutral-500 mt-1">
               How student messages are labeled (human vs AI) across notebooks and conversation depth
             </p>
+            <details className="mt-2 text-xs text-neutral-500 max-w-3xl">
+              <summary className="cursor-pointer text-neutral-400 hover:text-neutral-300 select-none">
+                How to read these metrics
+              </summary>
+              <div className="mt-2 space-y-2 pl-1 border-l border-neutral-800 text-neutral-400 leading-relaxed">
+                <p>
+                  <span className="text-neutral-300">Applications</span> are individual label placements on a
+                  message. One student message can have several labels and both human and AI rows over time.
+                </p>
+                <p>
+                  <span className="text-neutral-300">Coverage</span> counts distinct messages that have at least one
+                  human-labeled application and/or at least one AI-labeled application. The same message can count
+                  toward both; the stacked bar is scaled so human + AI + unlabeled fits the bar when those shares sum
+                  to more than 100% of all tutor messages.
+                </p>
+                <p>
+                  <span className="text-neutral-300">Label frequency (combined)</span> uses human + AI application
+                  counts per label (not deduped when both sources applied the same label to the same message).
+                </p>
+                <p>
+                  <span className="text-neutral-300">Messages per label (table below)</span> dedupes by message:
+                  human-only / AI-only / both shows how many distinct messages received that label from only humans,
+                  only AI, or both.
+                </p>
+                <p className="text-neutral-500">
+                  Full roadmap: <code className="text-neutral-400">ANALYSIS_AI_VS_HUMAN_PLAN.md</code> in the repo.
+                </p>
+              </div>
+            </details>
           </div>
-          <button
-            type="button"
-            onClick={handleExport}
-            className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-100 border border-neutral-700"
-          >
-            Download CSV
-          </button>
+          <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 justify-end text-xs">
+              <label className="text-neutral-500 whitespace-nowrap">CSV source</label>
+              <select
+                value={exportAppliedBy}
+                onChange={(e) => setExportAppliedBy(e.target.value as 'all' | 'human' | 'ai')}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-neutral-200"
+              >
+                <option value="all">All applications</option>
+                <option value="human">Human only</option>
+                <option value="ai">AI only</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 justify-end text-xs">
+              <label className="text-neutral-500 whitespace-nowrap">Date range (optional)</label>
+              <input
+                type="date"
+                value={exportDateFrom}
+                onChange={(e) => setExportDateFrom(e.target.value)}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200"
+                aria-label="Export from date"
+              />
+              <span className="text-neutral-600">–</span>
+              <input
+                type="date"
+                value={exportDateTo}
+                onChange={(e) => setExportDateTo(e.target.value)}
+                className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200"
+                aria-label="Export to date"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-100 border border-neutral-700"
+            >
+              Download CSV
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
@@ -594,10 +786,175 @@ export function AnalysisPage() {
             </div>
           </section>
 
+          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 lg:col-span-2">
+            <h2 className="text-sm font-medium text-neutral-300 mb-1">Messages per label (human vs AI)</h2>
+            <p className="text-xs text-neutral-500 mb-3">
+              Distinct student messages that have this label: only from humans, only from AI, or from both (same
+              message, same label name). Click a green or purple count to open message previews (truncated in each
+              row; hover for full text when cached).
+            </p>
+            {labelSourceRows.length === 0 ? (
+              <p className="text-sm text-neutral-500">No label applications yet.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[min(320px,50vh)] overflow-y-auto rounded-lg border border-neutral-800">
+                <table className="w-full text-xs text-left min-w-[520px]">
+                  <thead className="sticky top-0 bg-neutral-900/95 text-neutral-400 z-10">
+                    <tr>
+                      <th className="p-2 font-medium">Label</th>
+                      <th className="p-2 font-medium text-right tabular-nums">Human-only</th>
+                      <th className="p-2 font-medium text-right tabular-nums">AI-only</th>
+                      <th className="p-2 font-medium text-right tabular-nums">Both</th>
+                      <th className="p-2 font-medium text-right tabular-nums">Messages</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-neutral-200">
+                    {labelSourceRows.map((r) => (
+                      <tr key={r.label} className="border-t border-neutral-800">
+                        <td className="p-2 max-w-[200px] truncate" title={r.label}>
+                          {r.label}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {r.human_only > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openLabelMessages(r.label, 'human_only')}
+                              className="text-emerald-400/90 hover:underline cursor-pointer bg-transparent border-none p-0 font-inherit tabular-nums"
+                            >
+                              {r.human_only.toLocaleString()}
+                            </button>
+                          ) : (
+                            <span className="text-emerald-400/35">0</span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {r.ai_only > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openLabelMessages(r.label, 'ai_only')}
+                              className="text-indigo-400/90 hover:underline cursor-pointer bg-transparent border-none p-0 font-inherit tabular-nums"
+                            >
+                              {r.ai_only.toLocaleString()}
+                            </button>
+                          ) : (
+                            <span className="text-indigo-400/35">0</span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {r.both > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openLabelMessages(r.label, 'both')}
+                              className="text-neutral-200 hover:underline cursor-pointer bg-transparent border-none p-0 font-inherit tabular-nums"
+                            >
+                              {r.both.toLocaleString()}
+                            </button>
+                          ) : (
+                            <span className="text-neutral-500">0</span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right tabular-nums font-medium text-neutral-100">
+                          {r.total.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
           <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px] lg:col-span-2">
-            <h2 className="text-sm font-medium text-neutral-300 mb-4">Conversation Position</h2>
-            {posData.length === 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <h2 className="text-sm font-medium text-neutral-300">Conversation Position</h2>
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {(['all', 'human', 'ai', 'split'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setPositionViewMode(m)}
+                    className={`px-2 py-1 rounded border ${
+                      positionViewMode === m
+                        ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
+                        : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                    }`}
+                  >
+                    {m === 'all' ? 'All apps' : m === 'human' ? 'Human' : m === 'ai' ? 'AI' : 'Human + AI'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-neutral-500 mb-3">
+              {positionViewMode === 'split'
+                ? 'Per message index bucket: emerald = human applications, indigo = AI. Bar length uses the same scale as “All apps”.'
+                : positionViewMode === 'all'
+                  ? 'Application counts by transcript index (0–2 early, 3–6 mid, 7+ late), all sources.'
+                  : `Applications in each bucket from ${positionViewMode === 'human' ? 'human' : 'AI'} labeling only.`}
+            </p>
+            {(positionViewMode === 'split' ? posSplitData.length === 0 : posData.length === 0) ? (
               <p className="text-sm text-neutral-500">No position data yet.</p>
+            ) : positionViewMode === 'split' ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-400">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-emerald-500" />
+                    Human
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-indigo-500" />
+                    AI
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[480px] overflow-y-auto pr-1">
+                  {posSplitData.map((row) => (
+                    <div key={row.label} className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+                      <p className="text-xs text-neutral-200 truncate mb-2" title={row.label}>
+                        {row.label}
+                      </p>
+                      <div className="space-y-1.5">
+                        {(
+                          [
+                            ['Early', row.earlyH, row.earlyA],
+                            ['Mid', row.midH, row.midA],
+                            ['Late', row.lateH, row.lateA],
+                          ] as const
+                        ).map(([label, h, a]) => {
+                          const t = h + a
+                          const outerPct = posMax > 0 ? (t / posMax) * 100 : 0
+                          const wH = t > 0 ? (h / t) * 100 : 0
+                          const wA = t > 0 ? (a / t) * 100 : 0
+                          return (
+                            <div key={label} className="flex items-center gap-2">
+                              <span className="w-12 text-[10px] text-neutral-400">{label}</span>
+                              <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden flex justify-start min-w-0">
+                                {t > 0 && (
+                                  <div
+                                    className="h-full flex rounded overflow-hidden shrink-0"
+                                    style={{ width: `${outerPct}%`, minWidth: h + a > 0 ? 3 : 0 }}
+                                    title={`${label}: human ${h}, AI ${a}`}
+                                  >
+                                    {h > 0 && (
+                                      <div className="h-full bg-emerald-500 min-w-0" style={{ width: `${wH}%` }} />
+                                    )}
+                                    {a > 0 && (
+                                      <div className="h-full bg-indigo-500 min-w-0" style={{ width: `${wA}%` }} />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <span
+                                className="w-10 text-right text-[10px] text-neutral-300 tabular-nums shrink-0"
+                                title={`human ${h}, AI ${a}`}
+                              >
+                                {t}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-400">
@@ -615,34 +972,44 @@ export function AnalysisPage() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[480px] overflow-y-auto pr-1">
-                  {posData.map((row) => (
-                    <div key={row.label} className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                      <p className="text-xs text-neutral-200 truncate mb-2" title={row.label}>{row.label}</p>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Early</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
-                            <div className="h-full bg-emerald-400" style={{ width: `${(row.early / posMax) * 100}%` }} />
+                  {posData.map((row) => {
+                    const earlyC =
+                      positionViewMode === 'human' ? 'bg-emerald-400' : positionViewMode === 'ai' ? 'bg-indigo-400' : 'bg-emerald-400'
+                    const midC =
+                      positionViewMode === 'human' ? 'bg-emerald-500' : positionViewMode === 'ai' ? 'bg-indigo-500' : 'bg-sky-400'
+                    const lateC =
+                      positionViewMode === 'human' ? 'bg-emerald-600' : positionViewMode === 'ai' ? 'bg-violet-500' : 'bg-violet-400'
+                    return (
+                      <div key={row.label} className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+                        <p className="text-xs text-neutral-200 truncate mb-2" title={row.label}>
+                          {row.label}
+                        </p>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-12 text-[10px] text-neutral-400">Early</span>
+                            <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                              <div className={`h-full ${earlyC}`} style={{ width: `${(row.early / posMax) * 100}%` }} />
+                            </div>
+                            <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.early}</span>
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.early}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Mid</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
-                            <div className="h-full bg-sky-400" style={{ width: `${(row.mid / posMax) * 100}%` }} />
+                          <div className="flex items-center gap-2">
+                            <span className="w-12 text-[10px] text-neutral-400">Mid</span>
+                            <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                              <div className={`h-full ${midC}`} style={{ width: `${(row.mid / posMax) * 100}%` }} />
+                            </div>
+                            <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.mid}</span>
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.mid}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Late</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
-                            <div className="h-full bg-violet-400" style={{ width: `${(row.late / posMax) * 100}%` }} />
+                          <div className="flex items-center gap-2">
+                            <span className="w-12 text-[10px] text-neutral-400">Late</span>
+                            <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                              <div className={`h-full ${lateC}`} style={{ width: `${(row.late / posMax) * 100}%` }} />
+                            </div>
+                            <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.late}</span>
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.late}</span>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -988,5 +1355,105 @@ export function AnalysisPage() {
         </div>
       </div>
     </div>
+
+    {labelMsgModal && (
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeLabelMessages()
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="label-msg-modal-title"
+          className="w-full max-w-2xl max-h-[min(80vh,640px)] flex flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3 border-b border-neutral-800 px-4 py-3 shrink-0">
+            <div className="min-w-0">
+              <h2 id="label-msg-modal-title" className="text-sm font-semibold text-neutral-100 truncate">
+                {labelMsgModal.source === 'human_only'
+                  ? 'Human-only'
+                  : labelMsgModal.source === 'ai_only'
+                    ? 'AI-only'
+                    : 'Both sources'}{' '}
+                — {labelMsgModal.label}
+              </h2>
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                Student message text from local cache when available. Click a row to expand or collapse the full
+                message.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeLabelMessages}
+              className="shrink-0 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 border border-transparent hover:border-neutral-700"
+              aria-label="Close"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2">
+            {labelMsgLoading && <p className="text-sm text-neutral-500 py-6 text-center">Loading…</p>}
+            {labelMsgError && (
+              <p className="text-sm text-red-400/90 py-4">{labelMsgError}</p>
+            )}
+            {!labelMsgLoading && !labelMsgError && labelMsgData && (
+              <>
+                <p className="text-[11px] text-neutral-500 mb-2">
+                  Showing {labelMsgData.returned_count.toLocaleString()} of{' '}
+                  {labelMsgData.total_count.toLocaleString()} messages
+                  {labelMsgData.truncated ? ' (list capped — export CSV for full data).' : '.'}
+                </p>
+                {labelMsgData.messages.length === 0 ? (
+                  <p className="text-sm text-neutral-500 py-4">No messages in this bucket.</p>
+                ) : (
+                  <ul className="space-y-0 divide-y divide-neutral-800/90">
+                    {labelMsgData.messages.map((m) => {
+                      const rowKey = `${m.chatlog_id}-${m.message_index}`
+                      const expanded = !!expandedLabelMsgKeys[rowKey]
+                      const hasPreview = Boolean(m.preview?.trim())
+                      return (
+                        <li key={rowKey} className="flex items-start gap-3 py-2 text-xs">
+                          <span className="shrink-0 w-[5.5rem] tabular-nums text-neutral-500 pt-0.5">
+                            #{m.chatlog_id}·{m.message_index}
+                          </span>
+                          {hasPreview ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedLabelMsgKeys((prev) => ({
+                                  ...prev,
+                                  [rowKey]: !prev[rowKey],
+                                }))
+                              }
+                              className={`min-w-0 flex-1 text-left rounded px-1 -mx-1 py-0.5 text-neutral-200 cursor-pointer hover:bg-neutral-800/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-neutral-500 ${
+                                expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+                              }`}
+                              title={
+                                expanded
+                                  ? 'Click to collapse to one line'
+                                  : 'Click to show full message (or click the … when text is cut off)'
+                              }
+                            >
+                              {m.preview}
+                            </button>
+                          ) : (
+                            <span className="min-w-0 flex-1 text-neutral-500">—</span>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

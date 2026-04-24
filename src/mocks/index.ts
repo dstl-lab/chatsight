@@ -79,6 +79,24 @@ export const mockApi = {
       'Debug Help': { early: 6, mid: 9, late: 7 },
       'Syntax / API': { early: 8, mid: 3, late: 1 },
     },
+    position_distribution_human: {
+      'Concept Question': { early: 12, mid: 9, late: 7 },
+      Clarification: { early: 7, mid: 8, late: 4 },
+      'Debug Help': { early: 4, mid: 5, late: 4 },
+      'Syntax / API': { early: 5, mid: 2, late: 1 },
+    },
+    position_distribution_ai: {
+      'Concept Question': { early: 6, mid: 6, late: 5 },
+      Clarification: { early: 3, mid: 4, late: 2 },
+      'Debug Help': { early: 2, mid: 4, late: 3 },
+      'Syntax / API': { early: 3, mid: 1, late: 0 },
+    },
+    label_source_mix: {
+      'Concept Question': { human_only: 24, ai_only: 11, both: 10 },
+      Clarification: { human_only: 15, ai_only: 6, both: 7 },
+      'Debug Help': { human_only: 8, ai_only: 7, both: 7 },
+      'Syntax / API': { human_only: 3, ai_only: 5, both: 4 },
+    },
   } satisfies AnalysisSummary,
 
   temporalAnalysis: {
