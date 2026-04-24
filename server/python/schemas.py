@@ -57,7 +57,34 @@ class UndoRequest(BaseModel):
     message_index: int
 
 
+class ConciseRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class ApplyBatchRequest(BaseModel):
+    assignments: dict[str, int]  # "chatlog_id:message_index" -> label_id
+    delete_original_label_id: Optional[int] = None
+
+
+class SplitAutoLabelRequest(BaseModel):
+    label_id: int
+    name_a: str
+    name_b: str
+    assignments: dict[str, str]  # e.g., "chatlog_id:message_index" -> "name_a" or "name_b"
+
+
 # ── Response shapes ───────────────────────────────────────────────────────────
+
+class LabelExampleResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    label_id: int
+    applied_by: str
+
+class ConciseResponse(BaseModel):
+    concise_text: str
 
 class LabelDefinitionResponse(BaseModel):
     id: int
@@ -111,7 +138,7 @@ class ArchiveResponse(BaseModel):
     messages_returned_to_queue: int
 
 
-class RecalibrationResponse(BaseModel):
+class LabelReviewResponse(BaseModel):
     label_id: int
     name: str
     description: Optional[str]
@@ -162,3 +189,34 @@ class EmbedStatusResponse(BaseModel):
     cached: int
     total_unlabeled: int
     running: bool
+
+
+# ── Recalibration ──────────────────────────────────────────────────
+
+class RecalibrationItemResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    context_before: Optional[str]
+    context_after: Optional[str]
+    original_label_ids: List[int]
+
+
+class SaveRecalibrationRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    original_label_ids: List[int]
+    relabel_ids: List[int]
+    final_label_ids: List[int]
+
+
+class SaveRecalibrationResponse(BaseModel):
+    matched: bool
+    trend: str  # "improving" | "steady" | "shifting"
+
+
+class RecalibrationStatsResponse(BaseModel):
+    recent_results: List[bool]
+    trend: str  # "improving" | "steady" | "shifting"
+    current_interval: int
+    total_recalibrations: int

@@ -8,6 +8,30 @@ export interface LabelDefinition {
   count: number
 }
 
+export interface LabelExample {
+  chatlog_id: number
+  message_index: number
+  message_text: string
+  label_id: number
+  applied_by: string
+}
+
+export interface ConciseResponse {
+  concise_text: string
+}
+
+export interface SplitAutoLabelRequest {
+  label_id: number
+  name_a: string
+  name_b: string
+  assignments: Record<string, string> // "chatlog_id:message_index" -> "name_a" | "name_b"
+}
+
+export interface ApplyBatchRequest {
+  assignments: Record<string, number> // "cid:midx" -> label_id
+  delete_original_label_id?: number
+}
+
 export interface QueueItem {
   chatlog_id: number
   message_index: number
@@ -143,7 +167,7 @@ export interface ArchiveReviewState {
   completedMessageKeys: Set<string>
 }
 
-export interface RecalibrationItem {
+export interface LabelReviewItem {
   label_id: number
   name: string
   description: string | null
@@ -178,4 +202,40 @@ export interface EmbedStatus {
   cached: number
   total_unlabeled: number
   running: boolean
+}
+
+export interface ConversationMessageLabel {
+  label_name: string
+  applied_by: string
+}
+
+export interface ConversationMessage {
+  role: "student" | "assistant"
+  text: string
+  message_index: number | null
+  labels: ConversationMessageLabel[]
+}
+
+export interface RecalibrationItem extends QueueItem {
+  original_label_ids: number[]
+}
+
+export interface RecalibrationStats {
+  recent_results: boolean[]
+  trend: 'improving' | 'steady' | 'shifting'
+  current_interval: number
+  total_recalibrations: number
+}
+
+export interface SaveRecalibrationRequest {
+  chatlog_id: number
+  message_index: number
+  original_label_ids: number[]
+  relabel_ids: number[]
+  final_label_ids: number[]
+}
+
+export interface SaveRecalibrationResponse {
+  matched: boolean
+  trend: 'improving' | 'steady' | 'shifting'
 }

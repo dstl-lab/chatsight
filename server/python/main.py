@@ -1,30 +1,32 @@
 from contextlib import asynccontextmanager
+import hashlib
 from collections import defaultdict
 from datetime import datetime, date, timedelta, time
-from typing import List, Optional
+from typing import List, Dict, Any, Optional
 import csv
 import os
 import io
 import logging
 import threading
 from calendar import monthrange
-from fastapi import FastAPI, Depends, HTTPException, Query, Response
+from fastapi import FastAPI, Depends, HTTPException, Query, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import and_, func, or_, text, update
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
-    SkipMessageRequest, SuggestRequest, MergeLabelRequest, SplitLabelRequest,
-    ReorderLabelsRequest, AdvanceRequest, UndoRequest,
-    LabelDefinitionResponse, QueueItemResponse, SessionResponse,
-    LabelApplicationResponse, ChatlogSummary, ChatlogResponse,
-    OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
+    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
+    MergeLabelRequest, SplitLabelRequest, SplitAutoLabelRequest, ReorderLabelsRequest,
+    AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse,
+    QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
+    ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
-    RecalibrationResponse,
+    LabelReviewResponse,
+    RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
 )
 from sqlmodel import Session, select
 
@@ -51,7 +53,9 @@ def populate_message_cache():
                 ),
                 chatlog_ids AS (
                     SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events GROUP BY payload->>'conversation_id'
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                    GROUP BY payload->>'conversation_id'
                 )
                 SELECT s.message_text, s.message_index, ci.chatlog_id,
                     (SELECT e2.payload->>'response' FROM events e2
@@ -202,6 +206,50 @@ def get_chatlog(
         content=content,
         created_at=first["started_at"],
     )
+
+
+@app.get("/api/chatlogs/{chatlog_id}/messages")
+def get_chatlog_messages(
+    chatlog_id: int,
+    conn: Connection = Depends(get_ext_conn),
+    db: Session = Depends(get_session),
+):
+    """Return the full conversation as a structured array with per-message label info."""
+    rows = _fetch_conversation_events(conn, chatlog_id)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Chatlog not found")
+
+    messages = []
+    student_idx = 0
+    seen_query = False
+    for row in rows:
+        if row["event_type"] == "tutor_query" and row["question"]:
+            seen_query = True
+            apps = db.exec(
+                select(LabelApplication, LabelDefinition)
+                .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+                .where(
+                    LabelApplication.chatlog_id == chatlog_id,
+                    LabelApplication.message_index == student_idx,
+                    LabelDefinition.archived_at == None,  # noqa: E711
+                )
+            ).all()
+            labels = [{"label_name": ld.name, "applied_by": la.applied_by} for la, ld in apps]
+            messages.append({
+                "role": "student",
+                "text": row["question"],
+                "message_index": student_idx,
+                "labels": labels,
+            })
+            student_idx += 1
+        elif row["event_type"] == "tutor_response" and row["response"] and seen_query:
+            messages.append({
+                "role": "assistant",
+                "text": row["response"],
+                "message_index": None,
+                "labels": [],
+            })
+    return messages
 
 
 # ── Label routes ──────────────────────────────────────────────────────────────
@@ -526,6 +574,44 @@ def get_applied_labels(
     return {"label_ids": [r.label_id for r in rows]}
 
 
+@app.post("/api/queue/apply-batch")
+def apply_batch(req: ApplyBatchRequest, db: Session = Depends(get_session)):
+    for key, label_id in req.assignments.items():
+        cid_str, midx_str = key.split(":")
+        cid, midx = int(cid_str), int(midx_str)
+
+        # Check for duplicate
+        existing = db.exec(
+            select(LabelApplication).where(
+                LabelApplication.label_id == label_id,
+                LabelApplication.chatlog_id == cid,
+                LabelApplication.message_index == midx,
+            )
+        ).first()
+        if not existing:
+            db.add(
+                LabelApplication(
+                    label_id=label_id,
+                    chatlog_id=cid,
+                    message_index=midx,
+                    applied_by="human",
+                )
+            )
+
+    if req.delete_original_label_id:
+        original = db.get(LabelDefinition, req.delete_original_label_id)
+        if original:
+            # Delete apps of original label that weren't reassigned (if any)
+            db.exec(
+                text("DELETE FROM labelapplication WHERE label_id = :lid"),
+                {"lid": req.delete_original_label_id}
+            )
+            db.delete(original)
+
+    db.commit()
+    return {"ok": True}
+
+
 @app.post("/api/queue/advance")
 def advance_message(req: AdvanceRequest, db: Session = Depends(get_session)):
     has_labels = db.exec(
@@ -597,6 +683,38 @@ def get_label_messages(label_id: int, db: Session = Depends(get_session)):
     ]
 
 
+@app.get(
+    "/api/labels/{label_id}/examples", response_model=List[LabelExampleResponse]
+)
+def get_label_examples(label_id: int, limit: int = 50, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    rows = db.exec(
+        select(LabelApplication, MessageCache.message_text)
+        .join(
+            MessageCache,
+            (LabelApplication.chatlog_id == MessageCache.chatlog_id) &
+            (LabelApplication.message_index == MessageCache.message_index)
+        )
+        .where(LabelApplication.label_id == label_id)
+        .order_by(func.random())
+        .limit(limit)
+    ).all()
+
+    return [
+        LabelExampleResponse(
+            chatlog_id=app_.chatlog_id,
+            message_index=app_.message_index,
+            message_text=msg_text,
+            label_id=app_.label_id,
+            applied_by=app_.applied_by
+        )
+        for app_, msg_text in rows
+    ]
+
+
 @app.post("/api/queue/skip")
 def skip_message(req: SkipMessageRequest, db: Session = Depends(get_session)):
     skipped = SkippedMessage(
@@ -649,7 +767,6 @@ def get_skipped_queue(db: Session = Depends(get_session)):
 
 
 # ── Queue fetch route ─────────────────────────────────────────────────────────
-
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
@@ -878,6 +995,70 @@ def get_queue_history(
 _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None}
 
 
+def _run_split_autolabel(
+    original_label_name: str,
+    new_label_a_id: int,
+    new_label_a_name: str,
+    new_label_b_id: int,
+    new_label_b_name: str,
+    human_examples: List[Dict[str, Any]],  # [{text, label_name}]
+    remaining_messages: List[Dict[str, Any]],  # [{chatlog_id, message_index, message_text}]
+):
+    """Background task: split remaining messages between two new labels using Gemini."""
+    from autolabel_service import classify_batch
+
+    global _autolabel_status
+    _autolabel_status = {
+        "running": True,
+        "processed": 0,
+        "total": len(remaining_messages),
+        "error": None,
+    }
+
+    label_defs = [
+        {"name": new_label_a_name, "description": f"Sub-category of {original_label_name}"},
+        {"name": new_label_b_name, "description": f"Sub-category of {original_label_name}"},
+    ]
+
+    examples_by_label = {
+        new_label_a_name: [ex["text"] for ex in human_examples if ex["label_name"] == new_label_a_name],
+        new_label_b_name: [ex["text"] for ex in human_examples if ex["label_name"] == new_label_b_name],
+    }
+
+    label_map = {new_label_a_name: new_label_a_id, new_label_b_name: new_label_b_id}
+
+    BATCH_SIZE = 30
+    for i in range(0, len(remaining_messages), BATCH_SIZE):
+        batch = remaining_messages[i : i + BATCH_SIZE]
+        try:
+            # We don't have context_before for these right now, could be added later
+            results = classify_batch(label_defs, examples_by_label, batch)
+        except Exception as e:
+            _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
+            continue
+
+        with Session(engine) as db:
+            for r in results:
+                idx = r.get("index")
+                label_name = r.get("label")
+                if idx is None or idx >= len(batch) or label_name not in label_map:
+                    continue
+                msg = batch[idx]
+                db.add(
+                    LabelApplication(
+                        label_id=label_map[label_name],
+                        chatlog_id=msg["chatlog_id"],
+                        message_index=msg["message_index"],
+                        applied_by="ai",
+                    )
+                )
+            db.commit()
+
+        _autolabel_status["processed"] = min(i + BATCH_SIZE, len(remaining_messages))
+
+    _autolabel_status["running"] = False
+
+
 def _run_autolabel():
     """Background task: classify all unlabeled messages using Gemini."""
     from autolabel_service import classify_batch
@@ -966,7 +1147,9 @@ def _run_autolabel():
                 ),
                 chatlog_ids AS (
                     SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events GROUP BY payload->>'conversation_id'
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                    GROUP BY payload->>'conversation_id'
                 )
                 SELECT s.message_text, s.message_index, ci.chatlog_id,
                     (SELECT e2.payload->>'response' FROM events e2
@@ -1060,9 +1243,33 @@ def get_autolabel_status():
 
 @app.post("/api/queue/suggest")
 def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
-    labels = db.exec(select(LabelDefinition)).all()
+    labels = db.exec(
+        select(LabelDefinition).where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
     if not labels:
         return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
+
+    counts = dict(db.exec(
+        select(LabelApplication.label_id, func.count(LabelApplication.id))
+        .where(LabelApplication.applied_by == "human")
+        .group_by(LabelApplication.label_id)
+    ).all())
+
+    cache_key_input = "|".join(
+        f"{l.name}:{counts.get(l.id, 0)}" for l in sorted(labels, key=lambda x: x.id)
+    )
+    labels_hash = hashlib.md5(cache_key_input.encode()).hexdigest()
+
+    # Check cache
+    cached = db.exec(
+        select(SuggestionCache).where(
+            SuggestionCache.chatlog_id == req.chatlog_id,
+            SuggestionCache.message_index == req.message_index,
+            SuggestionCache.labels_hash == labels_hash,
+        )
+    ).first()
+    if cached:
+        return {"label_name": cached.label_name, "evidence": cached.evidence, "rationale": cached.rationale}
 
     # Build examples for each label
     examples_by_label: dict[str, list[str]] = {}
@@ -1082,14 +1289,14 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
                         text("""
                         WITH student AS (
                             SELECT payload->>'question' AS msg,
-                                   (ROW_NUMBER() OVER (
-                                       PARTITION BY payload->>'conversation_id' ORDER BY id
-                                   )) - 1 AS idx
+                                    (ROW_NUMBER() OVER (
+                                        PARTITION BY payload->>'conversation_id' ORDER BY id
+                                    )) - 1 AS idx
                             FROM events
                             WHERE event_type = 'tutor_query'
-                              AND payload->>'conversation_id' = (
-                                  SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                              )
+                                AND payload->>'conversation_id' = (
+                                    SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                                )
                         )
                         SELECT msg FROM student WHERE idx = :midx
                     """),
@@ -1101,6 +1308,72 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
                         )
 
     # Get the message text to classify
+    with ext_engine.connect() as conn:
+        row = conn.execute(
+            text("""
+            WITH student AS (
+                SELECT payload->>'question' AS msg,
+                        (ROW_NUMBER() OVER (
+                            PARTITION BY payload->>'conversation_id' ORDER BY id
+                        )) - 1 AS idx
+                FROM events
+                WHERE event_type = 'tutor_query'
+                    AND payload->>'conversation_id' = (
+                        SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                    )
+            )
+            SELECT msg FROM student WHERE idx = :midx
+        """),
+            {"cid": req.chatlog_id, "midx": req.message_index},
+        ).first()
+
+    if not row or not row[0]:
+        return {
+            "label_name": "",
+            "evidence": "",
+            "rationale": "Could not find message.",
+        }
+
+    message_text = row[0]
+
+    def _cache_and_return(result: dict) -> dict:
+        db.add(SuggestionCache(
+            chatlog_id=req.chatlog_id,
+            message_index=req.message_index,
+            label_name=result["label_name"],
+            evidence=result["evidence"],
+            rationale=result["rationale"],
+            labels_hash=labels_hash,
+        ))
+        db.commit()
+        return result
+
+    # Call Gemini for suggestion
+    try:
+        from autolabel_service import classify_batch
+
+        label_defs = [{"name": l.name, "description": l.description} for l in labels]
+        messages = [{"message_text": message_text, "context_before": None}]
+        results = classify_batch(label_defs, examples_by_label, messages)
+        if results:
+            label_name = results[0].get("label", "")
+            return _cache_and_return({
+                "label_name": label_name,
+                "evidence": message_text[:100],
+                "rationale": f"AI classified this as '{label_name}' based on {len(examples_by_label.get(label_name, []))} human-labeled examples.",
+            })
+    except Exception:
+        pass
+
+    return _cache_and_return({
+        "label_name": labels[0].name,
+        "evidence": message_text[:100],
+        "rationale": "Fallback suggestion.",
+    })
+
+
+@app.post("/api/queue/concise", response_model=ConciseResponse)
+def get_concise_message(req: ConciseRequest, db: Session = Depends(get_session)):
     with ext_engine.connect() as conn:
         row = conn.execute(
             text("""
@@ -1121,36 +1394,11 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
         ).first()
 
     if not row or not row[0]:
-        return {
-            "label_name": "",
-            "evidence": "",
-            "rationale": "Could not find message.",
-        }
+        raise HTTPException(status_code=404, detail="Message not found")
 
-    message_text = row[0]
-
-    # Call Gemini for suggestion
-    try:
-        from autolabel_service import classify_batch
-
-        label_defs = [{"name": l.name, "description": l.description} for l in labels]
-        messages = [{"message_text": message_text, "context_before": None}]
-        results = classify_batch(label_defs, examples_by_label, messages)
-        if results:
-            label_name = results[0].get("label", "")
-            return {
-                "label_name": label_name,
-                "evidence": message_text[:100],
-                "rationale": f"AI classified this as '{label_name}' based on {len(examples_by_label.get(label_name, []))} human-labeled examples.",
-            }
-    except Exception:
-        pass
-
-    return {
-        "label_name": labels[0].name,
-        "evidence": message_text[:100],
-        "rationale": "Fallback suggestion.",
-    }
+    from autolabel_service import summarize_message
+    concise = summarize_message(row[0])
+    return {"concise_text": concise}
 
 
 @app.post("/api/labels/merge")
@@ -1187,6 +1435,161 @@ def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):
         created_at=target_label.created_at,
         count=count,
     )
+
+
+@app.post("/api/labels/split-autolabel", response_model=List[LabelDefinitionResponse])
+def split_label_autolabel(
+    req: SplitAutoLabelRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session),
+):
+    original_label = db.get(LabelDefinition, req.label_id)
+    if not original_label:
+        raise HTTPException(status_code=404, detail="Label not found")
+
+    # Check for existing labels or create new ones
+    def get_or_create_label(name: str):
+        existing = db.exec(select(LabelDefinition).where(LabelDefinition.name == name)).first()
+        if existing:
+            return existing
+        new_lbl = LabelDefinition(name=name, description=f"Sub-category of {original_label.name}")
+        db.add(new_lbl)
+        db.commit()
+        db.refresh(new_lbl)
+        return new_lbl
+
+    label_a = get_or_create_label(req.name_a)
+    label_b = get_or_create_label(req.name_b)
+
+    # Convert assignments (which are human-labeled)
+    # req.assignments is { "cid:midx": "name_a" | "name_b" | "some_other_label" }
+    human_examples = []
+    processed_keys = set()
+    with ext_engine.connect() as conn:
+        for key, target_name in req.assignments.items():
+            cid_str, midx_str = key.split(":")
+            cid, midx = int(cid_str), int(midx_str)
+            
+            # Find the actual label ID for the assigned name
+            target_label = db.exec(select(LabelDefinition).where(LabelDefinition.name == target_name)).first()
+            if not target_label:
+                # If it doesn't exist (e.g. user typed something new in the UI), create it
+                target_label = LabelDefinition(name=target_name)
+                db.add(target_label)
+                db.commit()
+                db.refresh(target_label)
+            
+            target_id = target_label.id
+
+            # Save human application
+            db.add(
+                LabelApplication(
+                    label_id=target_id,
+                    chatlog_id=cid,
+                    message_index=midx,
+                    applied_by="human",
+                )
+            )
+            processed_keys.add((cid, midx))
+
+            # Fetch text for example - ONLY if it's one of the two split labels
+            # We only use these to "train" the AI for the remaining split
+            if target_name in [req.name_a, req.name_b]:
+                row = conn.execute(
+                    text("""
+                    WITH student AS (
+                        SELECT payload->>'question' AS msg,
+                               (ROW_NUMBER() OVER (
+                                   PARTITION BY payload->>'conversation_id' ORDER BY id
+                               )) - 1 AS idx
+                        FROM events
+                        WHERE event_type = 'tutor_query'
+                          AND payload->>'conversation_id' = (
+                              SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                          )
+                    )
+                    SELECT msg FROM student WHERE idx = :midx
+                    """),
+                    {"cid": cid, "midx": midx},
+                ).first()
+                if row and row[0]:
+                    human_examples.append({"text": row[0], "label_name": target_name})
+
+    # Find remaining messages of original label
+    remaining_apps = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == req.label_id)
+    ).all()
+    remaining_messages = []
+    with ext_engine.connect() as conn:
+        for app_ in remaining_apps:
+            if (app_.chatlog_id, app_.message_index) in processed_keys:
+                continue
+
+            # Fetch text for AI classification
+            row = conn.execute(
+                text("""
+                WITH student AS (
+                    SELECT payload->>'question' AS msg,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id' ORDER BY id
+                           )) - 1 AS idx
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                      AND payload->>'conversation_id' = (
+                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                      )
+                )
+                SELECT msg FROM student WHERE idx = :midx
+                """),
+                {"cid": app_.chatlog_id, "midx": app_.message_index},
+            ).first()
+            if row and row[0]:
+                remaining_messages.append(
+                    {
+                        "chatlog_id": app_.chatlog_id,
+                        "message_index": app_.message_index,
+                        "message_text": row[0],
+                    }
+                )
+
+    # Delete original label and its applications
+    for app_ in remaining_apps:
+        db.delete(app_)
+    
+    # Only delete original if it's not one of the target labels (edge case)
+    if original_label.id not in [label_a.id, label_b.id]:
+        db.delete(original_label)
+    
+    db.commit()
+
+    # Start background task
+    background_tasks.add_task(
+        _run_split_autolabel,
+        original_label.name,
+        label_a.id,
+        label_a.name,
+        label_b.id,
+        label_b.name,
+        human_examples,
+        remaining_messages,
+    )
+
+    return [
+        LabelDefinitionResponse(
+            id=label_a.id,
+            name=label_a.name,
+            description=label_a.description,
+            created_at=label_a.created_at,
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_a.id)).one(),
+        ),
+        LabelDefinitionResponse(
+            id=label_b.id,
+            name=label_b.name,
+            description=label_b.description,
+            created_at=label_b.created_at,
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_b.id)).one(),
+        ),
+    ]
 
 
 @app.post("/api/labels/split", response_model=List[LabelDefinitionResponse])
@@ -1244,9 +1647,6 @@ def delete_label(
         raise HTTPException(
             status_code=400, detail="Label has applications, use force=true to delete"
         )
-    for app in apps:
-        db.delete(app)
-
     db.delete(label)
     db.commit()
     return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
@@ -1387,6 +1787,7 @@ def get_embed_status(db: Session = Depends(get_session)):
         "running": _discover_status["running"],
         "error": _discover_status.get("error"),
     }
+
 
 
 def _position_bucket(message_index: int) -> str:
@@ -1898,8 +2299,8 @@ def export_csv(
     )
 
 
-@app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
-def get_recalibration(db: Session = Depends(get_session)):
+@app.get("/api/session/label-review", response_model=List[LabelReviewResponse])
+def get_label_review(db: Session = Depends(get_session)):
     from concurrent.futures import ThreadPoolExecutor
     from definition_service import generate_label_definition, select_best_example
 
@@ -1948,7 +2349,7 @@ def get_recalibration(db: Session = Depends(get_session)):
         example_map = dict(executor.map(process, label_data))
 
     return [
-        RecalibrationResponse(
+        LabelReviewResponse(
             label_id=label.id,
             name=label.name,
             description=label.description,
@@ -1956,6 +2357,260 @@ def get_recalibration(db: Session = Depends(get_session)):
         )
         for label, _ in label_data
     ]
+
+
+# ── Recalibration ────────────────────────────────────────────────────────────
+
+RECALIBRATION_BASE_INTERVAL = 10
+RECALIBRATION_MIN_INTERVAL = 5
+RECALIBRATION_MAX_INTERVAL = 30
+RECALIBRATION_WINDOW = 5
+RECALIBRATION_COOLDOWN = 50
+
+DEV_MODE = os.getenv("CHATSIGHT_DEV", "").lower() in ("1", "true", "yes")
+
+
+def _compute_recalibration_interval(events: list[RecalibrationEvent]) -> int:
+    """Replay recalibration history to derive the current adaptive interval."""
+    interval = RECALIBRATION_BASE_INTERVAL
+    if len(events) < RECALIBRATION_WINDOW:
+        return interval
+    for i in range(RECALIBRATION_WINDOW, len(events) + 1):
+        window = events[i - RECALIBRATION_WINDOW : i]
+        matches = sum(1 for e in window if e.matched)
+        consistency = matches / RECALIBRATION_WINDOW
+        if consistency >= 0.90:
+            interval = min(interval + 5, RECALIBRATION_MAX_INTERVAL)
+        elif consistency < 0.70:
+            interval = max(interval - 5, RECALIBRATION_MIN_INTERVAL)
+    return interval
+
+
+def _compute_trend(events: list[RecalibrationEvent]) -> str:
+    """Compare match rate of last 4 events vs prior 4 to determine trend."""
+    if len(events) < 4:
+        return "steady"
+    recent = events[-4:]
+    prior = events[-8:-4] if len(events) >= 8 else events[: len(events) - 4]
+    if not prior:
+        return "steady"
+    recent_matches = sum(1 for e in recent if e.matched)
+    prior_matches = sum(1 for e in prior if e.matched)
+    if recent_matches - prior_matches > 1:
+        return "improving"
+    elif prior_matches - recent_matches > 1:
+        return "shifting"
+    return "steady"
+
+
+@app.get("/api/session/recalibration")
+def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
+    # `force=true` is honored only when CHATSIGHT_DEV is set; otherwise silently ignored.
+    force = force and DEV_MODE
+    # 1. Check for active session
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+    if not labeling_session:
+        return None
+
+    # 2. Get all recalibration events (chronological) for interval computation
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+    interval = _compute_recalibration_interval(all_events)
+
+    # 3. Count human-labeled messages since last recalibration
+    last_event = all_events[-1] if all_events else None
+    cutoff = last_event.created_at if last_event else labeling_session.started_at
+
+    labeled_since = db.exec(
+        select(func.count()).select_from(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .where(LabelApplication.applied_by == "human")
+            .where(LabelApplication.created_at > cutoff)
+            .distinct()
+            .subquery()
+        )
+    ).one()
+
+    if not force and labeled_since < interval:
+        return None
+
+    # 4. Select a message using stratified-by-label + age-weighted sampling
+    import random
+
+    # Get all human-labeled messages with their label IDs and timestamps
+    labeled_messages = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelApplication.label_id,
+            LabelApplication.created_at,
+        )
+        .where(LabelApplication.applied_by == "human")
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
+
+    # Build message -> labels and message -> oldest timestamp maps
+    msg_labels: dict[tuple[int, int], list[int]] = {}
+    msg_oldest: dict[tuple[int, int], datetime] = {}
+    for chatlog_id, message_index, label_id, created_at in labeled_messages:
+        key = (chatlog_id, message_index)
+        msg_labels.setdefault(key, []).append(label_id)
+        if key not in msg_oldest or created_at < msg_oldest[key]:
+            msg_oldest[key] = created_at
+
+    # Exclude messages on cooldown (recalibrated recently)
+    if all_events:
+        for event in all_events:
+            ekey = (event.chatlog_id, event.message_index)
+            # Count labeled messages since this event
+            since_count = db.exec(
+                select(func.count()).select_from(
+                    select(LabelApplication.chatlog_id, LabelApplication.message_index)
+                    .where(LabelApplication.applied_by == "human")
+                    .where(LabelApplication.created_at > event.created_at)
+                    .distinct()
+                    .subquery()
+                )
+            ).one()
+            if since_count < RECALIBRATION_COOLDOWN:
+                msg_labels.pop(ekey, None)
+                msg_oldest.pop(ekey, None)
+
+    if not msg_labels:
+        return None
+
+    # Compute label deficit for stratification
+    total_recal = len(all_events) if all_events else 0
+    label_msg_count: dict[int, int] = {}
+    for labels in msg_labels.values():
+        for lid in labels:
+            label_msg_count[lid] = label_msg_count.get(lid, 0) + 1
+
+    total_msg_count = len(msg_labels)
+    recal_label_count: dict[int, int] = {}
+    if all_events:
+        for event in all_events:
+            for lid in json_mod.loads(event.original_label_ids):
+                recal_label_count[lid] = recal_label_count.get(lid, 0) + 1
+
+    label_deficit: dict[int, float] = {}
+    for lid, count in label_msg_count.items():
+        expected = count / total_msg_count if total_msg_count > 0 else 0
+        actual = (recal_label_count.get(lid, 0) / total_recal) if total_recal > 0 else 0
+        label_deficit[lid] = max(0.0, expected - actual)
+
+    # Weight each message by: label deficit (sum across its labels) * age
+    now = datetime.utcnow()
+    candidates = []
+    weights = []
+    for key, labels in msg_labels.items():
+        deficit_weight = sum(label_deficit.get(lid, 0) for lid in labels)
+        if deficit_weight == 0:
+            deficit_weight = 0.1  # small floor so all messages have a chance
+        age_seconds = max(1.0, (now - msg_oldest[key]).total_seconds())
+        candidates.append(key)
+        weights.append(deficit_weight * age_seconds)
+
+    selected = random.choices(candidates, weights=weights, k=1)[0]
+
+    # Fetch the message and its labels
+    cached = db.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == selected[0],
+            MessageCache.message_index == selected[1],
+        )
+    ).first()
+    if not cached:
+        return None
+
+    original_ids = sorted(msg_labels[selected])
+
+    return RecalibrationItemResponse(
+        chatlog_id=cached.chatlog_id,
+        message_index=cached.message_index,
+        message_text=cached.message_text,
+        context_before=cached.context_before,
+        context_after=cached.context_after,
+        original_label_ids=original_ids,
+    )
+
+
+@app.post("/api/session/recalibration", response_model=SaveRecalibrationResponse)
+def save_recalibration(req: SaveRecalibrationRequest, db: Session = Depends(get_session)):
+    # Get current session
+    labeling_session = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+
+    matched = sorted(req.original_label_ids) == sorted(req.relabel_ids)
+
+    event = RecalibrationEvent(
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+        original_label_ids=json_mod.dumps(sorted(req.original_label_ids)),
+        relabel_ids=json_mod.dumps(sorted(req.relabel_ids)),
+        final_label_ids=json_mod.dumps(sorted(req.final_label_ids)),
+        matched=matched,
+        session_id=labeling_session.id if labeling_session else None,
+    )
+    db.add(event)
+
+    # Reconcile LabelApplication rows to match final_label_ids
+    current_apps = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+            LabelApplication.applied_by == "human",
+        )
+    ).all()
+    current_label_ids = {app.label_id for app in current_apps}
+    final_set = set(req.final_label_ids)
+
+    # Delete labels not in final set
+    for app in current_apps:
+        if app.label_id not in final_set:
+            db.delete(app)
+
+    # Add labels in final set but not currently applied
+    for lid in final_set - current_label_ids:
+        db.add(LabelApplication(
+            label_id=lid,
+            chatlog_id=req.chatlog_id,
+            message_index=req.message_index,
+            applied_by="human",
+        ))
+
+    db.commit()
+
+    # Compute trend for response
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+    trend = _compute_trend(all_events)
+
+    return SaveRecalibrationResponse(matched=matched, trend=trend)
+
+
+@app.get("/api/session/recalibration/stats", response_model=RecalibrationStatsResponse)
+def get_recalibration_stats(db: Session = Depends(get_session)):
+    all_events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+
+    recent_results = [e.matched for e in all_events[-8:]]
+    trend = _compute_trend(all_events)
+    interval = _compute_recalibration_interval(all_events)
+
+    return RecalibrationStatsResponse(
+        recent_results=recent_results,
+        trend=trend,
+        current_interval=interval,
+        total_recalibrations=len(all_events),
+    )
 
 
 @app.get("/api/queue/sample")

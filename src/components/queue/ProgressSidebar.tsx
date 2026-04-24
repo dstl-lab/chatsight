@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate } from '../../types'
+import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate, RecalibrationStats } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 import { RecentHistory } from './RecentHistory'
 import { LabelContextMenu } from './LabelContextMenu'
@@ -36,6 +36,12 @@ interface Props {
   onDiscover: () => void
   onOpenDiscoverModal: () => void
   discovering: boolean
+  recalibration: {
+    phase: 'blind' | 'reconcile'
+    originalLabelIds: Set<number>
+    relabelIds: Set<number>
+  } | null
+  recalibrationStats: RecalibrationStats | null
 }
 
 interface SortableLabelItemProps {
@@ -161,6 +167,7 @@ export function ProgressSidebar({
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
   onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
+  recalibration, recalibrationStats,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -320,34 +327,61 @@ export function ProgressSidebar({
       />
 
       <div className="flex-1 min-h-0 flex flex-col">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labels</p>
+        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+          {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
+        </p>
+        {recalibration?.phase === 'reconcile' && (
+          <p className="text-[10px] text-neutral-600 mb-2">Toggle with 1-9 keys, Enter to confirm</p>
+        )}
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={labels.map(l => l.id)} strategy={verticalListSortingStrategy}>
-              {labels.map((label, idx) => (
-                <SortableLabelItem
-                  key={label.id}
-                  label={label}
-                  index={idx}
-                  isApplied={appliedLabelIds.has(label.id)}
-                  onToggle={() => onToggleLabel(label.id)}
-                  isHovered={hoveredLabelId === label.id}
-                  isEditing={editingLabelId === label.id}
-                  editDesc={editDesc}
-                  onStartHover={() => startHover(label.id)}
-                  onCancelHover={() => cancelHover(label.id)}
-                  onClearHoverTimer={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
-                  onSetEditDesc={setEditDesc}
-                  onCancelEditing={() => { setEditingLabelId(null); setHoveredLabelId(null) }}
-                  onSaveDescription={() => handleSaveDescription(label.id)}
-                  onContextMenu={(e) => handleContextMenu(label.id, e)}
-                  isRenaming={renamingLabelId === label.id}
-                  renameValue={renameValue}
-                  onSetRenameValue={setRenameValue}
-                  onConfirmRename={() => handleConfirmRename(label.id)}
-                  onCancelRename={() => setRenamingLabelId(null)}
-                />
-              ))}
+              {labels.map((label, idx) => {
+                // Compute diff badge for reconciliation phase
+                let diffBadge: { text: string; color: string } | null = null
+                if (recalibration?.phase === 'reconcile') {
+                  const wasOriginal = recalibration.originalLabelIds.has(label.id)
+                  const wasRelabeled = recalibration.relabelIds.has(label.id)
+                  if (wasOriginal && wasRelabeled) {
+                    diffBadge = { text: 'MATCH', color: 'text-green-400' }
+                  } else if (wasOriginal && !wasRelabeled) {
+                    diffBadge = { text: 'WAS ON', color: 'text-red-400' }
+                  } else if (!wasOriginal && wasRelabeled) {
+                    diffBadge = { text: 'NEW', color: 'text-blue-400' }
+                  }
+                }
+
+                return (
+                  <div key={label.id}>
+                    <SortableLabelItem
+                      label={label}
+                      index={idx}
+                      isApplied={appliedLabelIds.has(label.id)}
+                      onToggle={() => onToggleLabel(label.id)}
+                      isHovered={hoveredLabelId === label.id}
+                      isEditing={editingLabelId === label.id}
+                      editDesc={editDesc}
+                      onStartHover={() => startHover(label.id)}
+                      onCancelHover={() => cancelHover(label.id)}
+                      onClearHoverTimer={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
+                      onSetEditDesc={setEditDesc}
+                      onCancelEditing={() => { setEditingLabelId(null); setHoveredLabelId(null) }}
+                      onSaveDescription={() => handleSaveDescription(label.id)}
+                      onContextMenu={(e) => handleContextMenu(label.id, e)}
+                      isRenaming={renamingLabelId === label.id}
+                      renameValue={renameValue}
+                      onSetRenameValue={setRenameValue}
+                      onConfirmRename={() => handleConfirmRename(label.id)}
+                      onCancelRename={() => setRenamingLabelId(null)}
+                    />
+                    {diffBadge && (
+                      <span className={`text-[9px] font-semibold tracking-wider ml-2.5 ${diffBadge.color}`}>
+                        {diffBadge.text}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
             </SortableContext>
           </DndContext>
           {showPopover ? (
@@ -369,6 +403,46 @@ export function ProgressSidebar({
         </div>
       </div>
       <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
+      {recalibrationStats && recalibrationStats.total_recalibrations > 0 && (
+        <div className="border-t border-neutral-800 pt-3">
+          <p className="text-[10px] uppercase tracking-widest text-neutral-600 mb-2">Calibration</p>
+          <div className="flex items-center gap-2">
+            <span className={`text-sm ${
+              recalibrationStats.trend === 'improving' ? 'text-green-400' :
+              recalibrationStats.trend === 'shifting' ? 'text-amber-400' :
+              'text-neutral-400'
+            }`}>
+              {recalibrationStats.trend === 'improving' ? '↗' :
+               recalibrationStats.trend === 'shifting' ? '↘' : '→'}
+            </span>
+            <div>
+              <p className={`text-[11px] ${
+                recalibrationStats.trend === 'improving' ? 'text-neutral-300' :
+                recalibrationStats.trend === 'shifting' ? 'text-neutral-300' :
+                'text-neutral-400'
+              }`}>
+                {recalibrationStats.trend === 'improving' ? 'Improving' :
+                 recalibrationStats.trend === 'shifting' ? 'Shifting' : 'Steady'}
+              </p>
+              <div className="flex gap-px mt-1" aria-label="Calibration sparkline">
+                {recalibrationStats.recent_results.map((matched, i) => (
+                  <span
+                    key={i}
+                    className={matched
+                      ? recalibrationStats.trend === 'improving' ? 'text-green-400' :
+                        recalibrationStats.trend === 'shifting' ? 'text-amber-400' : 'text-neutral-400'
+                      : 'text-neutral-700'
+                    }
+                    style={{ fontSize: '11px', lineHeight: 1 }}
+                  >
+                    {matched ? '▇' : '▁'}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {contextMenu && (
         <LabelContextMenu
           x={contextMenu.x}

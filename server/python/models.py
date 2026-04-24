@@ -59,6 +59,18 @@ class MessageEmbedding(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class RecalibrationEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    original_label_ids: str        # JSON array of label IDs from original labeling
+    relabel_ids: str               # JSON array of label IDs from blind re-label
+    final_label_ids: str           # JSON array of label IDs after reconciliation
+    matched: bool                  # True if original_label_ids == relabel_ids
+    session_id: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class ConceptCandidate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -67,4 +79,15 @@ class ConceptCandidate(SQLModel, table=True):
     status: str = "pending"  # pending | accepted | rejected
     source_run_id: str
     similar_to: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SuggestionCache(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    chatlog_id: int
+    message_index: int
+    label_name: str
+    evidence: str
+    rationale: str
+    labels_hash: str  # hash of all active label names; invalidated when labels change
     created_at: datetime = Field(default_factory=datetime.utcnow)
