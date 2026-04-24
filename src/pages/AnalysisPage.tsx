@@ -11,7 +11,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { AnalysisSummary, LabelMessageSource, LabelMessagesResponse, TemporalAnalysis } from '../types'
+import type {
+  AnalysisSummary,
+  LabelMessageSource,
+  LabelMessagesResponse,
+  TemporalAnalysis,
+} from '../types'
 import { api } from '../services/api'
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -20,6 +25,7 @@ type HeatmapMode = 'raw' | 'row' | 'column'
 type AssignmentKind = 'due' | 'late' | 'release'
 type LabelFreqMode = 'combined' | 'human' | 'ai'
 type PositionViewMode = 'all' | 'human' | 'ai' | 'split'
+type AnalysisTab = 'overview' | 'temporal' | 'notebooks'
 
 interface PosRow {
   label: string
@@ -114,6 +120,7 @@ export function AnalysisPage() {
   const [error, setError] = useState<string | null>(null)
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('row')
   const [labelFreqMode, setLabelFreqMode] = useState<LabelFreqMode>('combined')
+  const [activeTab, setActiveTab] = useState<AnalysisTab>('overview')
   const [calMonth, setCalMonth] = useState(() => {
     const n = new Date()
     return new Date(n.getFullYear(), n.getMonth(), 1)
@@ -122,10 +129,19 @@ export function AnalysisPage() {
   const [exportAppliedBy, setExportAppliedBy] = useState<'all' | 'human' | 'ai'>('all')
   const [exportDateFrom, setExportDateFrom] = useState('')
   const [exportDateTo, setExportDateTo] = useState('')
-  const [labelMsgModal, setLabelMsgModal] = useState<null | { label: string; source: LabelMessageSource }>(null)
+  const [labelMsgModal, setLabelMsgModal] = useState<null | {
+    label: string
+    mode: 'single' | 'compare'
+    source?: LabelMessageSource
+  }>(null)
   const [labelMsgData, setLabelMsgData] = useState<LabelMessagesResponse | null>(null)
+  const [labelMsgCompareData, setLabelMsgCompareData] = useState<{
+    human: LabelMessagesResponse | null
+    ai: LabelMessagesResponse | null
+  } | null>(null)
   const [labelMsgLoading, setLabelMsgLoading] = useState(false)
   const [labelMsgError, setLabelMsgError] = useState<string | null>(null)
+  const [selectedNotebook, setSelectedNotebook] = useState<string | null>(null)
   /** `chatlog_id-message_index` → expanded full preview in modal */
   const [expandedLabelMsgKeys, setExpandedLabelMsgKeys] = useState<Record<string, boolean>>({})
 
@@ -194,8 +210,9 @@ export function AnalysisPage() {
 
   const openLabelMessages = useCallback((label: string, source: LabelMessageSource) => {
     setExpandedLabelMsgKeys({})
-    setLabelMsgModal({ label, source })
+    setLabelMsgModal({ label, mode: 'single', source })
     setLabelMsgData(null)
+    setLabelMsgCompareData(null)
     setLabelMsgError(null)
     setLabelMsgLoading(true)
     void api
@@ -205,9 +222,26 @@ export function AnalysisPage() {
       .finally(() => setLabelMsgLoading(false))
   }, [])
 
+  const openLabelMessagesCompare = useCallback((label: string) => {
+    setExpandedLabelMsgKeys({})
+    setLabelMsgModal({ label, mode: 'compare' })
+    setLabelMsgData(null)
+    setLabelMsgCompareData(null)
+    setLabelMsgError(null)
+    setLabelMsgLoading(true)
+    void Promise.all([
+      api.getAnalysisLabelMessages({ labelName: label, source: 'human_only' }),
+      api.getAnalysisLabelMessages({ labelName: label, source: 'ai_only' }),
+    ])
+      .then(([human, ai]) => setLabelMsgCompareData({ human, ai }))
+      .catch((e) => setLabelMsgError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLabelMsgLoading(false))
+  }, [])
+
   const closeLabelMessages = useCallback(() => {
     setLabelMsgModal(null)
     setLabelMsgData(null)
+    setLabelMsgCompareData(null)
     setLabelMsgError(null)
     setLabelMsgLoading(false)
     setExpandedLabelMsgKeys({})
@@ -376,7 +410,13 @@ export function AnalysisPage() {
     )
   }
 
-  if (!summary || !positionBlock) return null
+  if (!summary || !positionBlock) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm px-4 text-center">
+        Analysis data is unavailable right now. Please refresh and try again.
+      </div>
+    )
+  }
 
   const { posDataAll, posDataHuman, posDataAi, posSplitData, posMax } = positionBlock
   const posData: PosRow[] =
@@ -491,6 +531,26 @@ export function AnalysisPage() {
             <p className="text-sm text-neutral-500 mt-1">
               How student messages are labeled (human vs AI) across notebooks and conversation depth
             </p>
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-1">
+              {([
+                ['overview', 'Label Quality'],
+                ['temporal', 'Temporal Patterns'],
+                ['notebooks', 'Notebook Drilldown'],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                    activeTab === tab
+                      ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
+                      : 'bg-transparent border-transparent text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <details className="mt-2 text-xs text-neutral-500 max-w-3xl">
               <summary className="cursor-pointer text-neutral-400 hover:text-neutral-300 select-none">
                 How to read these metrics
@@ -562,8 +622,8 @@ export function AnalysisPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
+        <div className={`grid grid-cols-1 lg:grid-cols-5 gap-6 lg:items-start ${activeTab === 'overview' ? '' : 'hidden'}`}>
+          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px] lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="text-sm font-medium text-neutral-300">Label Frequency</h2>
               <div className="flex gap-2 text-xs">
@@ -612,11 +672,7 @@ export function AnalysisPage() {
                   Bar length is vs the largest label total (human + AI). Green / indigo split is the mix within that
                   label.
                 </p>
-                <div
-                  className="max-h-[min(520px,60vh)] overflow-y-auto pr-1 space-y-1.5"
-                  role="list"
-                  aria-label="Label counts by human vs AI"
-                >
+                <div className="pr-1 space-y-1.5" role="list" aria-label="Label counts by human vs AI">
                   {freqData.map((row) => {
                     const denom = row.count > 0 ? row.count : 1
                     const wHuman = (row.human / denom) * 100
@@ -674,6 +730,17 @@ export function AnalysisPage() {
                     AI
                   </span>
                 </div>
+              <div className="mt-3 space-y-2">
+                <div className="flex h-2.5 w-full overflow-hidden rounded border border-neutral-800 bg-neutral-900">
+                  <div className="bg-emerald-500" style={{ width: `${barPct(covHuman)}%` }} />
+                  <div className="bg-indigo-500" style={{ width: `${barPct(covAi)}%` }} />
+                  <div className="bg-neutral-600" style={{ width: `${barPct(covUnlabeled)}%` }} />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-neutral-500 tabular-nums">
+                  <span>Coverage meter (human/AI/unlabeled)</span>
+                  <span>{summary.coverage.total.toLocaleString()} total</span>
+                </div>
+              </div>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={Math.max(220, freqData.length * 36)}>
@@ -708,85 +775,62 @@ export function AnalysisPage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
-            <h2 className="text-sm font-medium text-neutral-300 mb-1">Coverage</h2>
-            <p className="text-xs text-neutral-500 mb-4">
-              Share of all student messages in Postgres (<code className="text-neutral-400">tutor_query</code> total).
-              Human vs AI counts are unique messages with at least one label from that source.
+          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px] lg:col-span-3">
+            <h2 className="text-sm font-medium text-neutral-300 mb-1">Messages per label (human vs AI)</h2>
+            <p className="text-xs text-neutral-500 mb-3">
+              Distinct student messages by source bucket. Click counts to inspect examples.
             </p>
-            <div className="space-y-4">
-              <div
-                className="flex h-10 w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900"
-                role="img"
-                aria-label="Coverage stacked bar: human, AI, unlabeled"
-              >
-                <div
-                  className="h-full bg-emerald-500 min-w-0 transition-[width] duration-300"
-                  style={{ width: `${barPct(covHuman)}%` }}
-                  title={`Human-labeled: ${covHuman}`}
-                />
-                <div
-                  className="h-full bg-indigo-500 min-w-0 transition-[width] duration-300"
-                  style={{ width: `${barPct(covAi)}%` }}
-                  title={`AI-labeled: ${covAi}`}
-                />
-                <div
-                  className="h-full bg-neutral-600 min-w-0 transition-[width] duration-300"
-                  style={{ width: `${barPct(covUnlabeled)}%` }}
-                  title={`Unlabeled: ${covUnlabeled}`}
-                />
+            <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+              <div className="rounded-md border border-neutral-800 bg-neutral-900/70 px-3 py-2">
+                <div className="text-neutral-500">Total messages</div>
+                <div className="mt-1 text-neutral-100 font-medium tabular-nums">
+                  {summary.coverage.total.toLocaleString()}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-4 text-xs text-neutral-400">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
-                  Human-labeled
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 shrink-0 rounded-sm bg-indigo-500" />
-                  AI-labeled
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 shrink-0 rounded-sm bg-neutral-600" />
-                  Unlabeled
-                </span>
+              <div className="rounded-md border border-neutral-800 bg-neutral-900/70 px-3 py-2">
+                <div className="text-neutral-500">Coverage (any source)</div>
+                <div className="mt-1 text-neutral-100 font-medium tabular-nums">
+                  {summary.coverage.total > 0
+                    ? `${(((summary.coverage.human_labeled + summary.coverage.ai_labeled) / summary.coverage.total) * 100).toFixed(1)}%`
+                    : '0.0%'}
+                </div>
               </div>
-              <div className="overflow-hidden rounded-lg border border-neutral-800">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-neutral-900/80 text-neutral-400">
-                    <tr>
-                      <th className="p-2 font-medium">Category</th>
-                      <th className="p-2 font-medium text-right tabular-nums">Count</th>
-                      <th className="p-2 font-medium text-right tabular-nums">% of total</th>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-neutral-800">
+              <table className="w-full text-xs text-left min-w-[520px]">
+                <thead className="bg-neutral-900/95 text-neutral-400 z-10">
+                  <tr>
+                    <th className="p-2 font-medium">Label</th>
+                    <th className="p-2 font-medium text-right tabular-nums">Human-only</th>
+                    <th className="p-2 font-medium text-right tabular-nums">AI-only</th>
+                    <th className="p-2 font-medium text-right tabular-nums">Both</th>
+                    <th className="p-2 font-medium text-right tabular-nums">Messages</th>
+                  </tr>
+                </thead>
+                <tbody className="text-neutral-200">
+                  {labelSourceRows.map((r) => (
+                    <tr key={r.label} className="border-t border-neutral-800">
+                      <td className="p-2 max-w-[200px] truncate" title={r.label}>{r.label}</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {r.human_only > 0 ? <button type="button" onClick={() => openLabelMessages(r.label, 'human_only')} className="text-emerald-400/90 hover:underline">{r.human_only.toLocaleString()}</button> : <span className="text-emerald-400/35">0</span>}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">
+                        {r.ai_only > 0 ? <button type="button" onClick={() => openLabelMessages(r.label, 'ai_only')} className="text-indigo-400/90 hover:underline">{r.ai_only.toLocaleString()}</button> : <span className="text-indigo-400/35">0</span>}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">
+                        {r.both > 0 ? <button type="button" onClick={() => openLabelMessages(r.label, 'both')} className="text-neutral-200 hover:underline">{r.both.toLocaleString()}</button> : <span className="text-neutral-500">0</span>}
+                      </td>
+                      <td className="p-2 text-right tabular-nums font-medium text-neutral-100">
+                        <button type="button" onClick={() => openLabelMessagesCompare(r.label)} className="hover:underline">{r.total.toLocaleString()}</button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="text-neutral-200">
-                    <tr className="border-t border-neutral-800">
-                      <td className="p-2">Human-labeled</td>
-                      <td className="p-2 text-right tabular-nums">{covHuman.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covHuman).toFixed(1)}%</td>
-                    </tr>
-                    <tr className="border-t border-neutral-800">
-                      <td className="p-2">AI-labeled</td>
-                      <td className="p-2 text-right tabular-nums">{covAi.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covAi).toFixed(1)}%</td>
-                    </tr>
-                    <tr className="border-t border-neutral-800">
-                      <td className="p-2">Unlabeled</td>
-                      <td className="p-2 text-right tabular-nums">{covUnlabeled.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covUnlabeled).toFixed(1)}%</td>
-                    </tr>
-                    <tr className="border-t border-neutral-800 bg-neutral-900/60 font-medium text-neutral-100">
-                      <td className="p-2">Total messages</td>
-                      <td className="p-2 text-right tabular-nums">{summary.coverage.total.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">100%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 lg:col-span-2">
+          <section className="hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 lg:col-span-5">
             <h2 className="text-sm font-medium text-neutral-300 mb-1">Messages per label (human vs AI)</h2>
             <p className="text-xs text-neutral-500 mb-3">
               Distinct student messages that have this label: only from humans, only from AI, or from both (same
@@ -796,7 +840,24 @@ export function AnalysisPage() {
             {labelSourceRows.length === 0 ? (
               <p className="text-sm text-neutral-500">No label applications yet.</p>
             ) : (
-              <div className="overflow-x-auto max-h-[min(320px,50vh)] overflow-y-auto rounded-lg border border-neutral-800">
+              <>
+                <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                  <div className="rounded-md border border-neutral-800 bg-neutral-900/70 px-3 py-2">
+                    <div className="text-neutral-500">Total messages</div>
+                    <div className="mt-1 text-neutral-100 font-medium tabular-nums">
+                      {summary.coverage.total.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-neutral-800 bg-neutral-900/70 px-3 py-2">
+                    <div className="text-neutral-500">Coverage (any source)</div>
+                    <div className="mt-1 text-neutral-100 font-medium tabular-nums">
+                      {summary.coverage.total > 0
+                        ? `${(((summary.coverage.human_labeled + summary.coverage.ai_labeled) / summary.coverage.total) * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto max-h-[min(320px,50vh)] overflow-y-auto rounded-lg border border-neutral-800">
                 <table className="w-full text-xs text-left min-w-[520px]">
                   <thead className="sticky top-0 bg-neutral-900/95 text-neutral-400 z-10">
                     <tr>
@@ -853,17 +914,28 @@ export function AnalysisPage() {
                           )}
                         </td>
                         <td className="p-2 text-right tabular-nums font-medium text-neutral-100">
-                          {r.total.toLocaleString()}
+                          {r.total > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => openLabelMessagesCompare(r.label)}
+                              className="text-neutral-100 hover:underline cursor-pointer bg-transparent border-none p-0 font-inherit tabular-nums"
+                            >
+                              {r.total.toLocaleString()}
+                            </button>
+                          ) : (
+                            <span className="text-neutral-500">0</span>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px] lg:col-span-2">
+          <section className="hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px] lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
               <h2 className="text-sm font-medium text-neutral-300">Conversation Position</h2>
               <div className="flex flex-wrap gap-1.5 text-xs">
@@ -1016,7 +1088,7 @@ export function AnalysisPage() {
           </section>
         </div>
 
-        <div className="border-t border-neutral-800 pt-8 space-y-6">
+        <div className={`border-t border-neutral-800 pt-8 space-y-6 ${activeTab === 'temporal' ? '' : 'hidden'}`}>
           <div>
             <h2 className="text-lg font-medium text-neutral-200">Temporal &amp; usage context</h2>
             {temporal && (
@@ -1034,6 +1106,75 @@ export function AnalysisPage() {
 
           {temporal && (
             <>
+              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                  <h3 className="text-sm font-medium text-neutral-300">Conversation position (concise)</h3>
+                  <div className="flex gap-1.5 text-xs">
+                    {(['all', 'human', 'ai'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPositionViewMode(m)}
+                        className={`px-2 py-1 rounded border ${
+                          positionViewMode === m
+                            ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
+                            : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                        }`}
+                      >
+                        {m === 'all' ? 'All' : m === 'human' ? 'Human' : 'AI'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-500 mb-3">
+                  Heatmap by label and phase. Darker cells mean more labeled messages in that phase.
+                </p>
+                {(() => {
+                  const rows = posData.slice(0, 10)
+                  const maxCell = Math.max(1, ...rows.flatMap((r) => [r.early, r.mid, r.late]))
+                  const cellBg = (count: number) => {
+                    const t = Math.max(0, Math.min(1, count / maxCell))
+                    return `rgba(56, 189, 248, ${0.10 + t * 0.78})`
+                  }
+                  return (
+                    <div className="overflow-hidden rounded-lg border border-neutral-800">
+                      <table className="w-full text-xs">
+                        <thead className="bg-neutral-900/80 text-neutral-400">
+                          <tr>
+                            <th className="p-2 text-left font-medium">Label</th>
+                            <th className="p-2 text-center font-medium">Early</th>
+                            <th className="p-2 text-center font-medium">Mid</th>
+                            <th className="p-2 text-center font-medium">Late</th>
+                            <th className="p-2 text-right font-medium">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row) => {
+                            const total = row.early + row.mid + row.late
+                            return (
+                              <tr key={row.label} className="border-t border-neutral-800/80">
+                                <td className="p-2 text-neutral-300 truncate max-w-[14rem]" title={row.label}>{row.label}</td>
+                                {([['Early', row.early], ['Mid', row.mid], ['Late', row.late]] as const).map(([phase, count]) => (
+                                  <td
+                                    key={phase}
+                                    className="p-2 text-center tabular-nums text-neutral-100 border-l border-neutral-800/60"
+                                    style={{ backgroundColor: cellBg(Number(count)) }}
+                                    title={`${row.label} · ${phase}: ${count}`}
+                                  >
+                                    {count}
+                                  </td>
+                                ))}
+                                <td className="p-2 text-right tabular-nums text-neutral-400 border-l border-neutral-800/60">{total}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
+              </section>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[260px]">
                   <h3 className="text-sm font-medium text-neutral-300 mb-4">Tutor usage (hour of day)</h3>
@@ -1133,7 +1274,7 @@ export function AnalysisPage() {
                 </section>
               </div>
 
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+              <section className="hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                   <h3 className="text-sm font-medium text-neutral-300">Tutor usage (calendar)</h3>
                   <div className="flex items-center gap-2">
@@ -1243,81 +1384,7 @@ export function AnalysisPage() {
                 )}
               </section>
 
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h3 className="text-sm font-medium text-neutral-300">Notebook × label heatmap</h3>
-                  <div className="flex gap-2 text-xs">
-                    {(['raw', 'row', 'column'] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setHeatmapMode(m)}
-                        className={`px-2 py-1 rounded border ${
-                          heatmapMode === m
-                            ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
-                            : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
-                        }`}
-                      >
-                        {m === 'raw' ? 'Raw counts' : m === 'row' ? 'Row %' : 'Column %'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {!hm || hm.notebooks.length === 0 || hm.labels.length === 0 ? (
-                  <p className="text-sm text-neutral-500">
-                    No notebook × label matrix yet (needs Postgres + labeled applications).
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="text-xs border-collapse min-w-[320px]">
-                      <thead>
-                        <tr>
-                          <th className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-left text-neutral-400 font-medium">
-                            Notebook
-                          </th>
-                          {hm.labels.map((lbl) => (
-                            <th
-                              key={lbl}
-                              className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-neutral-300 font-medium max-w-[140px]"
-                            >
-                              {lbl}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {hm.notebooks.map((nb, ri) => (
-                          <tr key={nb}>
-                            <td className="border border-neutral-700 bg-neutral-800/40 px-2 py-1.5 text-neutral-300 whitespace-nowrap">
-                              {nb}
-                            </td>
-                            {hm.labels.map((lbl, ci) => {
-                              const rawVal = hm.raw_counts[ri]?.[ci] ?? 0
-                              const disp = heatmapDisplay[ri]?.[ci] ?? 0
-                              const title =
-                                heatmapMode === 'raw'
-                                  ? `${rawVal} applications`
-                                  : `${lbl} · ${nb}: raw ${rawVal}, ${heatmapMode === 'row' ? 'row' : 'column'} fraction ${disp.toFixed(3)}`
-                              return (
-                                <td
-                                  key={lbl}
-                                  className="border border-neutral-700 px-2 py-1.5 text-center text-neutral-200 tabular-nums"
-                                  style={{ backgroundColor: heatmapCellBg(heatmapMode === 'raw' ? rawVal : disp) }}
-                                  title={title}
-                                >
-                                  {heatmapMode === 'raw' ? rawVal : disp.toFixed(2)}
-                                </td>
-                              )
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
+              <section className="hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
                 <h3 className="text-sm font-medium text-neutral-300 mb-4">Labeling throughput</h3>
                 <p className="text-xs text-neutral-500 mb-2">
                   SQLite <code className="text-neutral-400">LabelApplication.created_at</code> by day —
@@ -1353,6 +1420,82 @@ export function AnalysisPage() {
             </>
           )}
         </div>
+
+        <div className={`border-t border-neutral-800 pt-8 ${activeTab === 'notebooks' ? '' : 'hidden'}`}>
+          <div className="grid grid-cols-1 gap-6">
+            <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 className="text-sm font-medium text-neutral-300">Notebook × label heatmap</h3>
+                <div className="flex gap-2 text-xs">
+                  {(['raw', 'row', 'column'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setHeatmapMode(m)}
+                      className={`px-2 py-1 rounded border ${
+                        heatmapMode === m
+                          ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
+                          : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                      }`}
+                    >
+                      {m === 'raw' ? 'Raw' : m === 'row' ? 'Row %' : 'Col %'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {!hm || hm.notebooks.length === 0 || hm.labels.length === 0 ? (
+                <p className="text-sm text-neutral-500">No notebook × label matrix yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="text-xs border-collapse min-w-[360px]">
+                    <thead>
+                      <tr>
+                        <th className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-left text-neutral-400 font-medium">Notebook</th>
+                        {hm.labels.map((lbl) => (
+                          <th key={lbl} className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-neutral-300 font-medium max-w-[140px]">
+                            {lbl}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hm.notebooks.map((nb, ri) => (
+                        <tr key={nb}>
+                          <td className="border border-neutral-700 bg-neutral-800/40 px-2 py-1.5 text-neutral-300 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedNotebook(nb)}
+                              className={`hover:underline ${
+                                selectedNotebook === nb ? 'text-sky-300' : 'text-neutral-300'
+                              }`}
+                            >
+                              {nb}
+                            </button>
+                          </td>
+                          {hm.labels.map((lbl, ci) => {
+                            const rawVal = hm.raw_counts[ri]?.[ci] ?? 0
+                            const disp = heatmapDisplay[ri]?.[ci] ?? 0
+                            return (
+                              <td
+                                key={lbl}
+                                className="border border-neutral-700 px-2 py-1.5 text-center text-neutral-200 tabular-nums"
+                                style={{ backgroundColor: heatmapCellBg(heatmapMode === 'raw' ? rawVal : disp) }}
+                                title={`${lbl} · ${nb}: ${rawVal} raw`}
+                              >
+                                {heatmapMode === 'raw' ? rawVal : disp.toFixed(2)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1374,12 +1517,13 @@ export function AnalysisPage() {
           <div className="flex items-start justify-between gap-3 border-b border-neutral-800 px-4 py-3 shrink-0">
             <div className="min-w-0">
               <h2 id="label-msg-modal-title" className="text-sm font-semibold text-neutral-100 truncate">
-                {labelMsgModal.source === 'human_only'
-                  ? 'Human-only'
-                  : labelMsgModal.source === 'ai_only'
-                    ? 'AI-only'
-                    : 'Both sources'}{' '}
-                — {labelMsgModal.label}
+                {labelMsgModal.mode === 'compare'
+                  ? `Human vs AI — ${labelMsgModal.label}`
+                  : `${labelMsgModal.source === 'human_only'
+                      ? 'Human-only'
+                      : labelMsgModal.source === 'ai_only'
+                        ? 'AI-only'
+                        : 'Both sources'} — ${labelMsgModal.label}`}
               </h2>
               <p className="text-[11px] text-neutral-500 mt-0.5">
                 Student message text from local cache when available. Click a row to expand or collapse the full
@@ -1400,7 +1544,7 @@ export function AnalysisPage() {
             {labelMsgError && (
               <p className="text-sm text-red-400/90 py-4">{labelMsgError}</p>
             )}
-            {!labelMsgLoading && !labelMsgError && labelMsgData && (
+            {!labelMsgLoading && !labelMsgError && labelMsgModal.mode === 'single' && labelMsgData && (
               <>
                 <p className="text-[11px] text-neutral-500 mb-2">
                   Showing {labelMsgData.returned_count.toLocaleString()} of{' '}
@@ -1449,6 +1593,63 @@ export function AnalysisPage() {
                   </ul>
                 )}
               </>
+            )}
+            {!labelMsgLoading && !labelMsgError && labelMsgModal.mode === 'compare' && labelMsgCompareData && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {([
+                  ['Human-only', 'human', labelMsgCompareData.human],
+                  ['AI-only', 'ai', labelMsgCompareData.ai],
+                ] as const).map(([title, side, data]) => (
+                  <div key={side} className="rounded-lg border border-neutral-800 bg-neutral-900/50 min-h-[220px]">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800">
+                      <h3 className={`text-xs font-medium ${side === 'human' ? 'text-emerald-300' : 'text-indigo-300'}`}>
+                        {title}
+                      </h3>
+                      <span className="text-[11px] text-neutral-500 tabular-nums">
+                        {data ? `${data.returned_count.toLocaleString()} / ${data.total_count.toLocaleString()}` : '—'}
+                      </span>
+                    </div>
+                    <div className="max-h-[45vh] overflow-y-auto px-2 py-1">
+                      {!data || data.messages.length === 0 ? (
+                        <p className="text-xs text-neutral-500 py-4 px-1">No messages on this side.</p>
+                      ) : (
+                        <ul className="space-y-0 divide-y divide-neutral-800/90">
+                          {data.messages.map((m) => {
+                            const rowKey = `${side}-${m.chatlog_id}-${m.message_index}`
+                            const expanded = !!expandedLabelMsgKeys[rowKey]
+                            const hasPreview = Boolean(m.preview?.trim())
+                            return (
+                              <li key={rowKey} className="flex items-start gap-2 py-2 text-xs">
+                                <span className="shrink-0 w-[5rem] tabular-nums text-neutral-500 pt-0.5">
+                                  #{m.chatlog_id}·{m.message_index}
+                                </span>
+                                {hasPreview ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedLabelMsgKeys((prev) => ({
+                                        ...prev,
+                                        [rowKey]: !prev[rowKey],
+                                      }))
+                                    }
+                                    className={`min-w-0 flex-1 text-left rounded px-1 -mx-1 py-0.5 text-neutral-200 cursor-pointer hover:bg-neutral-800/80 ${
+                                      expanded ? 'whitespace-pre-wrap break-words' : 'truncate'
+                                    }`}
+                                  >
+                                    {m.preview}
+                                  </button>
+                                ) : (
+                                  <span className="min-w-0 flex-1 text-neutral-500">—</span>
+                                )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>

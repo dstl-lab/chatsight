@@ -7,6 +7,8 @@ import csv
 import os
 import io
 import logging
+import re
+import math
 import threading
 from calendar import monthrange
 from fastapi import FastAPI, Depends, HTTPException, Query, Response, BackgroundTasks
@@ -16,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, MessageEmbedding, ConceptCandidate, SuggestionCache, RecalibrationEvent
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -1798,6 +1800,152 @@ def _position_bucket(message_index: int) -> str:
     return "late"
 
 
+def _tokenize_for_similarity(text_value: str) -> set[str]:
+    """Lowercase word-token set for lightweight semantic overlap."""
+    if not text_value:
+        return set()
+    return {tok for tok in re.findall(r"[a-z0-9_]+", text_value.lower()) if len(tok) > 1}
+
+
+def _jaccard_similarity(a: set[str], b: set[str]) -> float:
+    if not a and not b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
+
+
+def _blob_to_float_vector(blob: bytes) -> list[float]:
+    if not blob:
+        return []
+    # MessageEmbedding stores raw float32 bytes.
+    import struct
+    return [x[0] for x in struct.iter_unpack("<f", blob)]
+
+
+def _cosine_similarity(v1: list[float], v2: list[float]) -> float:
+    if not v1 or not v2:
+        return 0.0
+    n = min(len(v1), len(v2))
+    if n == 0:
+        return 0.0
+    dot = sum(v1[i] * v2[i] for i in range(n))
+    n1 = math.sqrt(sum(v1[i] * v1[i] for i in range(n)))
+    n2 = math.sqrt(sum(v2[i] * v2[i] for i in range(n)))
+    if n1 == 0 or n2 == 0:
+        return 0.0
+    # Map cosine [-1, 1] to [0, 1] for confidence display.
+    return max(0.0, min(1.0, (dot / (n1 * n2) + 1.0) / 2.0))
+
+
+def _centroid(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    dim = min(len(v) for v in vectors if v)
+    if dim <= 0:
+        return []
+    acc = [0.0] * dim
+    used = 0
+    for v in vectors:
+        if len(v) < dim:
+            continue
+        used += 1
+        for i in range(dim):
+            acc[i] += v[i]
+    if used == 0:
+        return []
+    return [x / used for x in acc]
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _tv_distribution_similarity(a_counts: dict[str, int], b_counts: dict[str, int]) -> float:
+    """1 - total variation distance over two discrete distributions."""
+    if not a_counts or not b_counts:
+        return 0.0
+    a_total = sum(max(0, int(v)) for v in a_counts.values())
+    b_total = sum(max(0, int(v)) for v in b_counts.values())
+    if a_total <= 0 or b_total <= 0:
+        return 0.0
+    keys = set(a_counts) | set(b_counts)
+    tv = 0.0
+    for k in keys:
+        pa = max(0, int(a_counts.get(k, 0))) / a_total
+        pb = max(0, int(b_counts.get(k, 0))) / b_total
+        tv += abs(pa - pb)
+    return _clamp01(1.0 - 0.5 * tv)
+
+
+def _vector_key(chatlog_id: int, message_index: int) -> tuple[int, int]:
+    return (int(chatlog_id), int(message_index))
+
+
+def _context_signature(message_text: str, context_before: str | None, message_index: int) -> str:
+    msg = (message_text or "").strip()
+    before = (context_before or "").strip()
+    tok_count = len(re.findall(r"[a-z0-9_]+", msg.lower()))
+    if tok_count <= 4:
+        length_bucket = "very_short"
+    elif tok_count <= 12:
+        length_bucket = "short"
+    elif tok_count <= 30:
+        length_bucket = "medium"
+    else:
+        length_bucket = "long"
+    has_question = "q" if "?" in msg else "noq"
+    position = _position_bucket(message_index)
+    before_bucket = "ctx0"
+    if before:
+        before_tokens = len(re.findall(r"[a-z0-9_]+", before.lower()))
+        if before_tokens <= 20:
+            before_bucket = "ctx_short"
+        elif before_tokens <= 60:
+            before_bucket = "ctx_medium"
+        else:
+            before_bucket = "ctx_long"
+    return f"{position}|{length_bucket}|{has_question}|{before_bucket}"
+
+
+def _kmeans_centroids(vectors: list[list[float]], k: int, steps: int = 6) -> list[list[float]]:
+    """Lightweight deterministic k-means for intent subclusters."""
+    if not vectors:
+        return []
+    k = max(1, min(k, len(vectors)))
+    if k == 1:
+        return [_centroid(vectors)]
+
+    centroids = [vectors[0]]
+    while len(centroids) < k:
+        best_vec = vectors[0]
+        best_dist = -1.0
+        for v in vectors:
+            nearest_sim = max(_cosine_similarity(v, c) for c in centroids)
+            dist = 1.0 - nearest_sim
+            if dist > best_dist:
+                best_dist = dist
+                best_vec = v
+        centroids.append(best_vec)
+
+    for _ in range(max(1, steps)):
+        buckets: list[list[list[float]]] = [[] for _ in range(k)]
+        for v in vectors:
+            idx = max(range(k), key=lambda i: _cosine_similarity(v, centroids[i]))
+            buckets[idx].append(v)
+        next_centroids: list[list[float]] = []
+        for i in range(k):
+            if buckets[i]:
+                next_centroids.append(_centroid(buckets[i]))
+            else:
+                next_centroids.append(centroids[i])
+        centroids = next_centroids
+    return centroids
+
+
 @app.get("/api/analysis/summary")
 def get_analysis_summary(db: Session = Depends(get_session)):
     label_rows = db.exec(
@@ -1862,6 +2010,151 @@ def get_analysis_summary(db: Session = Depends(get_session)):
             "ai_only": len(a - h),
             "both": len(h & a),
         }
+
+    # Confidence is defined as AI-vs-human semantic similarity per label.
+    # Compute only when a label has enough distinct messages to be meaningful.
+    min_similarity_messages = 15
+    text_map: dict[tuple[int, int], str] = {}
+    context_before_map: dict[tuple[int, int], str] = {}
+    for mc in db.exec(select(MessageCache.chatlog_id, MessageCache.message_index, MessageCache.message_text, MessageCache.context_before)).all():
+        key = _vector_key(mc[0], mc[1])
+        text_map[key] = mc[2] or ""
+        context_before_map[key] = mc[3] or ""
+    emb_map: dict[tuple[int, int], list[float]] = {}
+    for me in db.exec(select(MessageEmbedding.chatlog_id, MessageEmbedding.message_index, MessageEmbedding.embedding)).all():
+        key = (int(me[0]), int(me[1]))
+        if key not in emb_map:
+            emb_map[key] = _blob_to_float_vector(me[2] or b"")
+
+    by_label_similarity: dict[str, dict[str, float | int | None]] = {}
+    overall_similarity_samples: list[float] = []
+
+    # Pre-compute human intent subclusters for all labels, then use them for
+    # within-label matching + cross-label confusability checks.
+    human_centroids_by_label: dict[str, list[list[float]]] = {}
+    for nm in set(human_by_label) | set(ai_by_label):
+        h_pairs_all = human_by_label.get(nm, set())
+        h_vecs_all = [emb_map.get((int(cid), int(mid)), []) for cid, mid in h_pairs_all]
+        h_vecs_all = [v for v in h_vecs_all if v]
+        if h_vecs_all:
+            if len(h_vecs_all) < 12:
+                k = 1
+            elif len(h_vecs_all) < 40:
+                k = 2
+            else:
+                k = 3
+            human_centroids_by_label[nm] = _kmeans_centroids(h_vecs_all, k=k)
+
+    for nm in set(human_by_label) | set(ai_by_label):
+        h_pairs = human_by_label.get(nm, set())
+        a_pairs = ai_by_label.get(nm, set())
+        total_distinct = len(h_pairs | a_pairs)
+        if total_distinct < min_similarity_messages or not h_pairs or not a_pairs:
+            by_label_similarity[nm] = {
+                "avg_confidence": None,
+                "count_with_confidence": 0,
+            }
+            continue
+
+        human_vecs = [emb_map.get((int(cid), int(mid)), []) for cid, mid in h_pairs]
+        ai_vecs = [emb_map.get((int(cid), int(mid)), []) for cid, mid in a_pairs]
+        human_vecs = [v for v in human_vecs if v]
+        ai_vecs = [v for v in ai_vecs if v]
+
+        # Preferred: centroid cosine on embeddings (looser semantic representation).
+        if human_vecs and ai_vecs:
+            h_centroids = human_centroids_by_label.get(nm) or [_centroid(human_vecs)]
+            ai_centroid = _centroid(ai_vecs)
+
+            # Intent match: each AI message should match at least one human intent subcluster.
+            intent_scores = [max(_cosine_similarity(av, hc) for hc in h_centroids) for av in ai_vecs]
+            intent_match = sum(intent_scores) / len(intent_scores) if intent_scores else 0.0
+
+            # Coverage match: AI should distribute across sub-intents similarly to humans.
+            h_bucket_counts: dict[str, int] = defaultdict(int)
+            for hv in human_vecs:
+                idx = max(range(len(h_centroids)), key=lambda i: _cosine_similarity(hv, h_centroids[i]))
+                h_bucket_counts[str(idx)] += 1
+            a_bucket_counts: dict[str, int] = defaultdict(int)
+            for av in ai_vecs:
+                idx = max(range(len(h_centroids)), key=lambda i: _cosine_similarity(av, h_centroids[i]))
+                a_bucket_counts[str(idx)] += 1
+            intent_coverage = _tv_distribution_similarity(h_bucket_counts, a_bucket_counts)
+
+            # Context match: compare local conversational context signatures.
+            h_ctx_counts: dict[str, int] = defaultdict(int)
+            for cid, mid in h_pairs:
+                key = _vector_key(cid, mid)
+                h_ctx_counts[_context_signature(text_map.get(key, ""), context_before_map.get(key), int(mid))] += 1
+            a_ctx_counts: dict[str, int] = defaultdict(int)
+            for cid, mid in a_pairs:
+                key = _vector_key(cid, mid)
+                a_ctx_counts[_context_signature(text_map.get(key, ""), context_before_map.get(key), int(mid))] += 1
+            context_match = _tv_distribution_similarity(h_ctx_counts, a_ctx_counts)
+
+            # Specificity: AI messages should be less similar to other labels' human intent clusters.
+            other_sims: list[float] = []
+            for av in ai_vecs:
+                best_other = 0.0
+                for other_nm, other_h_centroids in human_centroids_by_label.items():
+                    if other_nm == nm:
+                        continue
+                    if not other_h_centroids:
+                        continue
+                    score = max(_cosine_similarity(av, ohc) for ohc in other_h_centroids)
+                    if score > best_other:
+                        best_other = score
+                other_sims.append(best_other)
+            mean_other_similarity = (sum(other_sims) / len(other_sims)) if other_sims else 0.0
+            specificity = _clamp01(1.0 - mean_other_similarity)
+
+            # Hybrid blend:
+            # - intent_match: core semantic fit
+            # - intent_coverage: similar sub-intent distribution
+            # - context_match: similar usage in conversation flow
+            # - specificity: not equally close to other labels
+            tuned_score = _clamp01(
+                (0.45 * intent_match)
+                + (0.20 * intent_coverage)
+                + (0.20 * context_match)
+                + (0.15 * specificity)
+            )
+            label_scores = [tuned_score]
+        else:
+            # Fallback: token-overlap best-match when embeddings are missing.
+            human_tokens = [
+                _tokenize_for_similarity(text_map.get((int(cid), int(mid)), ""))
+                for cid, mid in h_pairs
+            ]
+            human_tokens = [t for t in human_tokens if t]
+            label_scores = []
+            if human_tokens:
+                for cid, mid in a_pairs:
+                    ai_tokens = _tokenize_for_similarity(text_map.get((int(cid), int(mid)), ""))
+                    if not ai_tokens:
+                        continue
+                    best = 0.0
+                    for h_toks in human_tokens:
+                        sim = _jaccard_similarity(ai_tokens, h_toks)
+                        if sim > best:
+                            best = sim
+                    label_scores.append(best)
+
+        by_label_similarity[nm] = {
+            "avg_confidence": (sum(label_scores) / len(label_scores)) if label_scores else None,
+            "count_with_confidence": len(label_scores),
+        }
+        overall_similarity_samples.extend(label_scores)
+
+    ai_confidence = {
+        "overall": {
+            "avg_confidence": (sum(overall_similarity_samples) / len(overall_similarity_samples))
+            if overall_similarity_samples
+            else None,
+            "count_with_confidence": len(overall_similarity_samples),
+        },
+        "by_label": by_label_similarity,
+    }
 
     human_pairs = set()
     ai_pairs = set()
@@ -1929,6 +2222,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         "position_distribution_human": position_distribution_human,
         "position_distribution_ai": position_distribution_ai,
         "label_source_mix": label_source_mix,
+        "ai_confidence": ai_confidence,
     }
 
 
@@ -1996,6 +2290,74 @@ def get_analysis_label_messages(
         "truncated": truncated,
         "messages": messages,
     }
+
+
+@app.get("/api/analysis/notebook-questions")
+def get_notebook_questions(
+    notebook: str = Query(..., min_length=1),
+    limit: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_session),
+):
+    chatlog_notebook: dict[int, str] = {}
+    try:
+        with ext_engine.connect() as conn:
+            nb_rows = conn.execute(
+                text("""
+                    SELECT MIN(id) AS chatlog_id, MAX(payload->>'notebook') AS notebook
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                      AND payload->>'conversation_id' IS NOT NULL
+                    GROUP BY payload->>'conversation_id'
+                """)
+            ).mappings().all()
+            for r in nb_rows:
+                chatlog_notebook[int(r["chatlog_id"])] = (r["notebook"] or "unknown")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not load notebook mapping: {e}")
+
+    target_chatlogs = {cid for cid, nb in chatlog_notebook.items() if nb == notebook}
+    if not target_chatlogs:
+        return {"notebook": notebook, "question_count": 0, "questions": []}
+
+    apps = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelDefinition.name,
+        )
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+    ).all()
+    per_q: dict[tuple[int, int], dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for cid, mid, lbl in apps:
+        if int(cid) in target_chatlogs:
+            per_q[(int(cid), int(mid))][lbl] += 1
+    if not per_q:
+        return {"notebook": notebook, "question_count": 0, "questions": []}
+
+    text_map: dict[tuple[int, int], str] = {}
+    ai_from_cache: dict[tuple[int, int], str] = {}
+    for mc in db.exec(select(MessageCache)).all():
+        k = (int(mc.chatlog_id), int(mc.message_index))
+        if k in per_q:
+            text_map[k] = mc.message_text or ""
+            ai_from_cache[k] = mc.context_after or ""
+
+    rows = []
+    for (cid, mid), counts in per_q.items():
+        total = sum(int(v) for v in counts.values())
+        rows.append(
+            {
+                "chatlog_id": cid,
+                "message_index": mid,
+                "question_preview": text_map.get((cid, mid), ""),
+                "assistant_preview": ai_from_cache.get((cid, mid), ""),
+                "label_counts": {k: int(v) for k, v in counts.items()},
+                "total_labels": int(total),
+            }
+        )
+    rows.sort(key=lambda r: (-r["total_labels"], r["chatlog_id"], r["message_index"]))
+    return {"notebook": notebook, "question_count": len(rows), "questions": rows[:limit]}
 
 
 def _normalize_heatmap_rows(raw: list[list[float]]) -> list[list[float]]:

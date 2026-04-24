@@ -7,6 +7,7 @@ import type {
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
   LabelMessagesResponse, LabelMessageSource,
+  NotebookQuestionsResponse,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -237,6 +238,45 @@ export const api = {
     }
     const suffix = q.toString() ? `?${q.toString()}` : ''
     return req(`/api/analysis/temporal${suffix}`)
+  },
+
+  getNotebookQuestions: (opts: { notebook: string; limit?: number }): Promise<NotebookQuestionsResponse> => {
+    if (USE_MOCK) {
+      return Promise.resolve({
+        notebook: opts.notebook,
+        question_count: 3,
+        questions: [
+          {
+            chatlog_id: 109630,
+            message_index: 0,
+            question_preview: 'orange is shorter than half of blue so I think it should be 17',
+            assistant_preview: 'Check the axis scale first, then compare actual bar heights before concluding the value.',
+            label_counts: { Cooperation: 1 } as Record<string, number>,
+            total_labels: 1,
+          },
+          {
+            chatlog_id: 109630,
+            message_index: 1,
+            question_preview: 'i calculate Q1.3 and is my answer correct?',
+            assistant_preview: 'Walk through your computation step-by-step and verify each arithmetic operation.',
+            label_counts: { 'Code/Answer Validation': 1 } as Record<string, number>,
+            total_labels: 1,
+          },
+          {
+            chatlog_id: 109630,
+            message_index: 2,
+            question_preview: 'is my answer for 1.3 correct? I use 17.64*1.1 for scarecrow in chapter 8, 0.4*...',
+            assistant_preview: 'You are close; double-check which multiplier belongs to each quantity before combining.',
+            label_counts: { 'Code/Answer Validation': 1 } as Record<string, number>,
+            total_labels: 1,
+          },
+        ],
+      })
+    }
+    const q = new URLSearchParams()
+    q.set('notebook', opts.notebook)
+    if (opts.limit) q.set('limit', String(opts.limit))
+    return req(`/api/analysis/notebook-questions?${q.toString()}`)
   },
 
   exportCsv: async (opts?: {

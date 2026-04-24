@@ -97,6 +97,15 @@ export const mockApi = {
       'Debug Help': { human_only: 8, ai_only: 7, both: 7 },
       'Syntax / API': { human_only: 3, ai_only: 5, both: 4 },
     },
+    ai_confidence: {
+      overall: { avg_confidence: 0.74, count_with_confidence: 36 },
+      by_label: {
+        'Concept Question': { avg_confidence: 0.78, count_with_confidence: 17 },
+        Clarification: { avg_confidence: 0.69, count_with_confidence: 9 },
+        'Debug Help': { avg_confidence: 0.73, count_with_confidence: 7 },
+        'Syntax / API': { avg_confidence: 0.7, count_with_confidence: 3 },
+      },
+    },
   } satisfies AnalysisSummary,
 
   temporalAnalysis: {

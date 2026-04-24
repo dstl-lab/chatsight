@@ -77,6 +77,21 @@ export interface LabelMessagesResponse {
   messages: LabelMessagePreviewItem[]
 }
 
+export interface NotebookQuestionDistributionRow {
+  chatlog_id: number
+  message_index: number
+  question_preview: string
+  assistant_preview: string
+  label_counts: Record<string, number>
+  total_labels: number
+}
+
+export interface NotebookQuestionsResponse {
+  notebook: string
+  question_count: number
+  questions: NotebookQuestionDistributionRow[]
+}
+
 export interface AnalysisSummary {
   label_counts: Record<string, number>
   human_label_counts: Record<string, number>
@@ -92,6 +107,13 @@ export interface AnalysisSummary {
   position_distribution_human: Record<string, { early: number; mid: number; late: number }>
   position_distribution_ai: Record<string, { early: number; mid: number; late: number }>
   label_source_mix: Record<string, LabelSourceMixRow>
+  ai_confidence: {
+    overall: {
+      avg_confidence: number | null
+      count_with_confidence: number
+    }
+    by_label: Record<string, { avg_confidence: number | null; count_with_confidence: number }>
+  }
 }
 
 /** Weekday 0 = Sunday … 6 = Saturday in `display_timezone` (same convention as PostgreSQL DOW). */
