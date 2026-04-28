@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../services/api'
 import type { LabelDefinition, LabelExample, SuggestResponse } from '../types'
@@ -28,7 +28,6 @@ function QuickRefineModal({
   const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null)
   const [showConcise, setShowConcise] = useState(false)
   const [conciseCache, setConciseCache] = useState<Record<string, string>>({})
-  const conciseFetchedRef = useRef<Set<string>>(new Set())
 
   const currentEx = examples[currentIndex] ?? null
 
@@ -44,13 +43,12 @@ function QuickRefineModal({
 
     // Pre-fetch concise summary
     const key = `${currentEx.chatlog_id}:${currentEx.message_index}`
-    if (!conciseFetchedRef.current.has(key)) {
-      conciseFetchedRef.current.add(key)
+    if (!conciseCache[key]) {
       api.getConciseMessage(currentEx.chatlog_id, currentEx.message_index)
          .then(res => setConciseCache(prev => ({ ...prev, [key]: res.concise_text })))
-         .catch(() => setConciseCache(prev => ({ ...prev, [key]: "Summary unavailable" })))
+         .catch(() => {})
     }
-  }, [currentEx])
+  }, [currentEx, conciseCache])
 
   const toggleConcise = useCallback(() => {
     if (!currentEx) return
@@ -191,7 +189,7 @@ function QuickRefineModal({
             <button
               onClick={toggleConcise}
               className={`
-                absolute bottom-12 left-12 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
+                absolute bottom-12 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
                 ${showConcise 
                   ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)]' 
                   : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200'}
@@ -453,7 +451,6 @@ function SplitSessionModal({
   const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null)
   const [showConcise, setShowConcise] = useState(false)
   const [conciseCache, setConciseCache] = useState<Record<string, string>>({})
-  const conciseFetchedRef = useRef<Set<string>>(new Set())
 
   const currentEx = examples[currentIndex] ?? null
 
@@ -469,13 +466,12 @@ function SplitSessionModal({
 
     // Pre-fetch concise summary
     const key = `${currentEx.chatlog_id}:${currentEx.message_index}`
-    if (!conciseFetchedRef.current.has(key)) {
-      conciseFetchedRef.current.add(key)
+    if (!conciseCache[key]) {
       api.getConciseMessage(currentEx.chatlog_id, currentEx.message_index)
          .then(res => setConciseCache(prev => ({ ...prev, [key]: res.concise_text })))
-         .catch(() => setConciseCache(prev => ({ ...prev, [key]: "Summary unavailable" })))
+         .catch(() => {})
     }
-  }, [currentEx])
+  }, [currentEx, conciseCache])
 
   const toggleConcise = useCallback(() => {
     if (!currentEx) return
@@ -659,7 +655,7 @@ function SplitSessionModal({
             <button
               onClick={toggleConcise}
               className={`
-                absolute bottom-12 left-12 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
+                absolute bottom-12 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
                 ${showConcise 
                   ? 'bg-purple-600 border-purple-400 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)]' 
                   : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200'}
@@ -1110,7 +1106,7 @@ export function LabelsPage() {
               {/* Delete Icon */}
               <button 
                 onClick={(e) => { e.stopPropagation(); setDeletingLabel(label); }}
-                className="absolute top-12 right-4 p-2 text-neutral-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0"
+                className="absolute top-4 right-4 p-2 text-neutral-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               </button>
