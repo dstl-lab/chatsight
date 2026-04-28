@@ -165,20 +165,18 @@ export function QueuePage() {
 		}
 	}, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked, recalibration]);
 
-	// Show label review overlay once per browser session
+	// Keep label review items in sync whenever labels change
+	useEffect(() => {
+		if (loading) return;
+		api.getLabelReview().then(setLabelReviewItems).catch(() => {});
+	}, [labels, loading]);
+
+	// Show label review overlay once per browser session (after items are loaded)
 	useEffect(() => {
 		if (loading) return;
 		if (sessionStorage.getItem("label_review_shown")) return;
-		api
-			.getLabelReview()
-			.then((items) => {
-				if (items.length > 0) {
-					setLabelReviewItems(items);
-					setShowLabelReview(true);
-				}
-			})
-			.catch(() => {});
-	}, [loading]);
+		if (labelReviewItems.length > 0) setShowLabelReview(true);
+	}, [loading, labelReviewItems]);
 
 	// Enter review mode from ?review= query param (e.g., from /history page)
 	const [searchParams, setSearchParams] = useSearchParams();
