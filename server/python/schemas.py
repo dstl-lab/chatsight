@@ -85,7 +85,6 @@ class LabelExampleResponse(BaseModel):
 
 class ConciseResponse(BaseModel):
     concise_text: str
-    error: Optional[str] = None
 
 class LabelDefinitionResponse(BaseModel):
     id: int

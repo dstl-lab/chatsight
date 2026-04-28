@@ -981,28 +981,7 @@ def _run_split_autolabel(
 
     BATCH_SIZE = 30
     for i in range(0, len(remaining_messages), BATCH_SIZE):
-        batch_keys = remaining_messages[i : i + BATCH_SIZE]
-
-        # Fetch text for the batch from MessageCache
-        batch = []
-        with Session(engine) as db:
-            for k in batch_keys:
-                cache_msg = db.exec(
-                    select(MessageCache)
-                    .where(MessageCache.chatlog_id == k["chatlog_id"])
-                    .where(MessageCache.message_index == k["message_index"])
-                ).first()
-                if cache_msg:
-                    batch.append({
-                        "chatlog_id": k["chatlog_id"],
-                        "message_index": k["message_index"],
-                        "message_text": cache_msg.message_text
-                    })
-
-        if not batch:
-            _autolabel_status["processed"] = min(i + BATCH_SIZE, len(remaining_messages))
-            continue
-
+        batch = remaining_messages[i : i + BATCH_SIZE]
         try:
             # We don't have context_before for these right now, could be added later
             results = classify_batch(label_defs, examples_by_label, batch)
@@ -1028,6 +1007,7 @@ def _run_split_autolabel(
             db.commit()
 
         _autolabel_status["processed"] = min(i + BATCH_SIZE, len(remaining_messages))
+
     _autolabel_status["running"] = False
 
 
@@ -1331,11 +1311,8 @@ def get_concise_message(req: ConciseRequest, db: Session = Depends(get_session))
         raise HTTPException(status_code=404, detail="Message not found")
 
     from autolabel_service import summarize_message
-    try:
-        concise = summarize_message(row[0])
-        return {"concise_text": concise}
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to generate summary")
+    concise = summarize_message(row[0])
+    return {"concise_text": concise}
 
 
 @app.post("/api/labels/merge")
@@ -1456,14 +1433,38 @@ def split_label_autolabel(
     remaining_apps = db.exec(
         select(LabelApplication).where(LabelApplication.label_id == req.label_id)
     ).all()
-    remaining_keys = []
-    for app_ in remaining_apps:
-        if (app_.chatlog_id, app_.message_index) in processed_keys:
-            continue
-        remaining_keys.append({
-            "chatlog_id": app_.chatlog_id,
-            "message_index": app_.message_index,
-        })
+    remaining_messages = []
+    with ext_engine.connect() as conn:
+        for app_ in remaining_apps:
+            if (app_.chatlog_id, app_.message_index) in processed_keys:
+                continue
+
+            # Fetch text for AI classification
+            row = conn.execute(
+                text("""
+                WITH student AS (
+                    SELECT payload->>'question' AS msg,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id' ORDER BY id
+                           )) - 1 AS idx
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                      AND payload->>'conversation_id' = (
+                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                      )
+                )
+                SELECT msg FROM student WHERE idx = :midx
+                """),
+                {"cid": app_.chatlog_id, "midx": app_.message_index},
+            ).first()
+            if row and row[0]:
+                remaining_messages.append(
+                    {
+                        "chatlog_id": app_.chatlog_id,
+                        "message_index": app_.message_index,
+                        "message_text": row[0],
+                    }
+                )
 
     # Delete original label and its applications
     for app_ in remaining_apps:
@@ -1484,7 +1485,7 @@ def split_label_autolabel(
         label_b.id,
         label_b.name,
         human_examples,
-        remaining_keys,
+        remaining_messages,
     )
 
     return [

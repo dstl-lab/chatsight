@@ -126,6 +126,4 @@ def summarize_message(message_text: str) -> str:
         )
         return response.text.strip()
     except Exception as e:
-        import logging
-        logging.exception("Failed to summarize message")
-        raise
+        return f"Error summarizing: {e}"
