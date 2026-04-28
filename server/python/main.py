@@ -2484,3 +2484,179 @@ def get_recalibration_stats(db: Session = Depends(get_session)):
 @app.get("/api/queue/sample")
 def get_sample():
     return {"message": "Sampling strategy not yet implemented"}
+
+
+# ── Single-Label Binary Workflow ──────────────────────────────────
+from queue_service import next_undecided_message, conversation_context
+from decision_service import (
+    activate_label as svc_activate,
+    close_label as svc_close,
+    decide as svc_decide,
+    undo_last as svc_undo,
+    readiness as svc_readiness,
+)
+import binary_autolabel_service
+from schemas import (
+    DecideRequest, NextMessageResponse, ReadinessResponse, HandoffResponse,
+    ReviewQueueItem, ReviewQueueResponse, ReviewRequest, LabelDashboardItem,
+)
+
+
+def _build_next_response(db: Session, label_id: int) -> NextMessageResponse:
+    nxt = next_undecided_message(db, label_id=label_id)
+    if nxt is None:
+        return NextMessageResponse(
+            chatlog_id=None, message_index=None, message_text=None,
+            context_before=None, context_after=None,
+            conversation_context=[], done=True,
+        )
+    ctx = conversation_context(db, chatlog_id=nxt["chatlog_id"], up_to_message_index=nxt["message_index"])
+    return NextMessageResponse(
+        chatlog_id=nxt["chatlog_id"],
+        message_index=nxt["message_index"],
+        message_text=nxt["message_text"],
+        context_before=nxt["context_before"],
+        context_after=nxt["context_after"],
+        conversation_context=[QueueItemResponse(**c) for c in ctx],
+        done=False,
+    )
+
+
+@app.post("/api/labels/binary", response_model=LabelDashboardItem)
+def create_binary_label(body: CreateLabelRequest, db: Session = Depends(get_session)):
+    label = LabelDefinition(name=body.name, description=body.description)
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return LabelDashboardItem(
+        id=label.id, name=label.name, description=label.description,
+        phase=label.phase, is_active=label.is_active,
+        yes_count=0, no_count=0, skip_count=0, ai_count=0,
+    )
+
+
+@app.get("/api/labels/binary", response_model=List[LabelDashboardItem])
+def list_binary_labels(db: Session = Depends(get_session)):
+    labels = db.exec(select(LabelDefinition).where(LabelDefinition.archived_at.is_(None))).all()
+    out: List[LabelDashboardItem] = []
+    for l in labels:
+        counts = {"yes_count": 0, "no_count": 0, "skip_count": 0, "ai_count": 0}
+        rows = db.exec(
+            select(LabelApplication.value, LabelApplication.applied_by, func.count())
+            .where(LabelApplication.label_id == l.id)
+            .group_by(LabelApplication.value, LabelApplication.applied_by)
+        ).all()
+        for value, applied_by, count in rows:
+            if applied_by == "ai":
+                counts["ai_count"] += count
+            elif value in ("yes", "no", "skip"):
+                counts[f"{value}_count"] = count
+        out.append(LabelDashboardItem(
+            id=l.id, name=l.name, description=l.description,
+            phase=l.phase, is_active=l.is_active, **counts,
+        ))
+    return out
+
+
+@app.post("/api/labels/binary/{label_id}/activate")
+def activate_endpoint(label_id: int, db: Session = Depends(get_session)):
+    try:
+        svc_activate(db, label_id=label_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/labels/binary/{label_id}/close")
+def close_endpoint(label_id: int, db: Session = Depends(get_session)):
+    try:
+        svc_close(db, label_id=label_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/labels/binary/{label_id}/next", response_model=NextMessageResponse)
+def next_endpoint(label_id: int, db: Session = Depends(get_session)):
+    return _build_next_response(db, label_id)
+
+
+@app.post("/api/labels/binary/{label_id}/decide", response_model=NextMessageResponse)
+def decide_endpoint(label_id: int, body: DecideRequest, db: Session = Depends(get_session)):
+    try:
+        svc_decide(
+            db,
+            label_id=label_id,
+            chatlog_id=body.chatlog_id,
+            message_index=body.message_index,
+            value=body.value,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return _build_next_response(db, label_id)
+
+
+@app.post("/api/labels/binary/{label_id}/undo")
+def undo_endpoint(label_id: int, db: Session = Depends(get_session)):
+    addr = svc_undo(db, label_id=label_id)
+    return {"ok": True, "removed": addr}
+
+
+@app.get("/api/labels/binary/{label_id}/readiness", response_model=ReadinessResponse)
+def readiness_endpoint(label_id: int, db: Session = Depends(get_session)):
+    return ReadinessResponse(**svc_readiness(db, label_id=label_id))
+
+
+@app.post("/api/labels/binary/{label_id}/handoff", response_model=HandoffResponse)
+def handoff_endpoint(label_id: int, db: Session = Depends(get_session)):
+    n = binary_autolabel_service.run_handoff(db, label_id=label_id)
+    label = db.get(LabelDefinition, label_id)
+    return HandoffResponse(predictions_written=n, phase=label.phase)
+
+
+@app.get("/api/labels/binary/{label_id}/review-queue", response_model=ReviewQueueResponse)
+def review_queue_endpoint(
+    label_id: int,
+    threshold: float = Query(0.75, ge=0.0, le=1.0),
+    db: Session = Depends(get_session),
+):
+    rows = db.exec(
+        select(LabelApplication, MessageCache)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+            LabelApplication.confidence < threshold,
+            LabelApplication.chatlog_id == MessageCache.chatlog_id,
+            LabelApplication.message_index == MessageCache.message_index,
+        )
+        .order_by(LabelApplication.confidence)
+    ).all()
+    items = [
+        ReviewQueueItem(
+            chatlog_id=la.chatlog_id,
+            message_index=la.message_index,
+            message_text=mc.message_text,
+            context_before=mc.context_before,
+            context_after=mc.context_after,
+            ai_value=la.value,
+            confidence=la.confidence or 0.0,
+        )
+        for la, mc in rows
+    ]
+    return ReviewQueueResponse(items=items, total=len(items))
+
+
+@app.post("/api/labels/binary/{label_id}/review")
+def review_endpoint(label_id: int, body: ReviewRequest, db: Session = Depends(get_session)):
+    if body.value not in ("yes", "no"):
+        raise HTTPException(400, "value must be yes or no")
+    svc_decide(
+        db,
+        label_id=label_id,
+        chatlog_id=body.chatlog_id,
+        message_index=body.message_index,
+        value=body.value,
+        applied_by="human",
+        confidence=1.0,
+    )
+    return {"ok": True}

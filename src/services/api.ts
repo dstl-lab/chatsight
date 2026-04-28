@@ -6,6 +6,7 @@ import type {
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
+  LabelDashboardItem, NextMessage, DecideRequestBody, ReadinessState, HandoffResult, ReviewQueueItem,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -234,4 +235,50 @@ export const api = {
   getRecalibrationStats: (): Promise<RecalibrationStats> =>
     USE_MOCK ? Promise.resolve(mockApi.recalibrationStats)
              : req('/api/session/recalibration/stats'),
+
+  // ── Single-Label Binary Workflow ──────────────────────────────────
+  listBinaryLabels: (): Promise<LabelDashboardItem[]> =>
+    USE_MOCK ? Promise.resolve(mockApi.binaryLabels)
+             : req('/api/labels/binary'),
+
+  createBinaryLabel: (body: CreateLabelRequest): Promise<LabelDashboardItem> =>
+    USE_MOCK
+      ? Promise.resolve({ id: Math.floor(Math.random() * 10000), name: body.name, description: body.description ?? null, phase: 'labeling', is_active: false, yes_count: 0, no_count: 0, skip_count: 0, ai_count: 0 })
+      : req('/api/labels/binary', { method: 'POST', ...json(body) }),
+
+  activateBinaryLabel: (id: number): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/labels/binary/${id}/activate`, { method: 'POST' }),
+
+  closeBinaryLabel: (id: number): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/labels/binary/${id}/close`, { method: 'POST' }),
+
+  getBinaryNext: (id: number): Promise<NextMessage> =>
+    USE_MOCK ? Promise.resolve(mockApi.binaryNext)
+             : req(`/api/labels/binary/${id}/next`),
+
+  decideBinary: (id: number, body: DecideRequestBody): Promise<NextMessage> =>
+    USE_MOCK ? Promise.resolve(mockApi.binaryNextAfterDecide)
+             : req(`/api/labels/binary/${id}/decide`, { method: 'POST', ...json(body) }),
+
+  undoBinary: (id: number): Promise<{ ok: boolean; removed: { chatlog_id: number; message_index: number } | null }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, removed: null })
+             : req(`/api/labels/binary/${id}/undo`, { method: 'POST' }),
+
+  getBinaryReadiness: (id: number): Promise<ReadinessState> =>
+    USE_MOCK ? Promise.resolve(mockApi.binaryReadiness)
+             : req(`/api/labels/binary/${id}/readiness`),
+
+  binaryHandoff: (id: number): Promise<HandoffResult> =>
+    USE_MOCK ? Promise.resolve({ predictions_written: 0, phase: 'handed_off' })
+             : req(`/api/labels/binary/${id}/handoff`, { method: 'POST' }),
+
+  getBinaryReviewQueue: (id: number, threshold = 0.75): Promise<{ items: ReviewQueueItem[]; total: number }> =>
+    USE_MOCK ? Promise.resolve({ items: [], total: 0 })
+             : req(`/api/labels/binary/${id}/review-queue?threshold=${threshold}`),
+
+  reviewBinary: (id: number, body: { chatlog_id: number; message_index: number; value: 'yes' | 'no' }): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/labels/binary/${id}/review`, { method: 'POST', ...json(body) }),
 }

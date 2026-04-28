@@ -1,9 +1,10 @@
 import sys
 import os
 
-# Set dummy PG_PASSWORD before importing any app modules, since database.py
-# reads this env var at module load time.
+# Set dummy env vars before importing any app modules, since some modules
+# read these at module load time.
 os.environ.setdefault("PG_PASSWORD", "test_dummy_password")
+os.environ.setdefault("GEMINI_API_KEY", "test_dummy_key")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

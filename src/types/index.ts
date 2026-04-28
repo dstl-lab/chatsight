@@ -212,3 +212,58 @@ export interface SaveRecalibrationResponse {
   matched: boolean
   trend: 'improving' | 'steady' | 'shifting'
 }
+
+export type DecisionValue = 'yes' | 'no' | 'skip'
+export type LabelPhase = 'labeling' | 'handed_off' | 'reviewing' | 'complete'
+
+export interface NextMessage {
+  chatlog_id: number | null
+  message_index: number | null
+  message_text: string | null
+  context_before: string | null
+  context_after: string | null
+  conversation_context: QueueItem[]
+  done: boolean
+}
+
+export interface DecideRequestBody {
+  chatlog_id: number
+  message_index: number
+  value: DecisionValue
+}
+
+export interface ReadinessState {
+  yes_count: number
+  no_count: number
+  skip_count: number
+  conversations_walked: number
+  total_conversations: number
+  ready: boolean
+}
+
+export interface HandoffResult {
+  predictions_written: number
+  phase: LabelPhase
+}
+
+export interface ReviewQueueItem {
+  chatlog_id: number
+  message_index: number
+  message_text: string
+  context_before: string | null
+  context_after: string | null
+  ai_value: 'yes' | 'no'
+  confidence: number
+}
+
+export interface LabelDashboardItem {
+  id: number
+  name: string
+  description: string | null
+  phase: LabelPhase
+  is_active: boolean
+  yes_count: number
+  no_count: number
+  skip_count: number
+  ai_count: number
+}

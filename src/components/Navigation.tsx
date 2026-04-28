@@ -7,7 +7,7 @@ export function Navigation() {
       <span className="text-sm font-semibold text-white tracking-wide">Chatsight</span>
       <div className="flex gap-5 ml-4">
         {[
-          { to: '/queue', label: 'Queue' },
+          { to: '/run', label: 'Run' },
           { to: '/history', label: 'History' },
           { to: '/labels', label: 'Labels' },
           { to: '/analysis', label: 'Analysis' },

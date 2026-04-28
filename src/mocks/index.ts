@@ -202,4 +202,39 @@ export const mockApi = {
     current_interval: 15,
     total_recalibrations: 8,
   } satisfies RecalibrationStats,
+
+  binaryLabels: [
+    { id: 1, name: 'Concept Question', description: 'Asks about a concept', phase: 'labeling' as const, is_active: true, yes_count: 3, no_count: 2, skip_count: 0, ai_count: 0 },
+    { id: 2, name: 'Code Help', description: 'Wants help with code', phase: 'complete' as const, is_active: false, yes_count: 12, no_count: 9, skip_count: 1, ai_count: 41 },
+  ],
+  binaryNext: {
+    chatlog_id: 100,
+    message_index: 2,
+    message_text: 'What does .iloc do?',
+    context_before: 'Tell me about pandas DataFrames.',
+    context_after: null,
+    conversation_context: [
+      { chatlog_id: 100, message_index: 0, message_text: 'hi', context_before: null, context_after: 'Hi there!' },
+      { chatlog_id: 100, message_index: 1, message_text: 'Tell me about pandas DataFrames.', context_before: null, context_after: 'A DataFrame is...' },
+      { chatlog_id: 100, message_index: 2, message_text: 'What does .iloc do?', context_before: 'A DataFrame is...', context_after: null },
+    ],
+    done: false,
+  },
+  binaryNextAfterDecide: {
+    chatlog_id: 100,
+    message_index: 3,
+    message_text: 'And .loc?',
+    context_before: '.iloc selects by position.',
+    context_after: null,
+    conversation_context: [],
+    done: false,
+  },
+  binaryReadiness: {
+    yes_count: 3,
+    no_count: 2,
+    skip_count: 0,
+    conversations_walked: 4,
+    total_conversations: 30,
+    ready: true,
+  },
 }

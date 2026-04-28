@@ -220,3 +220,68 @@ class RecalibrationStatsResponse(BaseModel):
     trend: str  # "improving" | "steady" | "shifting"
     current_interval: int
     total_recalibrations: int
+
+
+# ── Single-Label Workflow ──────────────────────────────────────────
+
+class DecideRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    value: str  # yes | no | skip
+
+
+class NextMessageResponse(BaseModel):
+    chatlog_id: Optional[int]
+    message_index: Optional[int]
+    message_text: Optional[str]
+    context_before: Optional[str]
+    context_after: Optional[str]
+    conversation_context: List[QueueItemResponse]  # prior turns of this conversation
+    done: bool
+
+
+class ReadinessResponse(BaseModel):
+    yes_count: int
+    no_count: int
+    skip_count: int
+    conversations_walked: int
+    total_conversations: int
+    ready: bool
+
+
+class HandoffResponse(BaseModel):
+    predictions_written: int
+    phase: str
+
+
+class ReviewQueueItem(BaseModel):
+    chatlog_id: int
+    message_index: int
+    message_text: str
+    context_before: Optional[str]
+    context_after: Optional[str]
+    ai_value: str
+    confidence: float
+
+
+class ReviewQueueResponse(BaseModel):
+    items: List[ReviewQueueItem]
+    total: int
+
+
+class ReviewRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    value: str  # yes | no
+
+
+class LabelDashboardItem(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    phase: str
+    is_active: bool
+    yes_count: int
+    no_count: int
+    skip_count: int
+    ai_count: int
