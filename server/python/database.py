@@ -51,4 +51,4 @@ def get_session():
 
 _pg_password = os.environ["PG_PASSWORD"]
 EXT_DB_URL = os.environ["EXT_DB_URL"] if "EXT_DB_URL" in os.environ else f"postgresql+psycopg2://dsc10_tutor:{_pg_password}@localhost:5432/dsc10_tutor_logs"
-ext_engine = sa_create_engine(EXT_DB_URL)
+ext_engine = sa_create_engine(EXT_DB_URL, pool_pre_ping=True)
