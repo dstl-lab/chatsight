@@ -827,10 +827,47 @@ def get_queue_stats(db: Session = Depends(get_session)):
     ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
     total = db.exec(select(func.count(MessageCache.id))).one() or 0
+
+    # Build message -> set of human-applied label names
+    human_label_rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index, LabelDefinition.name)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelApplication.applied_by == "human")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
+    message_human_labels: dict[tuple, set[str]] = {}
+    for cid, midx, name in human_label_rows:
+        message_human_labels.setdefault((cid, midx), set()).add(name)
+    human_labeled_count = len(message_human_labels)
+
+    # Latest suggestion per message (SuggestionCache may have multiple entries per message)
+    all_suggestions = db.exec(select(SuggestionCache)).all()
+    latest_suggestions: dict[tuple, str] = {}
+    for s in sorted(all_suggestions, key=lambda x: x.created_at, reverse=True):
+        key = (s.chatlog_id, s.message_index)
+        if key not in latest_suggestions:
+            latest_suggestions[key] = s.label_name
+
+    # Alignment: how often does the AI suggestion match the human's choice?
+    aligned = 0
+    with_suggestion = 0
+    for key, human_labels in message_human_labels.items():
+        if key in latest_suggestions:
+            with_suggestion += 1
+            if latest_suggestions[key] in human_labels:
+                aligned += 1
+
+    alignment_pct: float | None = (aligned / with_suggestion * 100) if with_suggestion > 0 else None
+    autolabel_unlocked = alignment_pct is not None and alignment_pct >= 85.0
+
     return {
         "total_messages": total,
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
+        "human_labeled_count": human_labeled_count,
+        "alignment_pct": alignment_pct,
+        "with_suggestion_count": with_suggestion,
+        "autolabel_unlocked": autolabel_unlocked,
     }
 
 

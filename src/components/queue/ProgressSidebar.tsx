@@ -196,9 +196,8 @@ export function ProgressSidebar({
   const suggestPct = Math.min(100, Math.round((labeled / suggestThreshold) * 100))
   const suggestUnlocked = labeled >= suggestThreshold
 
-  const autolabelThreshold = Math.min(Math.ceil(total * 0.4), 100)
-  const autolabelPct = autolabelThreshold > 0 ? Math.min(100, Math.round((labeled / autolabelThreshold) * 100)) : 0
-  const autolabelUnlocked = labeled >= autolabelThreshold && autolabelThreshold > 0
+  const autolabelUnlocked = stats?.autolabel_unlocked ?? false
+  const alignmentPct = stats?.alignment_pct ?? null
 
   const handleSaveDescription = (labelId: number) => {
     onUpdateLabel(labelId, { description: editDesc })
@@ -306,13 +305,20 @@ export function ProgressSidebar({
                 <p className="text-[10px] text-red-400 mt-1">{autolabelStatus.error}</p>
               )}
             </>
-          ) : (
+          ) : !suggestUnlocked ? (
+            <p className="text-[10px] text-neutral-500">Unlocks with AI suggestions</p>
+          ) : alignmentPct !== null ? (
             <>
               <div className="h-1 bg-neutral-800 rounded-full mb-1">
-                <div className="h-1 bg-purple-500/50 rounded-full transition-all" style={{ width: `${autolabelPct}%` }} />
+                <div
+                  className={`h-1 rounded-full transition-all ${alignmentPct >= 85 ? 'bg-green-500' : 'bg-purple-500/50'}`}
+                  style={{ width: `${Math.min(100, Math.round(alignmentPct / 85 * 100))}%` }}
+                />
               </div>
-              <p className="text-[10px] text-neutral-400">{labeled} / {autolabelThreshold} to unlock</p>
+              <p className="text-[10px] text-neutral-400">{Math.round(alignmentPct)}% aligned (need 85%)</p>
             </>
+          ) : (
+            <p className="text-[10px] text-neutral-500">Waiting for AI suggestions...</p>
           )}
         </div>
       </div>

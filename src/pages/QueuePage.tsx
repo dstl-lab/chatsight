@@ -323,6 +323,7 @@ export function QueuePage() {
 		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
 		api.getRecentHistory(5).then(setHistory);
 		api.getLabels().then(setLabels);
+		api.getQueueStats().then(setStats);
 	}, [currentMessage, labels, appliedLabelIds, advance]);
 
 	const handleCreateAndApply = async (name: string, description?: string) => {
@@ -417,6 +418,7 @@ export function QueuePage() {
 					),
 				8000,
 			);
+			api.getQueueStats().then(setStats);
 		} else {
 			setUndoState(null);
 		}

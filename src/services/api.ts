@@ -56,7 +56,7 @@ export const api = {
              : req(`/api/queue?limit=${limit}`),
 
   getQueueStats: (): Promise<QueueStats> =>
-    USE_MOCK ? Promise.resolve({ total_messages: 100, labeled_count: 14, skipped_count: 0 })
+    USE_MOCK ? Promise.resolve({ total_messages: 100, labeled_count: 14, skipped_count: 0, human_labeled_count: 14, alignment_pct: null, with_suggestion_count: 0, autolabel_unlocked: false })
              : req('/api/queue/stats'),
 
   getQueuePosition: (): Promise<{ position: number; total_remaining: number }> =>

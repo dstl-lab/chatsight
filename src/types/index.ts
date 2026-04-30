@@ -99,6 +99,10 @@ export interface QueueStats {
   total_messages: number
   labeled_count: number
   skipped_count: number
+  human_labeled_count: number
+  alignment_pct: number | null
+  with_suggestion_count: number
+  autolabel_unlocked: boolean
 }
 
 export interface ApplyLabelRequest {
