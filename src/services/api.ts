@@ -5,7 +5,7 @@ import type {
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
   ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
-  MultiSuggestResponse
+  MultiSuggestResponse, SuggestBatchResponse
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -70,6 +70,10 @@ export const api = {
   suggestMulti: (chatlog_id: number, message_index: number): Promise<MultiSuggestResponse> =>
     USE_MOCK ? Promise.resolve({ suggestions: [] })
              : req('/api/queue/suggest-multi', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  suggestBatch: (messages: { chatlog_id: number; message_index: number }[]): Promise<SuggestBatchResponse> =>
+    USE_MOCK ? Promise.resolve({ results: {} })
+             : req('/api/queue/suggest-batch', { method: 'POST', ...json({ messages }) }),
 
   applyMulti: (chatlog_id: number, message_index: number, label_ids: number[]): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })

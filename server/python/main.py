@@ -18,7 +18,7 @@ import json as json_mod
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
-    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
+    ApplyBatchRequest, SkipMessageRequest, SuggestRequest, SuggestBatchRequest, SuggestBatchResponse, ConciseRequest, ConciseResponse,
     MergeLabelRequest, SplitLabelRequest, SplitAutoLabelRequest, ReorderLabelsRequest,
     AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse,
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
@@ -1299,6 +1299,132 @@ def suggest_multi(req: SuggestRequest, db: Session = Depends(get_session)):
         pass
 
     return {"suggestions": []}
+
+
+@app.post("/api/queue/suggest-batch", response_model=SuggestBatchResponse)
+def suggest_batch(req: SuggestBatchRequest, db: Session = Depends(get_session)):
+    results_map: Dict[str, MultiSuggestResponse] = {}
+    to_fetch = []
+
+    # Check cache first
+    for msg in req.messages:
+        cache_key = f"{msg.chatlog_id}:{msg.message_index}"
+        if cache_key in _suggestion_cache:
+            results_map[cache_key] = _suggestion_cache[cache_key]
+        else:
+            to_fetch.append(msg)
+
+    if not to_fetch:
+        return {"results": results_map}
+
+    labels = db.exec(select(LabelDefinition)).all()
+    if not labels:
+        return {"results": results_map}
+
+    # Build examples (cached/optimized?)
+    examples_by_label: dict[str, list[str]] = {}
+    for label in labels:
+        apps = db.exec(
+            select(LabelApplication)
+            .where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "human",
+            )
+            .limit(3)
+        ).all()
+        if apps:
+            with ext_engine.connect() as conn:
+                for a in apps:
+                    row = conn.execute(
+                        text("""
+                        WITH student AS (
+                            SELECT payload->>'question' AS msg,
+                                   (ROW_NUMBER() OVER (
+                                       PARTITION BY payload->>'conversation_id' ORDER BY id
+                                   )) - 1 AS idx
+                            FROM events
+                            WHERE event_type = 'tutor_query'
+                              AND payload->>'conversation_id' = (
+                                  SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                              )
+                        )
+                        SELECT msg FROM student WHERE idx = :midx
+                    """),
+                        {"cid": a.chatlog_id, "midx": a.message_index},
+                    ).first()
+                    if row and row[0]:
+                        examples_by_label.setdefault(label.name, []).append(
+                            row[0][:200]
+                        )
+
+    # Fetch text for all messages in to_fetch
+    messages_to_classify = []
+    id_map = [] # index in messages_to_classify -> cache_key
+    
+    with ext_engine.connect() as conn:
+        for msg in to_fetch:
+            row = conn.execute(
+                text("""
+                WITH student AS (
+                    SELECT payload->>'question' AS msg,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id' ORDER BY id
+                           )) - 1 AS idx
+                    FROM events
+                    WHERE event_type = 'tutor_query'
+                      AND payload->>'conversation_id' = (
+                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
+                      )
+                )
+                SELECT msg FROM student WHERE idx = :midx
+            """),
+                {"cid": msg.chatlog_id, "midx": msg.message_index},
+            ).first()
+            if row and row[0]:
+                cache_key = f"{msg.chatlog_id}:{msg.message_index}"
+                messages_to_classify.append({"message_text": row[0], "context_before": None})
+                id_map.append(cache_key)
+
+    if not messages_to_classify:
+        return {"results": results_map}
+
+    # Call Gemini for batch suggestion
+    try:
+        from autolabel_service import classify_batch
+        label_defs = [{"name": l.name, "description": l.description} for l in labels]
+        batch_results = classify_batch(label_defs, examples_by_label, messages_to_classify)
+        
+        # results is a list of {index, labels, confidence}
+        indexed_results = {r["index"]: r for r in batch_results}
+        
+        for i, cache_key in enumerate(id_map):
+            res = indexed_results.get(i)
+            suggestions = []
+            if res:
+                suggested_names = res.get("labels", [])
+                conf = res.get("confidence", 1.0)
+                message_text = messages_to_classify[i]["message_text"]
+                for name in suggested_names:
+                    suggestions.append({
+                        "label_name": name,
+                        "evidence": message_text[:100],
+                        "rationale": f"AI suggested '{name}' with {conf:.2f} confidence based on {len(examples_by_label.get(name, []))} human-labeled examples.",
+                    })
+            
+            multi_res = {"suggestions": suggestions}
+            _suggestion_cache[cache_key] = multi_res
+            results_map[cache_key] = multi_res
+            
+        return {"results": results_map}
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Batch suggestion error: {error_msg}")
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            return {"results": results_map, "error": "rate_limit_exceeded"}
+        pass
+
+    return {"results": results_map}
 
 
 @app.post("/api/queue/suggest", response_model=SuggestResponse)

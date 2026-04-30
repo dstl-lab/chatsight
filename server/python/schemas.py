@@ -1,6 +1,6 @@
 # server/python/schemas.py
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 
 
@@ -123,6 +123,15 @@ class SuggestResponse(BaseModel):
 
 class MultiSuggestResponse(BaseModel):
     suggestions: List[SuggestResponse]
+    error: Optional[str] = None
+
+
+class SuggestBatchRequest(BaseModel):
+    messages: List[SuggestRequest]
+
+
+class SuggestBatchResponse(BaseModel):
+    results: Dict[str, MultiSuggestResponse]
     error: Optional[str] = None
 
 

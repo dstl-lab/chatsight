@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate, RecalibrationItem } from '../types'
+import type { QueueItem, LabelDefinition, LabelingSession, QueueStats, SuggestResponse, MultiSuggestResponse, UpdateLabelRequest, HistoryItem, OrphanedMessage, ArchiveReviewState, ConceptCandidate, RecalibrationItem } from '../types'
 import { api } from '../services/api'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { MessageCard } from '../components/queue/MessageCard'
@@ -27,6 +27,8 @@ export function QueuePage() {
   const [appliedLabelIds, setAppliedLabelIds] = useState<Set<number>>(new Set())
   const [suggestions, setSuggestions] = useState<SuggestResponse[]>([])
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
+  const [suggestionCache, setSuggestionCache] = useState<Record<string, MultiSuggestResponse>>({})
+  const fetchingIds = useRef<Set<string>>(new Set())
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [autolabelStatus, setAutolabelStatus] = useState<{
     running: boolean; processed: number; total: number; error: string | null
@@ -136,30 +138,67 @@ export function QueuePage() {
     }
   }, [loading, searchParams, setSearchParams])
 
+  // Prefetch AI suggestions for upcoming messages in the queue
+  useEffect(() => {
+    if (loading || !aiUnlocked || isSkippedReview) return
+    
+    // Look ahead 15 messages
+    const windowSize = 15
+    const window = queue.slice(currentIdx, currentIdx + windowSize)
+    const toFetch = window.filter(msg => {
+      const key = `${msg.chatlog_id}:${msg.message_index}`
+      return !suggestionCache[key] && !fetchingIds.current.has(key)
+    })
+
+    if (toFetch.length > 0) {
+      const batch = toFetch.slice(0, 10) // Fetch up to 10 at a time to stay safe
+      batch.forEach(msg => fetchingIds.current.add(`${msg.chatlog_id}:${msg.message_index}`))
+      
+      api.suggestBatch(batch.map(m => ({ chatlog_id: m.chatlog_id, message_index: m.message_index })))
+        .then(res => {
+          setSuggestionCache(prev => ({ ...prev, ...res.results }))
+          if (res.error) setSuggestionsError(res.error)
+        })
+        .finally(() => {
+          batch.forEach(msg => fetchingIds.current.delete(`${msg.chatlog_id}:${msg.message_index}`))
+        })
+    }
+  }, [queue, currentIdx, aiUnlocked, loading, isSkippedReview, suggestionCache])
+
   // Load applied labels and AI suggestion when displayed message changes
   useEffect(() => {
     if (!displayedMessage) return
     api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
       .then(ids => setAppliedLabelIds(new Set(ids)))
     
-    setSuggestions([])
-    setSuggestionsError(null)
+    const key = `${displayedMessage.chatlog_id}:${displayedMessage.message_index}`
+    const cached = suggestionCache[key]
 
-    if (aiUnlocked) {
-      const timer = setTimeout(() => {
-        api.suggestMulti(displayedMessage.chatlog_id, displayedMessage.message_index)
-          .then(res => {
-            if (res.error) {
-              setSuggestionsError(res.error)
-            } else {
-              setSuggestions(res.suggestions)
-            }
-          })
-          .catch(() => {})
-      }, 600)
-      return () => clearTimeout(timer)
+    if (cached) {
+      setSuggestions(cached.suggestions)
+      setSuggestionsError(cached.error ?? null)
+    } else {
+      setSuggestions([])
+      setSuggestionsError(null)
+
+      if (aiUnlocked) {
+        // Fallback for single fetch if not in cache (e.g. skip review or rapid nav)
+        const timer = setTimeout(() => {
+          api.suggestMulti(displayedMessage.chatlog_id, displayedMessage.message_index)
+            .then(res => {
+              setSuggestionCache(prev => ({ ...prev, [key]: res }))
+              if (res.error) {
+                setSuggestionsError(res.error)
+              } else {
+                setSuggestions(res.suggestions)
+              }
+            })
+            .catch(() => {})
+        }, 600)
+        return () => clearTimeout(timer)
+      }
     }
-  }, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked])
+  }, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked, suggestionCache])
 
   const advance = useCallback(() => {
     setCurrentIdx(i => {

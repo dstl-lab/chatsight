@@ -58,6 +58,15 @@ export interface MultiSuggestResponse {
   error?: string;
 }
 
+export interface SuggestBatchRequest {
+  messages: { chatlog_id: number; message_index: number }[];
+}
+
+export interface SuggestBatchResponse {
+  results: Record<string, MultiSuggestResponse>;
+  error?: string;
+}
+
 
 export interface ApplyMultiRequest {
   chatlog_id: number
