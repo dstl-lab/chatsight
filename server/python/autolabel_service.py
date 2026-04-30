@@ -24,10 +24,14 @@ TOOL = types.Tool(function_declarations=[
                         "type": "object",
                         "properties": {
                             "index": {"type": "integer", "description": "Index in the input messages array"},
-                            "label": {"type": "string", "description": "The label name to assign"},
+                            "labels": {
+                                "type": "array", 
+                                "items": {"type": "string"},
+                                "description": "The label names to assign. Use multiple if more than one category fits."
+                            },
                             "confidence": {"type": "number", "description": "Your confidence in this classification, 0.0 to 1.0"},
                         },
-                        "required": ["index", "label", "confidence"],
+                        "required": ["index", "labels", "confidence"],
                     },
                 },
             },
@@ -40,7 +44,7 @@ CONFIG = types.GenerateContentConfig(
     system_instruction=(
         "You are classifying student messages from AI tutoring conversations. "
         "You will be given label definitions with example messages, then a batch "
-        "of unlabeled messages to classify. Assign exactly one label to each message. "
+        "of unlabeled messages to classify. Assign all labels that apply to each message. "
         "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
     ),
     temperature=0,
@@ -77,8 +81,8 @@ def build_prompt(
         parts.append(f"{i}. \"{msg['message_text']}\"{ctx}")
     parts.append("")
     parts.append(
-        "Call `classify_messages` with the index and label for each message. "
-        "Use label names exactly as defined above."
+        "Call `classify_messages` with the index and labels for each message. "
+        "Use label names exactly as defined above. If multiple labels apply, include all of them in the labels array."
     )
     return "\n".join(parts)
 
@@ -91,11 +95,27 @@ def classify_batch(
     """Classify a batch of messages. Returns list of {index, label}."""
     prompt = build_prompt(label_definitions, examples_by_label, messages)
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=CONFIG,
-    )
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=CONFIG,
+        )
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            print(f"Gemini 2.0 Flash rate limited, falling back to 1.5 Flash...")
+            try:
+                response = client.models.generate_content(
+                    model="gemini-flash-latest",
+                    contents=prompt,
+                    config=CONFIG,
+                )
+            except Exception as e2:
+                print(f"Fallback to Gemini 1.5 Flash also failed: {e2}")
+                raise e2
+        else:
+            raise e
 
     for part in response.candidates[0].content.parts:
         if part.function_call and part.function_call.name == "classify_messages":
@@ -124,6 +144,18 @@ def summarize_message(message_text: str) -> str:
             contents=message_text,
             config=config,
         )
-        return response.text.strip()
     except Exception as e:
-        return f"Error summarizing: {e}"
+        error_msg = str(e)
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            try:
+                response = client.models.generate_content(
+                    model="gemini-flash-latest",
+                    contents=message_text,
+                    config=config,
+                )
+            except Exception as e2:
+                return f"Error summarizing (fallback failed): {e2}"
+        else:
+            return f"Error summarizing: {e}"
+    
+    return response.text.strip()

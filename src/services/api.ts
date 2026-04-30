@@ -4,7 +4,8 @@ import type {
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
   ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
-  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
+  LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
+  MultiSuggestResponse
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -65,6 +66,14 @@ export const api = {
   suggest: (chatlog_id: number, message_index: number): Promise<SuggestResponse> =>
     USE_MOCK ? Promise.resolve({ label_name: '', evidence: '', rationale: '' })
              : req('/api/queue/suggest', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  suggestMulti: (chatlog_id: number, message_index: number): Promise<MultiSuggestResponse> =>
+    USE_MOCK ? Promise.resolve({ suggestions: [] })
+             : req('/api/queue/suggest-multi', { method: 'POST', ...json({ chatlog_id, message_index }) }),
+
+  applyMulti: (chatlog_id: number, message_index: number, label_ids: number[]): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req('/api/queue/apply-multi', { method: 'POST', ...json({ chatlog_id, message_index, label_ids }) }),
 
   advanceMessage: (chatlog_id: number, message_index: number): Promise<{ ok: boolean; counted: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true, counted: true })

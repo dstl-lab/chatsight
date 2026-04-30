@@ -53,6 +53,18 @@ export interface SuggestResponse {
   rationale: string
 }
 
+export interface MultiSuggestResponse {
+  suggestions: SuggestResponse[];
+  error?: string;
+}
+
+
+export interface ApplyMultiRequest {
+  chatlog_id: number
+  message_index: number
+  label_ids: number[]
+}
+
 export interface AnalysisSummary {
   label_counts: Record<string, number>
   human_label_counts: Record<string, number>

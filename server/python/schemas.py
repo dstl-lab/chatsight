@@ -67,6 +67,12 @@ class ApplyBatchRequest(BaseModel):
     delete_original_label_id: Optional[int] = None
 
 
+class ApplyMultiRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    label_ids: List[int]
+
+
 class SplitAutoLabelRequest(BaseModel):
     label_id: int
     name_a: str
@@ -107,6 +113,17 @@ class SessionResponse(BaseModel):
     started_at: datetime
     last_active: datetime
     labeled_count: int
+
+
+class SuggestResponse(BaseModel):
+    label_name: str
+    evidence: str
+    rationale: str
+
+
+class MultiSuggestResponse(BaseModel):
+    suggestions: List[SuggestResponse]
+    error: Optional[str] = None
 
 
 class LabelApplicationResponse(BaseModel):

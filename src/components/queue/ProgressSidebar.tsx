@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate } from '../../types'
+import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate, SuggestResponse } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 import { RecentHistory } from './RecentHistory'
 import { LabelContextMenu } from './LabelContextMenu'
@@ -36,12 +36,15 @@ interface Props {
   onDiscover: () => void
   onOpenDiscoverModal: () => void
   discovering: boolean
+  suggestions: SuggestResponse[]
+  suggestionsError?: string | null
 }
 
 interface SortableLabelItemProps {
   label: LabelDefinition
   index: number
   isApplied: boolean
+  isSuggested: boolean
   onToggle: () => void
   isHovered: boolean
   isEditing: boolean
@@ -61,7 +64,7 @@ interface SortableLabelItemProps {
 }
 
 function SortableLabelItem({
-  label, index, isApplied, onToggle,
+  label, index, isApplied, isSuggested, onToggle,
   isHovered, isEditing, editDesc,
   onStartHover, onCancelHover, onClearHoverTimer,
   onSetEditDesc, onCancelEditing, onSaveDescription,
@@ -97,18 +100,25 @@ function SortableLabelItem({
       ) : (
         <button
           onClick={onToggle}
-          className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
+          className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-all ${
             isApplied
-              ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
-              : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
+              ? 'bg-blue-900/50 border border-blue-500 text-blue-200 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+              : isSuggested
+                ? 'bg-purple-900/30 border border-purple-500/70 text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:bg-purple-900/40'
+                : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
           }`}
         >
-          <span className="truncate flex-1">{label.name}</span>
+          <span className="truncate flex-1">
+            {isSuggested && !isApplied && <span className="mr-1.5 text-purple-400">✦</span>}
+            {label.name}
+          </span>
           {index < 9 && (
             <span
               {...attributes}
               {...listeners}
-              className="text-[9px] text-neutral-600 shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums"
+              className={`text-[9px] shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums ${
+                isApplied ? 'text-blue-400' : isSuggested ? 'text-purple-400' : 'text-neutral-600'
+              }`}
               onClick={e => e.stopPropagation()}
             >
               {index + 1}
@@ -160,7 +170,7 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
-  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
+  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering, suggestions, suggestionsError,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
@@ -262,7 +272,11 @@ export function ProgressSidebar({
       <div className="flex flex-col gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">AI suggestions</p>
-          {suggestUnlocked ? (
+          {suggestionsError ? (
+            <p className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-1">
+              {suggestionsError === 'rate_limit_exceeded' ? 'Rate limit reached. Paused.' : suggestionsError}
+            </p>
+          ) : suggestUnlocked ? (
             <p className="text-[10px] text-green-400">Active</p>
           ) : (
             <>
@@ -320,7 +334,14 @@ export function ProgressSidebar({
       />
 
       <div className="flex-1 min-h-0 flex flex-col">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labels</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] uppercase tracking-widest text-neutral-500">Labels</p>
+          {suggestions.some(s => !appliedLabelIds.has(labels.find(l => l.name === s.label_name)?.id ?? -1)) && (
+            <span className="text-[9px] font-bold text-purple-400/80 bg-purple-900/20 px-1.5 py-0.5 rounded border border-purple-500/20 animate-pulse">
+              TAB to accept
+            </span>
+          )}
+        </div>
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={labels.map(l => l.id)} strategy={verticalListSortingStrategy}>
@@ -330,6 +351,7 @@ export function ProgressSidebar({
                   label={label}
                   index={idx}
                   isApplied={appliedLabelIds.has(label.id)}
+                  isSuggested={suggestions.some(s => s.label_name === label.name)}
                   onToggle={() => onToggleLabel(label.id)}
                   isHovered={hoveredLabelId === label.id}
                   isEditing={editingLabelId === label.id}

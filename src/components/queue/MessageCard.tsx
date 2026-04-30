@@ -2,7 +2,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import type { QueueItem, SuggestResponse } from '../../types'
+import type { QueueItem } from '../../types'
 
 function stripMarkdown(md: string): string {
   return md
@@ -39,17 +39,15 @@ function truncateAtWord(text: string, maxLen: number, end: 'head' | 'tail'): str
 interface Props {
   item: QueueItem
   aiUnlocked: boolean
-  suggestion: SuggestResponse | null
   onSkip: () => void
   onNext: () => void
-  onBackToQueue?: () => void
+  onBackToQueue: () => void
   hasLabelsApplied: boolean
-  isReviewing?: boolean
+  isReviewing: boolean
   isSkippedReview?: boolean
 }
 
-export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, onBackToQueue, hasLabelsApplied, isReviewing, isSkippedReview }: Props) {
-  const [showRationale, setShowRationale] = useState(false)
+export function MessageCard({ item, aiUnlocked: _aiUnlocked, onSkip, onNext, onBackToQueue, hasLabelsApplied, isReviewing, isSkippedReview }: Props) {
   const [beforeExpanded, setBeforeExpanded] = useState(false)
   const [afterExpanded, setAfterExpanded] = useState(false)
 
@@ -90,33 +88,13 @@ export function MessageCard({ item, aiUnlocked, suggestion, onSkip, onNext, onBa
         <p className="text-sm text-neutral-100 leading-relaxed">{item.message_text}</p>
 
         <div className="absolute bottom-3 right-3">
-          {aiUnlocked && suggestion ? (
-            <button
-              onClick={() => setShowRationale(v => !v)}
-              className="text-[9px] text-neutral-500 bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5 hover:text-neutral-300 transition-colors"
-            >
-              ✦ {suggestion.label_name} · why?
-            </button>
-          ) : !aiUnlocked ? (
+          {!_aiUnlocked && (
             <span className="text-[8px] text-neutral-600 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-0.5">
               AI unlocks at 20
             </span>
-          ) : null}
+          )}
         </div>
       </div>
-
-      {showRationale && suggestion && (
-        <div className="border-l-2 border-neutral-700 pl-3 py-1">
-          <p className="text-[10px] text-neutral-400 leading-relaxed">
-            <span className="text-neutral-600">Evidence: </span>
-            &ldquo;{suggestion.evidence}&rdquo;
-          </p>
-          <p className="text-[10px] text-neutral-400 leading-relaxed mt-1">
-            <span className="text-neutral-600">Rationale: </span>
-            {suggestion.rationale}
-          </p>
-        </div>
-      )}
 
       {item.context_after && (
         <div

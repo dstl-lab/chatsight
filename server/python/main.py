@@ -24,7 +24,7 @@ from schemas import (
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
-    RecalibrationResponse,
+    RecalibrationResponse, MultiSuggestResponse, SuggestResponse, ApplyMultiRequest
 )
 from sqlmodel import Session, select
 
@@ -1134,31 +1134,37 @@ def _run_autolabel():
             with Session(engine) as db:
                 for r in results:
                     idx = r.get("index")
-                    label_name = r.get("label")
-                    if idx is None or idx >= len(batch) or label_name not in label_map:
+                    suggested_labels = r.get("labels", [])
+                    if idx is None or idx >= len(batch):
                         continue
                     msg = batch[idx]
-                    # Check for duplicate
-                    existing = db.exec(
-                        select(LabelApplication).where(
-                            LabelApplication.label_id == label_map[label_name],
-                            LabelApplication.chatlog_id == msg["chatlog_id"],
-                            LabelApplication.message_index == msg["message_index"],
-                        )
-                    ).first()
-                    if not existing:
-                        conf = r.get("confidence")
-                        if isinstance(conf, (int, float)):
-                            conf = max(0.0, min(1.0, float(conf)))
-                        else:
-                            conf = None
-                        db.add(LabelApplication(
-                            label_id=label_map[label_name],
-                            chatlog_id=msg["chatlog_id"],
-                            message_index=msg["message_index"],
-                            applied_by="ai",
-                            confidence=conf,
-                        ))
+                    
+                    for label_name in suggested_labels:
+                        if label_name not in label_map:
+                            continue
+                        
+                        # Check for duplicate
+                        existing = db.exec(
+                            select(LabelApplication).where(
+                                LabelApplication.label_id == label_map[label_name],
+                                LabelApplication.chatlog_id == msg["chatlog_id"],
+                                LabelApplication.message_index == msg["message_index"],
+                            )
+                        ).first()
+                        
+                        if not existing:
+                            conf = r.get("confidence")
+                            if isinstance(conf, (int, float)):
+                                conf = max(0.0, min(1.0, float(conf)))
+                            else:
+                                conf = None
+                            db.add(LabelApplication(
+                                label_id=label_map[label_name],
+                                chatlog_id=msg["chatlog_id"],
+                                message_index=msg["message_index"],
+                                applied_by="ai",
+                                confidence=conf,
+                            ))
                 db.commit()
 
             _autolabel_status["processed"] = min(i + BATCH_SIZE, len(unlabeled))
@@ -1176,11 +1182,12 @@ def _run_autolabel():
 
 @app.post("/api/queue/autolabel")
 def start_autolabel(db: Session = Depends(get_session)):
-    if _autolabel_status["running"]:
-        raise HTTPException(status_code=409, detail="Auto-labeling already in progress")
-    thread = threading.Thread(target=_run_autolabel, daemon=True)
-    thread.start()
-    return {"ok": True, "message": "Auto-labeling started"}
+    raise HTTPException(status_code=503, detail="Auto-labeling is temporarily disabled to preserve API quota")
+    # if _autolabel_status["running"]:
+    #     raise HTTPException(status_code=409, detail="Auto-labeling already in progress")
+    # thread = threading.Thread(target=_run_autolabel, daemon=True)
+    # thread.start()
+    # return {"ok": True, "message": "Auto-labeling started"}
 
 
 @app.get("/api/queue/autolabel/status")
@@ -1191,11 +1198,17 @@ def get_autolabel_status():
 # ── Stub routes (feature tracks implement these) ──────────────────────────────
 
 
-@app.post("/api/queue/suggest")
-def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
+_suggestion_cache: Dict[str, Any] = {}
+
+@app.post("/api/queue/suggest-multi", response_model=MultiSuggestResponse)
+def suggest_multi(req: SuggestRequest, db: Session = Depends(get_session)):
+    cache_key = f"{req.chatlog_id}:{req.message_index}"
+    if cache_key in _suggestion_cache:
+        return _suggestion_cache[cache_key]
+
     labels = db.exec(select(LabelDefinition)).all()
     if not labels:
-        return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
+        return {"suggestions": []}
 
     # Build examples for each label
     examples_by_label: dict[str, list[str]] = {}
@@ -1206,7 +1219,7 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
                 LabelApplication.label_id == label.id,
                 LabelApplication.applied_by == "human",
             )
-            .limit(5)
+            .limit(3)
         ).all()
         if apps:
             with ext_engine.connect() as conn:
@@ -1254,11 +1267,7 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
         ).first()
 
     if not row or not row[0]:
-        return {
-            "label_name": "",
-            "evidence": "",
-            "rationale": "Could not find message.",
-        }
+        return {"suggestions": []}
 
     message_text = row[0]
 
@@ -1270,20 +1279,66 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
         messages = [{"message_text": message_text, "context_before": None}]
         results = classify_batch(label_defs, examples_by_label, messages)
         if results:
-            label_name = results[0].get("label", "")
-            return {
-                "label_name": label_name,
-                "evidence": message_text[:100],
-                "rationale": f"AI classified this as '{label_name}' based on {len(examples_by_label.get(label_name, []))} human-labeled examples.",
-            }
-    except Exception:
+            suggested_names = results[0].get("labels", [])
+            conf = results[0].get("confidence", 1.0)
+            suggestions = []
+            for name in suggested_names:
+                suggestions.append({
+                    "label_name": name,
+                    "evidence": message_text[:100],
+                    "rationale": f"AI suggested '{name}' with {conf:.2f} confidence based on {len(examples_by_label.get(name, []))} human-labeled examples.",
+                })
+            res = {"suggestions": suggestions}
+            _suggestion_cache[cache_key] = res
+            return res
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Suggestion error: {error_msg}")
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            return {"suggestions": [], "error": "rate_limit_exceeded"}
         pass
 
-    return {
-        "label_name": labels[0].name,
-        "evidence": message_text[:100],
-        "rationale": "Fallback suggestion.",
-    }
+    return {"suggestions": []}
+
+
+@app.post("/api/queue/suggest", response_model=SuggestResponse)
+def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
+    res = suggest_multi(req, db)
+    if res["suggestions"]:
+        return res["suggestions"][0]
+    
+    # Fallback
+    labels = db.exec(select(LabelDefinition)).all()
+    if labels:
+        return {
+            "label_name": labels[0].name,
+            "evidence": "",
+            "rationale": "Fallback suggestion.",
+        }
+    return {"label_name": "", "evidence": "", "rationale": "No labels."}
+
+
+@app.post("/api/queue/apply-multi")
+def apply_multi(req: ApplyMultiRequest, db: Session = Depends(get_session)):
+    # Remove existing AI applications for this message first? 
+    # Or just add. Usually we want to avoid duplicates.
+    for label_id in req.label_ids:
+        existing = db.exec(
+            select(LabelApplication).where(
+                LabelApplication.chatlog_id == req.chatlog_id,
+                LabelApplication.message_index == req.message_index,
+                LabelApplication.label_id == label_id,
+            )
+        ).first()
+        if not existing:
+            db.add(LabelApplication(
+                chatlog_id=req.chatlog_id,
+                message_index=req.message_index,
+                label_id=label_id,
+                applied_by="human"
+            ))
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/api/queue/concise", response_model=ConciseResponse)
@@ -2081,8 +2136,7 @@ def export_csv(db: Session = Depends(get_session)):
 
 @app.get("/api/session/recalibration", response_model=List[RecalibrationResponse])
 def get_recalibration(db: Session = Depends(get_session)):
-    from concurrent.futures import ThreadPoolExecutor
-    from definition_service import generate_label_definition, select_best_example
+    from definition_service import batch_process_recalibration
 
     labels = db.exec(
         select(LabelDefinition)
@@ -2090,9 +2144,11 @@ def get_recalibration(db: Session = Depends(get_session)):
         .order_by(LabelDefinition.created_at.desc())
     ).all()
 
-    # Collect all DB data first (before spawning threads — db session is not thread-safe)
-    label_data = []
+    # Collect all DB data first
+    batch_input = []
+    label_map = {}
     for label in labels:
+        label_map[label.name] = label
         app_rows = db.exec(
             select(LabelApplication)
             .where(
@@ -2113,30 +2169,31 @@ def get_recalibration(db: Session = Depends(get_session)):
             ).first()
             if cache_row:
                 example_messages.append(cache_row.message_text)
+        
+        if example_messages:
+            batch_input.append({
+                "name": label.name,
+                "description": label.description,
+                "examples": example_messages
+            })
 
-        label_data.append((label, example_messages))
-
-    # Run Gemini calls for all labels in parallel
-    def process(item):
-        label, example_messages = item
-        if not example_messages:
-            return label.id, None
-        description = label.description or generate_label_definition(label.name, example_messages)
-        example_text = select_best_example(label.name, description, example_messages)
-        return label.id, example_text
-
-    with ThreadPoolExecutor() as executor:
-        example_map = dict(executor.map(process, label_data))
-
-    return [
-        RecalibrationResponse(
+    # Call Gemini for all labels in one single batch request
+    results = batch_process_recalibration(batch_input)
+    
+    # Map results back to response objects
+    response = []
+    processed_names = {r["label_name"]: r for r in results}
+    
+    for label in labels:
+        res = processed_names.get(label.name)
+        response.append(RecalibrationResponse(
             label_id=label.id,
             name=label.name,
-            description=label.description,
-            example_text=example_map.get(label.id),
-        )
-        for label, _ in label_data
-    ]
+            description=res["description"] if res else label.description,
+            example_text=res["example_text"] if res else None,
+        ))
+    
+    return response
 
 
 @app.get("/api/queue/sample")

@@ -25,7 +25,8 @@ export function QueuePage() {
   const [skippedCount, setSkippedCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [appliedLabelIds, setAppliedLabelIds] = useState<Set<number>>(new Set())
-  const [suggestion, setSuggestion] = useState<SuggestResponse | null>(null)
+  const [suggestions, setSuggestions] = useState<SuggestResponse[]>([])
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const [undoState, setUndoState] = useState<UndoState | null>(null)
   const [autolabelStatus, setAutolabelStatus] = useState<{
     running: boolean; processed: number; total: number; error: string | null
@@ -126,7 +127,7 @@ export function QueuePage() {
         setSkippedIdx(idx >= 0 ? idx : 0)
         setIsSkippedReview(true)
         setAppliedLabelIds(new Set())
-        setSuggestion(null)
+        setSuggestions([])
       }).catch(() => {})
     } else {
       api.getMessage(cid, midx).then(msg => {
@@ -140,11 +141,23 @@ export function QueuePage() {
     if (!displayedMessage) return
     api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
       .then(ids => setAppliedLabelIds(new Set(ids)))
-    setSuggestion(null)
+    
+    setSuggestions([])
+    setSuggestionsError(null)
+
     if (aiUnlocked) {
-      api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
-        .then(s => { if (s.label_name) setSuggestion(s) })
-        .catch(() => {})
+      const timer = setTimeout(() => {
+        api.suggestMulti(displayedMessage.chatlog_id, displayedMessage.message_index)
+          .then(res => {
+            if (res.error) {
+              setSuggestionsError(res.error)
+            } else {
+              setSuggestions(res.suggestions)
+            }
+          })
+          .catch(() => {})
+      }, 600)
+      return () => clearTimeout(timer)
     }
   }, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked])
 
@@ -200,7 +213,7 @@ export function QueuePage() {
       const newLen = skippedQueue.length - 1
       setSkippedQueue(prev => prev.filter((_, i) => i !== skippedIdx))
       setAppliedLabelIds(new Set())
-      setSuggestion(null)
+      setSuggestions([])
       setSkippedIdx(prev => {
         if (newLen <= 0) return 0
         return prev >= newLen ? 0 : prev
@@ -265,7 +278,7 @@ export function QueuePage() {
       if (skippedQueue.length === 0) return
       setSkippedIdx(prev => (prev + 1) % skippedQueue.length)
       setAppliedLabelIds(new Set())
-      setSuggestion(null)
+      setSuggestions([])
       return
     }
     if (isReviewing || !currentMessage) return
@@ -281,8 +294,26 @@ export function QueuePage() {
     setSkippedQueue([])
     setSkippedIdx(0)
     setAppliedLabelIds(new Set())
-    setSuggestion(null)
+    setSuggestions([])
   }, [])
+
+  const handleApplySuggestions = useCallback(async () => {
+    if (!displayedMessage || suggestions.length === 0) return
+    const unapplied = suggestions
+      .map(s => labels.find(l => l.name === s.label_name))
+      .filter((l): l is LabelDefinition => !!l && !appliedLabelIds.has(l.id))
+    
+    if (unapplied.length === 0) return
+    
+    const ids = unapplied.map(l => l.id)
+    await api.applyMulti(displayedMessage.chatlog_id, displayedMessage.message_index, ids)
+    
+    setAppliedLabelIds(prev => {
+      const next = new Set(prev)
+      ids.forEach(id => next.add(id))
+      return next
+    })
+  }, [displayedMessage, suggestions, labels, appliedLabelIds])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -297,6 +328,11 @@ export function QueuePage() {
           : labels
         const label = availableLabels[num - 1]
         if (label) handleToggleLabel(label.id)
+        return
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        handleApplySuggestions()
         return
       }
       if (e.key === 'Enter' || e.key === 'n') {
@@ -314,7 +350,7 @@ export function QueuePage() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [labels, appliedLabelIds, isReviewing, archiveReview, handleToggleLabel, handleNext, handleSkip, handleUndo])
+  }, [labels, appliedLabelIds, isReviewing, archiveReview, handleToggleLabel, handleNext, handleSkip, handleUndo, handleApplySuggestions])
 
   const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
     const updated = await api.updateLabel(id, body)
@@ -598,6 +634,8 @@ export function QueuePage() {
             onDiscover={handleDiscover}
             onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
             discovering={discovering}
+            suggestions={suggestions}
+            suggestionsError={suggestionsError}
           />
         )}
         <div className="flex-1 flex flex-col min-h-0">
@@ -620,7 +658,6 @@ export function QueuePage() {
               key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
               item={displayedMessage}
               aiUnlocked={aiUnlocked}
-              suggestion={archiveReview ? null : suggestion}
               onSkip={handleSkip}
               onNext={handleNext}
               onBackToQueue={handleBackToQueue}

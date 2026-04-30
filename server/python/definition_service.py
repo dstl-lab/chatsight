@@ -65,3 +65,58 @@ Which single message best exemplifies the description above? It should be the me
     except ValueError:
         pass
     return example_messages[0]  # fallback to first if parse fails
+
+
+def batch_process_recalibration(label_data: List[dict]) -> List[dict]:
+    """
+    Processes multiple labels in a single call to avoid hitting rate limits.
+    Each item in label_data should be: {"name": str, "description": str, "examples": List[str]}
+    Returns: List of {"label_name": str, "description": str, "example_text": str}
+    """
+    if not label_data:
+        return []
+
+    # Build a structured prompt for batch processing
+    prompt_parts = [
+        "You are an expert at summarizing and selecting representative examples for a chatlog labeling system.",
+        "\nFor each of the following labels, provide:",
+        "1. A concise 1-sentence definition (if not provided).",
+        "2. The single best representative example from the provided list.",
+        "\nReturn your answer as a JSON array of objects with keys: 'label_name', 'description', 'example_text'.",
+        "\n## Labels to Process:\n"
+    ]
+
+    for item in label_data:
+        desc = item.get("description") or "[To be generated]"
+        exs = "\n".join(f"- {ex}" for ex in item["examples"][:10])
+        prompt_parts.append(f"### Label: {item['name']}\nExisting Description: {desc}\nExamples:\n{exs}\n")
+
+    prompt = "\n".join(prompt_parts)
+
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-lite-preview",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0,
+            response_mime_type="application/json",
+            response_schema={
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label_name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "example_text": {"type": "string"}
+                    },
+                    "required": ["label_name", "description", "example_text"]
+                }
+            }
+        ),
+    )
+
+    try:
+        import json
+        return json.loads(response.text)
+    except Exception:
+        # Fallback: if JSON fails, return existing data
+        return [{"label_name": item["name"], "description": item.get("description") or "N/A", "example_text": item["examples"][0] if item["examples"] else None} for item in label_data]
