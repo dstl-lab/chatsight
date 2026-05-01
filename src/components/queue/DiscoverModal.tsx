@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { api } from '../../services/api'
 import type { ConceptCandidate, LabelDefinition } from '../../types'
 
 interface Props {
@@ -9,6 +10,11 @@ interface Props {
   onDiscover: () => void
   onClose: () => void
   discovering: boolean
+  /**
+   * Optional callback fired when a Mode B candidate becomes a label,
+   * is dismissed, noted, or merged. Lets the parent refresh state.
+   */
+  onCandidateChanged?: () => void
 }
 
 export default function DiscoverModal({
@@ -19,6 +25,7 @@ export default function DiscoverModal({
   onDiscover,
   onClose,
   discovering,
+  onCandidateChanged,
 }: Props) {
   const [renaming, setRenaming] = useState<{ id: number; value: string } | null>(null)
 
@@ -68,59 +75,23 @@ export default function DiscoverModal({
             </p>
             <div className="flex flex-col gap-2">
               {candidates.map(c => (
-                <div key={c.id} className="bg-neutral-800/40 border border-neutral-700/50 rounded-lg p-2.5">
-                  {/* Name row + actions */}
-                  <div className="flex justify-between items-start gap-2 mb-0.5">
-                    {renaming?.id === c.id ? (
-                      <input
-                        autoFocus
-                        className="flex-1 bg-neutral-900 border border-amber-500/40 rounded px-1.5 py-0.5 text-xs text-amber-300 font-medium outline-none focus:border-amber-500"
-                        value={renaming.value}
-                        onChange={e => setRenaming({ id: c.id, value: e.target.value })}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && renaming.value.trim()) {
-                            onAccept(c.id, renaming.value.trim())
-                            setRenaming(null)
-                          }
-                          if (e.key === 'Escape') setRenaming(null)
-                        }}
-                        onBlur={() => setRenaming(null)}
-                      />
-                    ) : (
-                      <span
-                        className="text-xs font-medium text-amber-300 cursor-pointer hover:underline"
-                        onClick={() => setRenaming({ id: c.id, value: c.name })}
-                        title="Click to rename"
-                      >
-                        {c.name}
-                      </span>
-                    )}
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={() => onAccept(c.id)}
-                        className="px-2 py-0.5 rounded text-[10px] bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => onReject(c.id)}
-                        className="px-2 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Similarity tag */}
-                  {c.similar_to && (
-                    <p className="text-[9px] text-violet-400 mb-1">
-                      similar to: <span className="text-violet-300">{c.similar_to}</span>
-                    </p>
-                  )}
-
-                  {/* Description */}
-                  <p className="text-[10px] text-neutral-500 leading-snug">{c.description}</p>
-                </div>
+                c.kind === 'co_occurrence' ? (
+                  <CoOccurrenceCard
+                    key={c.id}
+                    c={c}
+                    labels={labels}
+                    onChanged={onCandidateChanged}
+                  />
+                ) : (
+                  <BroadLabelCard
+                    key={c.id}
+                    c={c}
+                    renaming={renaming}
+                    setRenaming={setRenaming}
+                    onAccept={onAccept}
+                    onReject={onReject}
+                  />
+                )
               ))}
             </div>
           </div>
@@ -143,6 +114,169 @@ export default function DiscoverModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+
+function BroadLabelCard({
+  c, renaming, setRenaming, onAccept, onReject,
+}: {
+  c: ConceptCandidate
+  renaming: { id: number; value: string } | null
+  setRenaming: (r: { id: number; value: string } | null) => void
+  onAccept: (id: number, name?: string) => Promise<void>
+  onReject: (id: number) => Promise<void>
+}) {
+  return (
+    <div className="bg-neutral-800/40 border border-neutral-700/50 rounded-lg p-2.5">
+      <div className="flex justify-between items-start gap-2 mb-0.5">
+        {renaming?.id === c.id ? (
+          <input
+            autoFocus
+            className="flex-1 bg-neutral-900 border border-amber-500/40 rounded px-1.5 py-0.5 text-xs text-amber-300 font-medium outline-none focus:border-amber-500"
+            value={renaming.value}
+            onChange={e => setRenaming({ id: c.id, value: e.target.value })}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && renaming.value.trim()) {
+                onAccept(c.id, renaming.value.trim())
+                setRenaming(null)
+              }
+              if (e.key === 'Escape') setRenaming(null)
+            }}
+            onBlur={() => setRenaming(null)}
+          />
+        ) : (
+          <span
+            className="text-xs font-medium text-amber-300 cursor-pointer hover:underline"
+            onClick={() => setRenaming({ id: c.id, value: c.name })}
+            title="Click to rename"
+          >
+            {c.name}
+          </span>
+        )}
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={() => onAccept(c.id)}
+            className="px-2 py-0.5 rounded text-[10px] bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+          >
+            Accept
+          </button>
+          <button
+            onClick={() => onReject(c.id)}
+            className="px-2 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+
+      {c.similar_to && (
+        <p className="text-[9px] text-violet-400 mb-1">
+          similar to: <span className="text-violet-300">{c.similar_to}</span>
+        </p>
+      )}
+      <p className="text-[10px] text-neutral-500 leading-snug">{c.description}</p>
+      {c.discovery_run_id != null && (
+        <p className="mt-1 text-[9px] text-neutral-600">
+          run #{c.discovery_run_id} · broad
+        </p>
+      )}
+    </div>
+  )
+}
+
+
+function CoOccurrenceCard({
+  c, labels, onChanged,
+}: {
+  c: ConceptCandidate
+  labels: LabelDefinition[]
+  onChanged?: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const ids = c.co_occurrence_label_ids ?? [0, 0]
+  const count = c.co_occurrence_count ?? 0
+  const labelById = new Map(labels.map(l => [l.id, l.name]))
+  const a = labelById.get(ids[0]) ?? `#${ids[0]}`
+  const b = labelById.get(ids[1]) ?? `#${ids[1]}`
+
+  const note = async () => {
+    setBusy(true)
+    try { await api.noteConceptCandidate(c.id); onChanged?.() }
+    finally { setBusy(false) }
+  }
+  const makeLabel = async () => {
+    setBusy(true)
+    try { await api.makeLabelFromCandidate(c.id); onChanged?.() }
+    finally { setBusy(false) }
+  }
+  const dismiss = async () => {
+    setBusy(true)
+    try { await api.dismissConceptCandidate(c.id); onChanged?.() }
+    finally { setBusy(false) }
+  }
+  const suggestMerge = async () => {
+    if (!ids[0] || !ids[1]) return
+    const archive = Math.min(ids[0], ids[1])
+    const keep = Math.max(ids[0], ids[1])
+    setBusy(true)
+    try {
+      await api.suggestMergeFromCandidate(c.id, archive, keep)
+      onChanged?.()
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="bg-neutral-800/40 border border-neutral-700/50 rounded-lg p-2.5">
+      <p className="text-xs font-medium text-violet-300">
+        Pattern: <span className="text-violet-400">{a}</span>
+        {' + '}
+        <span className="text-violet-400">{b}</span>
+      </p>
+      <p className="text-[10px] text-neutral-500 mt-0.5">
+        co-occur on {count} message{count === 1 ? '' : 's'}
+      </p>
+      {c.description && (
+        <p className="mt-1 text-[10px] text-neutral-500 leading-snug">{c.description}</p>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        <button
+          disabled={busy}
+          onClick={makeLabel}
+          className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+        >
+          Make a combo label
+        </button>
+        <button
+          disabled={busy}
+          onClick={suggestMerge}
+          className="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+        >
+          Suggest merge
+        </button>
+        <button
+          disabled={busy}
+          onClick={note}
+          className="px-2 py-0.5 rounded text-[10px] bg-neutral-700/50 text-neutral-300 hover:bg-neutral-700 transition-colors disabled:opacity-50"
+        >
+          Note only
+        </button>
+        <button
+          disabled={busy}
+          onClick={dismiss}
+          className="px-2 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+        >
+          Dismiss
+        </button>
+      </div>
+
+      {c.discovery_run_id != null && (
+        <p className="mt-1 text-[9px] text-neutral-600">
+          run #{c.discovery_run_id} · co-occurrence
+        </p>
+      )}
     </div>
   )
 }

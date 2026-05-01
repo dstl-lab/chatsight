@@ -33,9 +33,10 @@ interface Props {
   onReorderLabels: (labelIds: number[]) => void
   onArchiveLabel: (labelId: number) => void
   candidates: ConceptCandidate[]
-  onDiscover: () => void
+  onDiscover: (queryKind?: 'broad_label' | 'co_occurrence') => void
   onOpenDiscoverModal: () => void
   discovering: boolean
+  multiLabeledCount?: number
   recalibration: {
     phase: 'blind' | 'reconcile'
     originalLabelIds: Set<number>
@@ -166,7 +167,7 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
-  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
+  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering, multiLabeledCount,
   recalibration, recalibrationStats,
 }: Props) {
   const [showPopover, setShowPopover] = useState(false)
@@ -321,6 +322,7 @@ export function ProgressSidebar({
         candidates={candidates}
         aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
         labeledCount={stats?.labeled_count ?? 0}
+        multiLabeledCount={multiLabeledCount}
         onDiscover={onDiscover}
         onOpenModal={onOpenDiscoverModal}
         discovering={discovering}
