@@ -99,6 +99,7 @@ export interface QueueStats {
   total_messages: number
   labeled_count: number
   skipped_count: number
+  multi_labeled_count?: number
 }
 
 export interface ApplyLabelRequest {
@@ -160,6 +161,11 @@ export interface HistoryItem {
   processed_at: string
 }
 
+export type ConceptCandidateKind = 'broad_label' | 'co_occurrence'
+
+export type ConceptDecision =
+  | 'accept' | 'reject' | 'dismiss' | 'suggest_merge' | 'note'
+
 export interface ConceptCandidate {
   id: number
   name: string
@@ -169,6 +175,33 @@ export interface ConceptCandidate {
   source_run_id: string
   similar_to: string | null
   created_at: string
+  // New RAG-discovery fields (optional for backwards compat with legacy rows)
+  kind?: ConceptCandidateKind
+  discovery_run_id?: number | null
+  decision?: ConceptDecision | null
+  created_label_id?: number | null
+  evidence_message_ids?: { chatlog_id: number; message_index: number }[] | null
+  co_occurrence_label_ids?: [number, number] | null
+  co_occurrence_count?: number | null
+}
+
+export interface RipeSignal {
+  ripe: boolean
+  pool_size: number
+  drift_value: number | null
+  reasons: string[]
+}
+
+export interface DiscoveryRun {
+  id: number
+  started_at: string
+  completed_at: string | null
+  query_kind: ConceptCandidateKind
+  trigger: 'manual' | 'badge'
+  drift_value_at_trigger: number | null
+  pool_size_at_trigger: number
+  n_candidates: number
+  error: string | null
 }
 
 export interface EmbedStatus {

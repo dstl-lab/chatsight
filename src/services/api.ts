@@ -6,6 +6,7 @@ import type {
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
+  ConceptCandidateKind, RipeSignal, DiscoveryRun,
 } from '../types'
 import { mockApi } from '../mocks'
 
@@ -111,14 +112,27 @@ export const api = {
     USE_MOCK ? Promise.resolve({ archived: ids.length } as any)
              : req('/api/history/archive-orphaned', { method: 'POST', ...json({ messages: ids }) }),
 
-  // Concept Discovery
-  discoverConcepts: (limit = 10): Promise<any> =>
-    USE_MOCK ? Promise.resolve({ candidates: [], status: { cached: 0, total_unlabeled: 0, running: false } })
-             : req(`/api/concepts/discover?limit=${limit}`, { method: 'POST' }),
+  // Concept Discovery — RAG-style mode-aware API
+  discoverConcepts: (
+    query_kind: ConceptCandidateKind = 'broad_label',
+    trigger: 'manual' | 'badge' = 'manual',
+  ): Promise<{ run_id: number | string; status: string }> =>
+    USE_MOCK ? Promise.resolve({ run_id: 'starting', status: 'running' })
+             : req('/api/concepts/discover', {
+                 method: 'POST', ...json({ query_kind, trigger }),
+               }),
 
-  getCandidates: (): Promise<ConceptCandidate[]> =>
-    USE_MOCK ? Promise.resolve([])
-             : req('/api/concepts/candidates'),
+  getCandidates: (
+    filters: { run_id?: number; kind?: ConceptCandidateKind; decision?: string } = {},
+  ): Promise<ConceptCandidate[]> => {
+    if (USE_MOCK) return Promise.resolve([])
+    const p = new URLSearchParams()
+    if (filters.run_id != null) p.set('run_id', String(filters.run_id))
+    if (filters.kind) p.set('kind', filters.kind)
+    if (filters.decision) p.set('decision', filters.decision)
+    const qs = p.toString() ? `?${p.toString()}` : ''
+    return req(`/api/concepts/candidates${qs}`)
+  },
 
   resolveCandidate: (id: number, action: 'accept' | 'reject', name?: string): Promise<LabelDefinition | { ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
@@ -127,6 +141,55 @@ export const api = {
   getEmbedStatus: (): Promise<EmbedStatus> =>
     USE_MOCK ? Promise.resolve({ cached: 0, total_unlabeled: 0, running: false })
              : req('/api/concepts/embed-status'),
+
+  getConceptRipe: (): Promise<RipeSignal> =>
+    USE_MOCK ? Promise.resolve({ ripe: false, pool_size: 0, drift_value: 0, reasons: ['pool_below_threshold'] })
+             : req('/api/concepts/ripe'),
+
+  acceptConceptCandidate: (
+    id: number,
+  ): Promise<{ candidate_id: number; created_label_id: number; applied_count: number }> =>
+    USE_MOCK ? Promise.resolve({ candidate_id: id, created_label_id: 0, applied_count: 0 })
+             : req(`/api/concepts/candidates/${id}/accept`, {
+                 method: 'POST', ...json({}),
+               }),
+
+  dismissConceptCandidate: (id: number, reason?: string): Promise<{ ok: true }> =>
+    USE_MOCK ? Promise.resolve({ ok: true as const })
+             : req(`/api/concepts/candidates/${id}/dismiss`, {
+                 method: 'POST', ...json({ reason }),
+               }),
+
+  noteConceptCandidate: (id: number): Promise<{ ok: true }> =>
+    USE_MOCK ? Promise.resolve({ ok: true as const })
+             : req(`/api/concepts/candidates/${id}/note`, {
+                 method: 'POST', ...json({}),
+               }),
+
+  makeLabelFromCandidate: (
+    id: number,
+  ): Promise<{ candidate_id: number; created_label_id: number }> =>
+    USE_MOCK ? Promise.resolve({ candidate_id: id, created_label_id: 0 })
+             : req(`/api/concepts/candidates/${id}/make-label`, {
+                 method: 'POST', ...json({}),
+               }),
+
+  suggestMergeFromCandidate: (
+    id: number, archive_label_id: number, keep_label_id: number,
+  ): Promise<{ archived_label_id: number; kept_label_id: number; retagged_count: number }> =>
+    USE_MOCK ? Promise.resolve({
+                 archived_label_id: archive_label_id,
+                 kept_label_id: keep_label_id,
+                 retagged_count: 0,
+               })
+             : req(`/api/concepts/candidates/${id}/suggest-merge`, {
+                 method: 'POST',
+                 ...json({ archive_label_id, keep_label_id }),
+               }),
+
+  getDiscoveryRuns: (limit = 20): Promise<DiscoveryRun[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req(`/api/concepts/runs?limit=${limit}`),
 
   getConversationMessages: (chatlogId: number): Promise<ConversationMessage[]> =>
     USE_MOCK ? Promise.resolve([])

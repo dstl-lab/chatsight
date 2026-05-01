@@ -1,14 +1,24 @@
-import os
-import uuid
-import json
-import numpy as np
-from typing import List, Dict, Any
-from google import genai
-from google.genai import types
-from sqlmodel import Session, select
-from sklearn.cluster import KMeans
+"""Concept discovery orchestrator.
 
-from models import MessageEmbedding, ConceptCandidate, LabelDefinition
+embed_messages() is preserved for use by concept_retrieval. The
+old KMeans-based discover_concepts() pipeline has been removed in
+favor of the RAG-style discover() orchestrator below.
+"""
+import os
+import json
+from datetime import datetime
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+from google import genai
+from sqlmodel import Session, func, select
+
+from models import (
+    ConceptCandidate, DiscoveryRun, LabelApplication, LabelDefinition,
+    MessageEmbedding,
+)
+
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
@@ -18,17 +28,16 @@ EMBED_BATCH_SIZE = 100  # Gemini API limit per call
 
 
 def embed_messages(
-    messages: List[Dict[str, Any]], db: Session
+    messages: List[Dict[str, Any]], db: Session,
 ) -> np.ndarray:
     """Embed messages, using cached embeddings where available.
 
     Each message dict must have: chatlog_id, message_index, message_text.
-    Returns numpy array of shape (len(messages), 768).
+    Returns a (len(messages), EMBED_DIM) float32 array.
     """
     vectors = np.zeros((len(messages), EMBED_DIM), dtype=np.float32)
     uncached_indices: List[int] = []
 
-    # Check cache
     for i, msg in enumerate(messages):
         cached = db.exec(
             select(MessageEmbedding).where(
@@ -45,7 +54,6 @@ def embed_messages(
     if not uncached_indices:
         return vectors
 
-    # Embed uncached in batches
     for batch_start in range(0, len(uncached_indices), EMBED_BATCH_SIZE):
         batch_idx = uncached_indices[batch_start : batch_start + EMBED_BATCH_SIZE]
         texts = [messages[i]["message_text"] for i in batch_idx]
@@ -58,7 +66,6 @@ def embed_messages(
         for j, idx in enumerate(batch_idx):
             vec = np.array(result.embeddings[j].values, dtype=np.float32)
             vectors[idx] = vec
-            # Cache
             row = MessageEmbedding(
                 chatlog_id=messages[idx]["chatlog_id"],
                 message_index=messages[idx]["message_index"],
@@ -71,255 +78,246 @@ def embed_messages(
     return vectors
 
 
-# ── Gemini concept suggestion tool ────────────────────────────────
+# ── RAG-style discovery orchestrator ───────────────────────────────
 
-SUGGEST_TOOL = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="suggest_concepts",
-        description="Suggest new label categories for unlabeled student messages",
-        parameters={
-            "type": "object",
-            "properties": {
-                "concepts": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string", "description": "Short label name"},
-                            "description": {"type": "string", "description": "1-2 sentence definition"},
-                            "evidence": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "2-3 representative message excerpts",
-                            },
-                            "cluster_ids": {
-                                "type": "array",
-                                "items": {"type": "integer"},
-                                "description": "Which cluster indices this concept spans",
-                            },
-                        },
-                        "required": ["name", "description", "evidence", "cluster_ids"],
-                    },
-                },
-            },
-            "required": ["concepts"],
-        },
-    )
-])
-
-SUGGEST_CONFIG = types.GenerateContentConfig(
-    system_instruction=(
-        "You are an education researcher analyzing student-AI tutoring conversations. "
-        "You are given groups of similar student messages that have NOT been labeled yet. "
-        "Your job is to propose new label categories that capture pedagogically meaningful patterns. "
-        "Only propose categories that are genuinely distinct from the existing labels provided. "
-        "Be precise and evidence-based."
-    ),
-    temperature=0,
-    tools=[SUGGEST_TOOL],
-    tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(
-            mode="ANY",
-            allowed_function_names=["suggest_concepts"],
-        )
-    ),
+from concept_retrieval import retrieve_residual, retrieve_co_occurrence
+from concept_generation import (
+    generate_broad_labels, generate_co_occurrence_concepts,
 )
 
 
-def _build_discovery_prompt(
-    samples_by_cluster: Dict[int, List[Dict[str, Any]]],
-    existing_labels: List[Dict[str, str]],
-    rejected_names: List[str],
-) -> str:
-    """Build the prompt for Gemini concept discovery."""
-    parts = []
-
-    parts.append("## Existing Labels (already in use — do NOT re-suggest these)")
-    parts.append("These labels reflect the instructor's labeling style. Study their naming conventions,")
-    parts.append("granularity, and thematic focus. Your suggestions MUST match this style.\n")
-    for label in existing_labels:
-        desc = f" — {label['description']}" if label.get("description") else ""
-        parts.append(f"- **{label['name']}**{desc}")
-
-    if rejected_names:
-        parts.append("\n## Previously Rejected (do NOT suggest these again)")
-        for name in rejected_names:
-            parts.append(f"- {name}")
-
-    parts.append("\n## Unlabeled Message Clusters")
-    parts.append("Each cluster contains similar messages that don't fit existing labels.\n")
-
-    for cluster_id, samples in samples_by_cluster.items():
-        parts.append(f"### Cluster {cluster_id}")
-        for s in samples:
-            text = s["message_text"][:300]
-            parts.append(f'- "{text}"')
-        parts.append("")
-
-    parts.append(
-        "## Task\n"
-        "Analyze these clusters and propose new label categories.\n\n"
-        "**Naming style:** Match the instructor's naming convention. Look at the existing labels —\n"
-        "if they use short lowercase phrases (e.g. 'code help', 'confused how to start'),\n"
-        "your names should follow the same format. Don't use title case or formal academic phrasing\n"
-        "unless the existing labels do.\n\n"
-        "**Thematic scope:** You are NOT limited to the same themes as existing labels.\n"
-        "If the existing labels focus on actions (e.g. 'code help', 'validation') but you notice\n"
-        "emotional, social, or metacognitive patterns in the clusters, propose those too.\n"
-        "New dimensions of student behavior are valuable — just use consistent naming style.\n\n"
-        "Each category should:\n"
-        "- Use the same naming style as existing labels\n"
-        "- Be pedagogically meaningful\n"
-        "- Be distinct from existing labels\n"
-        "- Reference specific message excerpts as evidence\n\n"
-        "Call the `suggest_concepts` tool with your proposed categories."
-    )
-
-    return "\n".join(parts)
+@dataclass
+class AcceptResult:
+    candidate_id: int
+    created_label_id: int
+    applied_count: int
 
 
-def _deduplicate_concepts(
-    concepts: List[Dict[str, Any]], threshold: float = 0.85
-) -> List[Dict[str, Any]]:
-    """Remove near-duplicate concepts using embedding cosine similarity.
+def _read_recalibration_due(db: Session) -> bool:
+    """Returns True if the PR #36 recalibration system says drift is up.
+    Lazily imports from main to avoid a top-level circular dependency."""
+    from main import _compute_recalibration_interval
+    from models import RecalibrationEvent, LabelingSession
 
-    Greedy: iterate in order, keep a concept only if its max similarity
-    to all previously kept concepts is below threshold.
-    """
-    if len(concepts) <= 1:
-        return concepts
+    session_row = db.exec(
+        select(LabelingSession).order_by(LabelingSession.id.desc())
+    ).first()
+    if not session_row:
+        return False
 
-    texts = [f"{c['name']}: {c['description']}" for c in concepts]
-    result = client.models.embed_content(model=EMBED_MODEL, contents=texts)
-    vectors = np.array([e.values for e in result.embeddings], dtype=np.float32)
+    events = list(db.exec(
+        select(RecalibrationEvent).order_by(RecalibrationEvent.id.asc())
+    ).all())
+    interval = _compute_recalibration_interval(events)
+    cutoff = events[-1].created_at if events else session_row.started_at
 
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-9
-    normed = vectors / norms
-
-    kept_indices: List[int] = [0]
-    for i in range(1, len(concepts)):
-        kept_vecs = normed[kept_indices]
-        sims = kept_vecs @ normed[i]
-        if float(np.max(sims)) < threshold:
-            kept_indices.append(i)
-
-    return [concepts[i] for i in kept_indices]
-
-
-def discover_concepts(
-    messages: List[Dict[str, Any]],
-    db: Session,
-    n_clusters: int = 8,
-    sample_per_cluster: int = 5,
-) -> List[ConceptCandidate]:
-    """Embed, cluster, sample, and ask Gemini to propose new label categories.
-
-    Each message dict must have: chatlog_id, message_index, message_text.
-    Returns list of ConceptCandidate rows (already saved to DB).
-    """
-    if len(messages) < 5:
-        return []
-
-    # 1. Embed
-    vectors = embed_messages(messages, db)
-
-    # 2. Cluster
-    k = min(n_clusters, len(messages) // 5)
-    k = max(k, 2)
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(vectors)
-
-    # 3. Sample nearest-to-centroid from each cluster
-    samples_by_cluster: Dict[int, List[Dict[str, Any]]] = {}
-    for cluster_id in range(k):
-        mask = labels == cluster_id
-        if not mask.any():
-            continue
-        cluster_vectors = vectors[mask]
-        cluster_messages = [messages[i] for i in range(len(messages)) if labels[i] == cluster_id]
-        centroid = kmeans.cluster_centers_[cluster_id]
-        distances = np.linalg.norm(cluster_vectors - centroid, axis=1)
-        nearest_idx = np.argsort(distances)[:sample_per_cluster]
-        samples_by_cluster[cluster_id] = [cluster_messages[i] for i in nearest_idx]
-
-    # 4. Gather existing + rejected labels
-    existing = [
-        {"name": ld.name, "description": ld.description or ""}
-        for ld in db.exec(
-            select(LabelDefinition).where(LabelDefinition.archived_at == None)
-        ).all()
-    ]
-    rejected = [
-        cc.name for cc in db.exec(
-            select(ConceptCandidate).where(ConceptCandidate.status == "rejected")
-        ).all()
-    ]
-
-    # 5. Call Gemini
-    prompt = _build_discovery_prompt(samples_by_cluster, existing, rejected)
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
-        config=SUGGEST_CONFIG,
-    )
-
-    # 6. Parse response
-    concepts_raw: List[Dict[str, Any]] = []
-    for part in response.candidates[0].content.parts:
-        if part.function_call and part.function_call.name == "suggest_concepts":
-            args = dict(part.function_call.args)
-            concepts_raw = list(args.get("concepts", []))
-            break
-
-    # 6b. Deduplicate similar concepts
-    concepts_raw = _deduplicate_concepts(concepts_raw)
-
-    # 7. Compute similarity to existing labels
-    label_vectors = None
-    if existing:
-        label_texts = [f"{ld['name']}: {ld['description']}" for ld in existing]
-        label_embed_result = client.models.embed_content(
-            model=EMBED_MODEL,
-            contents=label_texts,
+    labeled_since = db.exec(
+        select(func.count()).select_from(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .where(LabelApplication.applied_by == "human")
+            .where(LabelApplication.created_at > cutoff)
+            .distinct()
+            .subquery()
         )
-        label_vectors = np.array(
-            [e.values for e in label_embed_result.embeddings], dtype=np.float32
+    ).one()
+    return labeled_since >= interval
+
+
+def _persist_drafts(
+    drafts: list[dict], run: DiscoveryRun, db: Session,
+) -> list[ConceptCandidate]:
+    out: list[ConceptCandidate] = []
+    for d in drafts:
+        cc = ConceptCandidate(
+            name=d["name"],
+            description=d.get("description", ""),
+            example_messages=json.dumps([{"excerpt": ""}]),  # legacy column
+            source_run_id=str(run.id),  # legacy column
+            kind=d["kind"],
+            discovery_run_id=run.id,
+            evidence_message_ids=(
+                json.dumps(d["evidence_message_ids"])
+                if d.get("evidence_message_ids") is not None else None
+            ),
+            co_occurrence_label_ids=(
+                json.dumps(d["co_occurrence_label_ids"])
+                if d.get("co_occurrence_label_ids") is not None else None
+            ),
+            co_occurrence_count=d.get("co_occurrence_count"),
         )
-
-    # 8. Save candidates with similarity
-    run_id = str(uuid.uuid4())[:8]
-    candidates: List[ConceptCandidate] = []
-    for c in concepts_raw:
-        nearest_label: str | None = None
-        if label_vectors is not None and c.get("cluster_ids"):
-            cids = [int(ci) for ci in c["cluster_ids"] if int(ci) < k]
-            if cids:
-                concept_vec = np.mean(
-                    [kmeans.cluster_centers_[ci] for ci in cids], axis=0
-                )
-                concept_norm = concept_vec / (np.linalg.norm(concept_vec) + 1e-9)
-                label_norms = label_vectors / (
-                    np.linalg.norm(label_vectors, axis=1, keepdims=True) + 1e-9
-                )
-                similarities = label_norms @ concept_norm
-                best_idx = int(np.argmax(similarities))
-                if similarities[best_idx] > 0.75:
-                    nearest_label = existing[best_idx]["name"]
-
-        example_data = [{"excerpt": e} for e in c.get("evidence", [])]
-        candidate = ConceptCandidate(
-            name=c["name"],
-            description=c["description"],
-            example_messages=json.dumps(example_data),
-            status="pending",
-            source_run_id=run_id,
-            similar_to=nearest_label,
-        )
-        db.add(candidate)
-        candidates.append(candidate)
-
+        db.add(cc)
+        out.append(cc)
     db.commit()
-    for candidate in candidates:
-        db.refresh(candidate)
+    for cc in out:
+        db.refresh(cc)
+    return out
 
-    return candidates
+
+def discover(
+    db: Session,
+    query_kind: str,
+    trigger: str,
+    *,
+    threshold: float = 0.55,
+    target_size: int = 80,
+    min_count: int = 8,
+) -> DiscoveryRun:
+    """Orchestrates one discovery run end-to-end. Always finalizes the
+    run (sets completed_at and either n_candidates or error)."""
+    run = DiscoveryRun(
+        query_kind=query_kind,
+        trigger=trigger,
+        pool_size_at_trigger=0,  # filled in below
+        drift_value_at_trigger=None,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    try:
+        try:
+            run.drift_value_at_trigger = (
+                1.0 if _read_recalibration_due(db) else 0.0
+            )
+        except Exception:
+            run.drift_value_at_trigger = None
+
+        if query_kind == "broad_label":
+            retrieved = retrieve_residual(
+                db, threshold=threshold, target_size=target_size,
+            )
+            run.pool_size_at_trigger = len(retrieved)
+            existing = [
+                {"name": l.name, "description": l.description or "", "id": l.id}
+                for l in db.exec(
+                    select(LabelDefinition).where(
+                        LabelDefinition.archived_at == None  # noqa: E711
+                    )
+                ).all()
+            ]
+            rejected = [
+                cc.name for cc in db.exec(
+                    select(ConceptCandidate).where(
+                        ConceptCandidate.decision == "reject"
+                    )
+                ).all()
+            ]
+            drafts = generate_broad_labels(retrieved, existing, rejected)
+        elif query_kind == "co_occurrence":
+            pairs = retrieve_co_occurrence(db, min_count=min_count)
+            run.pool_size_at_trigger = len(pairs)
+            existing = [
+                {"name": l.name, "description": l.description or "", "id": l.id}
+                for l in db.exec(
+                    select(LabelDefinition).where(
+                        LabelDefinition.archived_at == None  # noqa: E711
+                    )
+                ).all()
+            ]
+            drafts = generate_co_occurrence_concepts(pairs, existing)
+        else:
+            raise ValueError(f"unknown query_kind: {query_kind}")
+
+        candidates = _persist_drafts(drafts, run, db)
+        run.n_candidates = len(candidates)
+    except Exception as e:
+        run.error = str(e)
+    finally:
+        run.completed_at = datetime.utcnow()
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+    return run
+
+
+def accept_broad_label(candidate_id: int, db: Session) -> AcceptResult:
+    """Mode A acceptance:
+    1. Create a LabelDefinition from the candidate.
+    2. Auto-apply it to evidence messages with applied_by='ai',
+       confidence=0.6.
+    3. Set candidate.decision='accept', decided_at, created_label_id.
+    """
+    cc = db.get(ConceptCandidate, candidate_id)
+    if cc is None:
+        raise ValueError(f"candidate {candidate_id} not found")
+    if cc.kind != "broad_label":
+        raise ValueError(
+            f"accept_broad_label requires kind='broad_label', got '{cc.kind}'"
+        )
+    if cc.decision in ("accept", "dismiss", "reject"):
+        raise ValueError(
+            f"candidate {candidate_id} already decided: {cc.decision}"
+        )
+
+    new_label = LabelDefinition(
+        name=cc.name, description=cc.description or None,
+    )
+    db.add(new_label)
+    db.commit()
+    db.refresh(new_label)
+
+    evidence: list[dict] = []
+    if cc.evidence_message_ids:
+        try:
+            evidence = json.loads(cc.evidence_message_ids)
+        except (TypeError, ValueError):
+            evidence = []
+
+    applied = 0
+    for ev in evidence:
+        try:
+            chatlog_id = int(ev["chatlog_id"])
+            message_index = int(ev["message_index"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        db.add(LabelApplication(
+            chatlog_id=chatlog_id,
+            message_index=message_index,
+            label_id=new_label.id,
+            applied_by="ai",
+            confidence=0.6,
+        ))
+        applied += 1
+
+    cc.decision = "accept"
+    cc.decided_at = datetime.utcnow()
+    cc.created_label_id = new_label.id
+    cc.status = "accepted"  # legacy column for backwards compat
+    db.add(cc)
+    db.commit()
+
+    return AcceptResult(
+        candidate_id=cc.id,
+        created_label_id=new_label.id,
+        applied_count=applied,
+    )
+
+
+def is_discovery_ripe(db: Session, min_pool: int = 30) -> dict:
+    """Returns a JSON-friendly ripeness signal. Cheap; safe to poll."""
+    from concept_retrieval import thinly_labeled_pool
+    pool = thinly_labeled_pool(db)
+    pool_size = len(pool)
+
+    drift_due = False
+    drift_value: Optional[float] = None
+    try:
+        drift_due = _read_recalibration_due(db)
+        drift_value = 1.0 if drift_due else 0.0
+    except Exception:
+        drift_value = None
+
+    reasons: list[str] = []
+    if pool_size < min_pool:
+        reasons.append("pool_below_threshold")
+    if not drift_due:
+        reasons.append("drift_low")
+    ripe = pool_size >= min_pool and drift_due
+    if ripe:
+        reasons = ["ok"]
+    return {
+        "ripe": ripe,
+        "pool_size": pool_size,
+        "drift_value": drift_value,
+        "reasons": reasons,
+    }

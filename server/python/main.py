@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent, DiscoveryRun
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -29,6 +29,9 @@ from schemas import (
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
     LabelReviewResponse,
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
+    StartDiscoverRequest, RipeSignalResponse, AcceptCandidateResponse, DismissRequest,
+    GenericOk, MakeLabelResponse, SuggestMergeRequest, SuggestMergeResponse,
+    DiscoveryRunResponse,
 )
 from sqlmodel import Session, select
 
@@ -827,10 +830,29 @@ def get_queue_stats(db: Session = Depends(get_session)):
     ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
     total = db.exec(select(func.count(MessageCache.id))).one() or 0
+
+    # Count messages with >= 2 active human labels (gates Mode B in UI).
+    multi_labeled_subq = (
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            func.count(LabelApplication.id).label("n"),
+        )
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelApplication.applied_by == "human")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .subquery()
+    )
+    multi_labeled_count = db.exec(
+        select(func.count()).select_from(multi_labeled_subq)
+        .where(multi_labeled_subq.c.n >= 2)
+    ).one()
     return {
         "total_messages": total,
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
+        "multi_labeled_count": multi_labeled_count,
     }
 
 
@@ -1656,72 +1678,265 @@ def delete_label(
 
 # ── Concept Induction ──────────────────────────────────────────────
 
-_discover_status: dict = {"running": False, "run_id": None, "error": None}
+_discover_status: dict = {
+    "running": False, "run_id": None, "error": None, "query_kind": None,
+}
 
 
-def _run_discover():
-    """Background task: embed, cluster, and discover concepts."""
-    import uuid
-    from concept_service import discover_concepts
+def _run_discover(query_kind: str, trigger: str):
+    """Background task: dispatches to concept_service.discover()."""
+    from concept_service import discover
     from database import engine as local_engine
     global _discover_status
 
-    run_id = str(uuid.uuid4())[:8]
-    _discover_status = {"running": True, "run_id": run_id, "error": None}
-
     try:
         with Session(local_engine) as db:
-            # Get labeled (chatlog_id, message_index) pairs
-            labeled_keys = set()
-            for la in db.exec(select(LabelApplication)).all():
-                labeled_keys.add((la.chatlog_id, la.message_index))
-
-            # Get all messages from cache that are unlabeled
-            all_messages = []
-            for mc in db.exec(select(MessageCache)).all():
-                key = (mc.chatlog_id, mc.message_index)
-                if key not in labeled_keys:
-                    all_messages.append({
-                        "chatlog_id": mc.chatlog_id,
-                        "message_index": mc.message_index,
-                        "message_text": mc.message_text,
-                    })
-
-            if not all_messages:
-                _discover_status = {"running": False, "run_id": run_id, "error": "No unlabeled messages found"}
-                return
-
-            discover_concepts(all_messages, db)
-            _discover_status = {"running": False, "run_id": run_id, "error": None}
-
+            run = discover(db, query_kind=query_kind, trigger=trigger)
+            _discover_status = {
+                "running": False,
+                "run_id": str(run.id) if run.id is not None else None,
+                "error": run.error,
+                "query_kind": query_kind,
+            }
     except Exception as e:
-        _discover_status = {"running": False, "run_id": _discover_status.get("run_id"), "error": str(e)}
+        _discover_status = {
+            "running": False,
+            "run_id": _discover_status.get("run_id"),
+            "error": str(e),
+            "query_kind": query_kind,
+        }
 
 
 @app.post("/api/concepts/discover", response_model=DiscoverConceptsResponse)
-def start_discover():
+def start_discover(req: StartDiscoverRequest):
+    global _discover_status
     if _discover_status["running"]:
-        raise HTTPException(status_code=409, detail="Concept discovery already in progress")
-    thread = threading.Thread(target=_run_discover, daemon=True)
+        raise HTTPException(
+            status_code=409, detail="Concept discovery already in progress",
+        )
+    _discover_status = {
+        "running": True, "run_id": None, "error": None,
+        "query_kind": req.query_kind,
+    }
+    thread = threading.Thread(
+        target=_run_discover, args=(req.query_kind, req.trigger), daemon=True,
+    )
     thread.start()
-    return DiscoverConceptsResponse(run_id=_discover_status.get("run_id") or "starting", status="running")
+    return DiscoverConceptsResponse(run_id="starting", status="running")
+
+
+@app.get("/api/concepts/ripe", response_model=RipeSignalResponse)
+def get_concept_ripe(db: Session = Depends(get_session)):
+    from concept_service import is_discovery_ripe
+    return is_discovery_ripe(db)
+
+
+def _candidate_to_response(cc: ConceptCandidate) -> ConceptCandidateResponse:
+    return ConceptCandidateResponse(
+        id=cc.id,
+        name=cc.name,
+        description=cc.description or "",
+        example_messages=(
+            json_mod.loads(cc.example_messages) if cc.example_messages else []
+        ),
+        status=cc.status,
+        source_run_id=cc.source_run_id,
+        similar_to=cc.similar_to,
+        created_at=cc.created_at,
+        kind=cc.kind,
+        discovery_run_id=cc.discovery_run_id,
+        decision=cc.decision,
+        created_label_id=cc.created_label_id,
+        evidence_message_ids=(
+            json_mod.loads(cc.evidence_message_ids)
+            if cc.evidence_message_ids else None
+        ),
+        co_occurrence_label_ids=(
+            json_mod.loads(cc.co_occurrence_label_ids)
+            if cc.co_occurrence_label_ids else None
+        ),
+        co_occurrence_count=cc.co_occurrence_count,
+    )
 
 
 @app.get("/api/concepts/candidates", response_model=List[ConceptCandidateResponse])
-def get_candidates(db: Session = Depends(get_session)):
+def get_candidates(
+    run_id: Optional[int] = None,
+    kind: Optional[str] = None,
+    decision: Optional[str] = None,
+    db: Session = Depends(get_session),
+):
+    q = select(ConceptCandidate)
+    any_filter = run_id is not None or kind is not None or decision is not None
+    if run_id is not None:
+        q = q.where(ConceptCandidate.discovery_run_id == run_id)
+    if kind is not None:
+        q = q.where(ConceptCandidate.kind == kind)
+    if decision is not None:
+        q = q.where(ConceptCandidate.decision == decision)
+    if not any_filter:
+        # Backwards-compat default: only undecided/pending candidates.
+        q = q.where(ConceptCandidate.status == "pending")
+    rows = db.exec(q.order_by(ConceptCandidate.id.desc())).all()
+    return [_candidate_to_response(r) for r in rows]
+
+
+@app.post(
+    "/api/concepts/candidates/{candidate_id}/accept",
+    response_model=AcceptCandidateResponse,
+)
+def post_accept_candidate(
+    candidate_id: int, db: Session = Depends(get_session),
+):
+    from concept_service import accept_broad_label
+    try:
+        result = accept_broad_label(candidate_id, db)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=400, detail=msg)
+    return AcceptCandidateResponse(
+        candidate_id=result.candidate_id,
+        created_label_id=result.created_label_id,
+        applied_count=result.applied_count,
+    )
+
+
+@app.post(
+    "/api/concepts/candidates/{candidate_id}/dismiss",
+    response_model=GenericOk,
+)
+def post_dismiss_candidate(
+    candidate_id: int, req: DismissRequest,
+    db: Session = Depends(get_session),
+):
+    cc = db.get(ConceptCandidate, candidate_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    cc.decision = "dismiss"
+    cc.decided_at = datetime.utcnow()
+    cc.status = "rejected"  # legacy
+    db.add(cc)
+    db.commit()
+    return GenericOk()
+
+
+@app.post(
+    "/api/concepts/candidates/{candidate_id}/note",
+    response_model=GenericOk,
+)
+def post_note_candidate(
+    candidate_id: int, db: Session = Depends(get_session),
+):
+    cc = db.get(ConceptCandidate, candidate_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    if cc.kind != "co_occurrence":
+        raise HTTPException(
+            status_code=400,
+            detail="note requires kind='co_occurrence'",
+        )
+    cc.decision = "note"
+    cc.decided_at = datetime.utcnow()
+    db.add(cc)
+    db.commit()
+    return GenericOk()
+
+
+@app.post(
+    "/api/concepts/candidates/{candidate_id}/make-label",
+    response_model=MakeLabelResponse,
+)
+def post_make_label(
+    candidate_id: int, db: Session = Depends(get_session),
+):
+    cc = db.get(ConceptCandidate, candidate_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    if cc.kind != "co_occurrence":
+        raise HTTPException(
+            status_code=400,
+            detail="make-label requires kind='co_occurrence'",
+        )
+    new_label = LabelDefinition(
+        name=cc.name, description=cc.description or None,
+    )
+    db.add(new_label)
+    db.commit()
+    db.refresh(new_label)
+    cc.decision = "accept"
+    cc.decided_at = datetime.utcnow()
+    cc.created_label_id = new_label.id
+    cc.status = "accepted"
+    db.add(cc)
+    db.commit()
+    return MakeLabelResponse(
+        candidate_id=cc.id, created_label_id=new_label.id,
+    )
+
+
+@app.post(
+    "/api/concepts/candidates/{candidate_id}/suggest-merge",
+    response_model=SuggestMergeResponse,
+)
+def post_suggest_merge(
+    candidate_id: int, req: SuggestMergeRequest,
+    db: Session = Depends(get_session),
+):
+    cc = db.get(ConceptCandidate, candidate_id)
+    if cc is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    if cc.kind != "co_occurrence":
+        raise HTTPException(
+            status_code=400,
+            detail="suggest-merge requires kind='co_occurrence'",
+        )
+    archive_label = db.get(LabelDefinition, req.archive_label_id)
+    keep_label = db.get(LabelDefinition, req.keep_label_id)
+    if archive_label is None or keep_label is None:
+        raise HTTPException(status_code=404, detail="label not found")
+    # Reuse the same retag-then-delete pattern as POST /api/labels/merge.
+    db.exec(
+        update(LabelApplication)
+        .where(LabelApplication.label_id == req.archive_label_id)
+        .values(label_id=req.keep_label_id)
+    )
+    retagged_count = db.exec(
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == req.keep_label_id
+        )
+    ).one()
+    db.delete(archive_label)
+    cc.decision = "suggest_merge"
+    cc.decided_at = datetime.utcnow()
+    db.add(cc)
+    db.commit()
+    return SuggestMergeResponse(
+        archived_label_id=req.archive_label_id,
+        kept_label_id=req.keep_label_id,
+        retagged_count=retagged_count,
+    )
+
+
+@app.get("/api/concepts/runs", response_model=List[DiscoveryRunResponse])
+def get_discovery_runs(
+    limit: int = 20, db: Session = Depends(get_session),
+):
     rows = db.exec(
-        select(ConceptCandidate).where(ConceptCandidate.status == "pending").order_by(ConceptCandidate.created_at)
+        select(DiscoveryRun).order_by(DiscoveryRun.id.desc()).limit(limit)
     ).all()
     return [
-        ConceptCandidateResponse(
+        DiscoveryRunResponse(
             id=r.id,
-            name=r.name,
-            description=r.description,
-            example_messages=json_mod.loads(r.example_messages),
-            status=r.status,
-            source_run_id=r.source_run_id,
-            similar_to=r.similar_to,
-            created_at=r.created_at,
+            started_at=r.started_at,
+            completed_at=r.completed_at,
+            query_kind=r.query_kind,
+            trigger=r.trigger,
+            drift_value_at_trigger=r.drift_value_at_trigger,
+            pool_size_at_trigger=r.pool_size_at_trigger,
+            n_candidates=r.n_candidates,
+            error=r.error,
         )
         for r in rows
     ]

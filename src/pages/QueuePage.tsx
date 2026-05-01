@@ -599,11 +599,11 @@ export function QueuePage() {
 		}, 2000);
 	};
 
-	const handleDiscover = async () => {
+	const handleDiscover = async (queryKind: 'broad_label' | 'co_occurrence' = 'broad_label') => {
 		setDiscovering(true);
-		await api.discoverConcepts();
+		await api.discoverConcepts(queryKind, 'manual');
 		discoverPollRef.current = setInterval(async () => {
-			const result = await api.getCandidates();
+			const result = await api.getCandidates({ kind: queryKind });
 			const embedStatus = await api.getEmbedStatus();
 			if (result.length > 0) {
 				setCandidates(result);
@@ -937,6 +937,7 @@ export function QueuePage() {
 						onDiscover={handleDiscover}
 						onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
 						discovering={discovering}
+						multiLabeledCount={stats?.multi_labeled_count ?? 0}
 						recalibration={recalibration ? {
 							phase: recalibration.phase,
 							originalLabelIds: new Set(recalibration.item.original_label_ids),
