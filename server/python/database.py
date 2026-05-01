@@ -8,6 +8,30 @@ load_dotenv()
 DATABASE_URL = "sqlite:///./chatsight.db"
 engine = create_engine(DATABASE_URL, echo=False)
 
+CONCEPT_CANDIDATE_NEW_COLUMNS: list[tuple[str, str]] = [
+    ("kind", "TEXT DEFAULT 'broad_label'"),
+    ("discovery_run_id", "INTEGER"),
+    ("shown_at", "DATETIME"),
+    ("decided_at", "DATETIME"),
+    ("decision", "TEXT"),
+    ("created_label_id", "INTEGER"),
+    ("evidence_message_ids", "TEXT"),
+    ("co_occurrence_label_ids", "TEXT"),
+    ("co_occurrence_count", "INTEGER"),
+]
+
+
+def migrate_concept_candidate_columns(conn) -> None:
+    """Add new RAG-discovery columns to conceptcandidate if missing.
+    Idempotent: safe to call repeatedly."""
+    from sqlalchemy import text, inspect
+    existing = {c["name"] for c in inspect(conn).get_columns("conceptcandidate")}
+    for name, ddl in CONCEPT_CANDIDATE_NEW_COLUMNS:
+        if name not in existing:
+            conn.execute(text(f"ALTER TABLE conceptcandidate ADD COLUMN {name} {ddl}"))
+    conn.commit()
+
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     # Migrate: add sort_order column if missing (added in task4 branch)
@@ -26,6 +50,8 @@ def create_db_and_tables():
         if "confidence" not in cols_la:
             conn.execute(text("ALTER TABLE labelapplication ADD COLUMN confidence FLOAT DEFAULT NULL"))
             conn.commit()
+        # Migrate: add RAG-discovery columns to conceptcandidate
+        migrate_concept_candidate_columns(conn)
         # Add indexes for fast lookups on (chatlog_id, message_index)
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_labelapp_chatlog_msg "

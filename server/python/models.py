@@ -75,11 +75,29 @@ class ConceptCandidate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     description: str
-    example_messages: str  # JSON string
-    status: str = "pending"  # pending | accepted | rejected
-    source_run_id: str
+    example_messages: str  # JSON string (legacy column, retained)
+
+    # Legacy fields — retained for backwards compat with old rows
+    status: str = "pending"  # pending | accepted | rejected (legacy)
+    source_run_id: str  # legacy string-keyed run id
     similar_to: Optional[str] = Field(default=None)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # New RAG-discovery fields
+    kind: str = "broad_label"  # "broad_label" | "co_occurrence"
+    discovery_run_id: Optional[int] = Field(
+        default=None, foreign_key="discoveryrun.id"
+    )
+    shown_at: Optional[datetime] = None
+    decided_at: Optional[datetime] = None
+    decision: Optional[str] = None  # accept | reject | dismiss | suggest_merge | note
+    created_label_id: Optional[int] = Field(
+        default=None, foreign_key="labeldefinition.id"
+    )
+    evidence_message_ids: Optional[str] = None  # JSON list of {chatlog_id, message_index}
+    co_occurrence_label_ids: Optional[str] = None  # JSON [int, int]
+    co_occurrence_count: Optional[int] = None
 
 
 class SuggestionCache(SQLModel, table=True):
@@ -91,3 +109,15 @@ class SuggestionCache(SQLModel, table=True):
     rationale: str
     labels_hash: str  # hash of all active label names; invalidated when labels change
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DiscoveryRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    query_kind: str  # "broad_label" | "co_occurrence"
+    trigger: str  # "manual" | "badge"
+    drift_value_at_trigger: Optional[float] = None
+    pool_size_at_trigger: int
+    n_candidates: int = 0
+    error: Optional[str] = None
