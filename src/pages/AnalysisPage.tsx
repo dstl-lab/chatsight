@@ -230,7 +230,7 @@ export function AnalysisPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">
+      <div className="flex-1 flex items-center justify-center text-muted text-sm">
         Loading analysis…
       </div>
     )
@@ -238,7 +238,7 @@ export function AnalysisPage() {
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center text-red-400 text-sm px-4 text-center">
+      <div className="flex-1 flex items-center justify-center text-danger-text text-sm px-4 text-center">
         {error}
       </div>
     )
@@ -352,36 +352,36 @@ export function AnalysisPage() {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-6 bg-neutral-950 text-neutral-100 min-h-0">
+    <div className="flex-1 overflow-auto p-6 bg-canvas text-on-canvas min-h-0">
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-neutral-100">Analysis</h1>
-            <p className="text-sm text-neutral-500 mt-1">
+            <h1 className="text-xl font-semibold text-on-canvas">Analysis</h1>
+            <p className="text-sm text-faint mt-1">
               How student messages are labeled (human vs AI) across notebooks and conversation depth
             </p>
           </div>
           <button
             type="button"
             onClick={handleExport}
-            className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-sm text-neutral-100 border border-neutral-700"
+            className="px-4 py-2 rounded-lg bg-elevated hover:bg-elevated-hl text-sm text-on-canvas border border-edge"
           >
             Download CSV
           </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-start">
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
+          <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[280px]">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h2 className="text-sm font-medium text-neutral-300">Label Frequency</h2>
+              <h2 className="text-sm font-medium text-tertiary">Label Frequency</h2>
               <div className="flex gap-2 text-xs">
                 <button
                   type="button"
                   onClick={() => setLabelFreqMode('combined')}
                   className={`px-2 py-1 rounded border ${
                     labelFreqMode === 'combined'
-                      ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
-                      : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                      ? 'bg-elevated-hl border-edge-strong text-on-canvas'
+                      : 'bg-surface border-edge text-muted hover:border-edge-strong'
                   }`}
                 >
                   Combined
@@ -391,8 +391,8 @@ export function AnalysisPage() {
                   onClick={() => setLabelFreqMode('human')}
                   className={`px-2 py-1 rounded border ${
                     labelFreqMode === 'human'
-                      ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
-                      : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                      ? 'bg-elevated-hl border-edge-strong text-on-canvas'
+                      : 'bg-surface border-edge text-muted hover:border-edge-strong'
                   }`}
                 >
                   Human only
@@ -402,8 +402,8 @@ export function AnalysisPage() {
                   onClick={() => setLabelFreqMode('ai')}
                   className={`px-2 py-1 rounded border ${
                     labelFreqMode === 'ai'
-                      ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
-                      : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                      ? 'bg-elevated-hl border-edge-strong text-on-canvas'
+                      : 'bg-surface border-edge text-muted hover:border-edge-strong'
                   }`}
                 >
                   AI only
@@ -411,12 +411,12 @@ export function AnalysisPage() {
               </div>
             </div>
             {freqData.length === 0 ? (
-              <p className="text-sm text-neutral-500">
+              <p className="text-sm text-faint">
                 No labels for this source yet.
               </p>
             ) : labelFreqMode === 'combined' ? (
               <div className="space-y-2">
-                <p className="text-[10px] text-neutral-500 pl-[138px] pr-12">
+                <p className="text-[10px] text-faint pl-[138px] pr-12">
                   Bar length is vs the largest label total (human + AI). Green / indigo split is the mix within that
                   label.
                 </p>
@@ -433,15 +433,15 @@ export function AnalysisPage() {
                     return (
                       <div key={row.label} className="flex items-center gap-2 text-xs min-h-[26px]">
                         <div
-                          className="w-[130px] shrink-0 truncate text-neutral-300 text-right pr-1"
+                          className="w-[130px] shrink-0 truncate text-tertiary text-right pr-1"
                           title={row.label}
                         >
                           {row.label}
                         </div>
-                        <div className="flex-1 min-w-0 h-6 rounded-md bg-neutral-800/60 border border-neutral-800/80 relative">
+                        <div className="flex-1 min-w-0 h-6 rounded-md bg-elevated/60 border border-edge-subtle/80 relative">
                           {row.count > 0 && (
                             <div
-                              className="absolute left-0 top-0 bottom-0 flex rounded overflow-hidden border border-neutral-800 shadow-sm"
+                              className="absolute left-0 top-0 bottom-0 flex rounded overflow-hidden border border-edge-subtle shadow-sm"
                               style={{
                                 width: `${lenPct}%`,
                                 minWidth: row.count > 0 ? 3 : 0,
@@ -465,14 +465,14 @@ export function AnalysisPage() {
                             </div>
                           )}
                         </div>
-                        <span className="w-10 shrink-0 text-right tabular-nums text-neutral-400">
+                        <span className="w-10 shrink-0 text-right tabular-nums text-muted">
                           {row.count.toLocaleString()}
                         </span>
                       </div>
                     )
                   })}
                 </div>
-                <div className="flex flex-wrap gap-4 pt-1 text-xs text-neutral-500">
+                <div className="flex flex-wrap gap-4 pt-1 text-xs text-faint">
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
                     Human
@@ -516,15 +516,15 @@ export function AnalysisPage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
-            <h2 className="text-sm font-medium text-neutral-300 mb-1">Coverage</h2>
-            <p className="text-xs text-neutral-500 mb-4">
-              Share of all student messages in Postgres (<code className="text-neutral-400">tutor_query</code> total).
+          <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[280px]">
+            <h2 className="text-sm font-medium text-tertiary mb-1">Coverage</h2>
+            <p className="text-xs text-faint mb-4">
+              Share of all student messages in Postgres (<code className="text-muted">tutor_query</code> total).
               Human vs AI counts are unique messages with at least one label from that source.
             </p>
             <div className="space-y-4">
               <div
-                className="flex h-10 w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900"
+                className="flex h-10 w-full overflow-hidden rounded-lg border border-edge-subtle bg-surface"
                 role="img"
                 aria-label="Coverage stacked bar: human, AI, unlabeled"
               >
@@ -539,12 +539,12 @@ export function AnalysisPage() {
                   title={`AI-labeled: ${covAi}`}
                 />
                 <div
-                  className="h-full bg-neutral-600 min-w-0 transition-[width] duration-300"
+                  className="h-full bg-elevated-hl min-w-0 transition-[width] duration-300"
                   style={{ width: `${barPct(covUnlabeled)}%` }}
                   title={`Unlabeled: ${covUnlabeled}`}
                 />
               </div>
-              <div className="flex flex-wrap gap-4 text-xs text-neutral-400">
+              <div className="flex flex-wrap gap-4 text-xs text-muted">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
                   Human-labeled
@@ -554,36 +554,36 @@ export function AnalysisPage() {
                   AI-labeled
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 shrink-0 rounded-sm bg-neutral-600" />
+                  <span className="h-2 w-2 shrink-0 rounded-sm bg-elevated-hl" />
                   Unlabeled
                 </span>
               </div>
-              <div className="overflow-hidden rounded-lg border border-neutral-800">
+              <div className="overflow-hidden rounded-lg border border-edge-subtle">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-neutral-900/80 text-neutral-400">
+                  <thead className="bg-surface/80 text-muted">
                     <tr>
                       <th className="p-2 font-medium">Category</th>
                       <th className="p-2 font-medium text-right tabular-nums">Count</th>
                       <th className="p-2 font-medium text-right tabular-nums">% of total</th>
                     </tr>
                   </thead>
-                  <tbody className="text-neutral-200">
-                    <tr className="border-t border-neutral-800">
+                  <tbody className="text-on-surface">
+                    <tr className="border-t border-edge-subtle">
                       <td className="p-2">Human-labeled</td>
                       <td className="p-2 text-right tabular-nums">{covHuman.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{pctOfTotal(covHuman).toFixed(1)}%</td>
                     </tr>
-                    <tr className="border-t border-neutral-800">
+                    <tr className="border-t border-edge-subtle">
                       <td className="p-2">AI-labeled</td>
                       <td className="p-2 text-right tabular-nums">{covAi.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{pctOfTotal(covAi).toFixed(1)}%</td>
                     </tr>
-                    <tr className="border-t border-neutral-800">
+                    <tr className="border-t border-edge-subtle">
                       <td className="p-2">Unlabeled</td>
                       <td className="p-2 text-right tabular-nums">{covUnlabeled.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">{pctOfTotal(covUnlabeled).toFixed(1)}%</td>
                     </tr>
-                    <tr className="border-t border-neutral-800 bg-neutral-900/60 font-medium text-neutral-100">
+                    <tr className="border-t border-edge-subtle bg-surface/60 font-medium text-on-canvas">
                       <td className="p-2">Total messages</td>
                       <td className="p-2 text-right tabular-nums">{summary.coverage.total.toLocaleString()}</td>
                       <td className="p-2 text-right tabular-nums">100%</td>
@@ -594,13 +594,13 @@ export function AnalysisPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[300px] lg:col-span-2">
-            <h2 className="text-sm font-medium text-neutral-300 mb-4">Conversation Position</h2>
+          <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[300px] lg:col-span-2">
+            <h2 className="text-sm font-medium text-tertiary mb-4">Conversation Position</h2>
             {posData.length === 0 ? (
-              <p className="text-sm text-neutral-500">No position data yet.</p>
+              <p className="text-sm text-faint">No position data yet.</p>
             ) : (
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-400">
+                <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
                   <span className="inline-flex items-center gap-1">
                     <span className="h-2 w-2 rounded-sm bg-emerald-400" />
                     Early (0–2)
@@ -616,29 +616,29 @@ export function AnalysisPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[480px] overflow-y-auto pr-1">
                   {posData.map((row) => (
-                    <div key={row.label} className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-                      <p className="text-xs text-neutral-200 truncate mb-2" title={row.label}>{row.label}</p>
+                    <div key={row.label} className="rounded-lg border border-edge-subtle bg-surface/60 p-3">
+                      <p className="text-xs text-on-surface truncate mb-2" title={row.label}>{row.label}</p>
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Early</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                          <span className="w-12 text-[10px] text-muted">Early</span>
+                          <div className="flex-1 h-2 rounded bg-elevated overflow-hidden">
                             <div className="h-full bg-emerald-400" style={{ width: `${(row.early / posMax) * 100}%` }} />
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.early}</span>
+                          <span className="w-7 text-right text-[10px] text-tertiary tabular-nums">{row.early}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Mid</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                          <span className="w-12 text-[10px] text-muted">Mid</span>
+                          <div className="flex-1 h-2 rounded bg-elevated overflow-hidden">
                             <div className="h-full bg-sky-400" style={{ width: `${(row.mid / posMax) * 100}%` }} />
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.mid}</span>
+                          <span className="w-7 text-right text-[10px] text-tertiary tabular-nums">{row.mid}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="w-12 text-[10px] text-neutral-400">Late</span>
-                          <div className="flex-1 h-2 rounded bg-neutral-800 overflow-hidden">
+                          <span className="w-12 text-[10px] text-muted">Late</span>
+                          <div className="flex-1 h-2 rounded bg-elevated overflow-hidden">
                             <div className="h-full bg-violet-400" style={{ width: `${(row.late / posMax) * 100}%` }} />
                           </div>
-                          <span className="w-7 text-right text-[10px] text-neutral-300 tabular-nums">{row.late}</span>
+                          <span className="w-7 text-right text-[10px] text-tertiary tabular-nums">{row.late}</span>
                         </div>
                       </div>
                     </div>
@@ -649,40 +649,40 @@ export function AnalysisPage() {
           </section>
         </div>
 
-        <div className="border-t border-neutral-800 pt-8 space-y-6">
+        <div className="border-t border-edge-subtle pt-8 space-y-6">
           <div>
-            <h2 className="text-lg font-medium text-neutral-200">Temporal &amp; usage context</h2>
+            <h2 className="text-lg font-medium text-on-surface">Temporal &amp; usage context</h2>
             {temporal && (
-              <p className="text-xs text-neutral-500 mt-1 max-w-3xl">{temporal.tutor_usage.timezone_note}</p>
+              <p className="text-xs text-faint mt-1 max-w-3xl">{temporal.tutor_usage.timezone_note}</p>
             )}
             {temporalError && (
-              <p className="text-sm text-amber-500/90 mt-2">
+              <p className="text-sm text-warning mt-2">
                 Temporal charts unavailable: {temporalError}
               </p>
             )}
             {temporalLoading && !temporal && (
-              <p className="text-sm text-neutral-500 mt-2">Loading temporal analysis…</p>
+              <p className="text-sm text-faint mt-2">Loading temporal analysis…</p>
             )}
           </div>
 
           {temporal && (
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[260px]">
-                  <h3 className="text-sm font-medium text-neutral-300 mb-4">Tutor usage (hour of day)</h3>
-                  <p className="text-xs text-neutral-500 mb-2">
-                    Aggregate student messages (<code className="text-neutral-400">tutor_query</code>) from
+                <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[260px]">
+                  <h3 className="text-sm font-medium text-tertiary mb-4">Tutor usage (hour of day)</h3>
+                  <p className="text-xs text-faint mb-2">
+                    Aggregate student messages (<code className="text-muted">tutor_query</code>) from
                     Postgres. Hours are local wall clock in{' '}
-                    <code className="text-neutral-400">
+                    <code className="text-muted">
                       {temporal.tutor_usage.display_timezone ?? 'America/Los_Angeles'}
                     </code>{' '}
                     (see note above).
                   </p>
                   {tutorUsageErr ? (
-                    <p className="text-sm text-amber-500/90">{tutorUsageErr}</p>
+                    <p className="text-sm text-warning">{tutorUsageErr}</p>
                   ) : tutorUsageEmpty ? (
-                    <p className="text-sm text-neutral-500">
-                      No <code className="text-neutral-400">tutor_query</code> rows found — charts stay empty when
+                    <p className="text-sm text-faint">
+                      No <code className="text-muted">tutor_query</code> rows found — charts stay empty when
                       every hour is zero. Check port-forward and that the external DB has student messages.
                     </p>
                   ) : (
@@ -720,19 +720,19 @@ export function AnalysisPage() {
                   )}
                 </section>
 
-                <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[260px]">
-                  <h3 className="text-sm font-medium text-neutral-300 mb-4">Tutor usage (day of week)</h3>
-                  <p className="text-xs text-neutral-500 mb-2">
+                <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[260px]">
+                  <h3 className="text-sm font-medium text-tertiary mb-4">Tutor usage (day of week)</h3>
+                  <p className="text-xs text-faint mb-2">
                     0 = Sunday … 6 = Saturday in{' '}
-                    <code className="text-neutral-400">
+                    <code className="text-muted">
                       {temporal.tutor_usage.display_timezone ?? 'America/Los_Angeles'}
                     </code>
                     .
                   </p>
                   {tutorUsageErr ? (
-                    <p className="text-sm text-amber-500/90">{tutorUsageErr}</p>
+                    <p className="text-sm text-warning">{tutorUsageErr}</p>
                   ) : tutorUsageEmpty ? (
-                    <p className="text-sm text-neutral-500">
+                    <p className="text-sm text-faint">
                       Same data as the hour chart — when all counts are zero, bars have no height (nothing to see).
                     </p>
                   ) : (
@@ -766,42 +766,42 @@ export function AnalysisPage() {
                 </section>
               </div>
 
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+              <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                  <h3 className="text-sm font-medium text-neutral-300">Tutor usage (calendar)</h3>
+                  <h3 className="text-sm font-medium text-tertiary">Tutor usage (calendar)</h3>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
                       aria-label="Previous month"
                       onClick={() => setCalMonth((d) => addCalendarMonth(d, -1))}
-                      className="px-2 py-1 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 text-xs hover:bg-neutral-800"
+                      className="px-2 py-1 rounded border border-edge bg-surface text-tertiary text-xs hover:bg-elevated"
                     >
                       ←
                     </button>
-                    <span className="text-sm text-neutral-200 min-w-[11rem] text-center tabular-nums">
+                    <span className="text-sm text-on-surface min-w-[11rem] text-center tabular-nums">
                       {calMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
                     </span>
                     <button
                       type="button"
                       aria-label="Next month"
                       onClick={() => setCalMonth((d) => addCalendarMonth(d, 1))}
-                      className="px-2 py-1 rounded border border-neutral-700 bg-neutral-900 text-neutral-300 text-xs hover:bg-neutral-800"
+                      className="px-2 py-1 rounded border border-edge bg-surface text-tertiary text-xs hover:bg-elevated"
                     >
                       →
                     </button>
                   </div>
                 </div>
-                <p className="text-xs text-neutral-500 mb-3">
-                  Daily <code className="text-neutral-400">tutor_query</code> counts for the visible month (from
+                <p className="text-xs text-faint mb-3">
+                  Daily <code className="text-muted">tutor_query</code> counts for the visible month (from
                   Postgres). Darker = more messages. Hover a date for tutor volume and assignment details.
                 </p>
                 {tutorUsageErr ? (
-                  <p className="text-sm text-amber-500/90">{tutorUsageErr}</p>
+                  <p className="text-sm text-warning">{tutorUsageErr}</p>
                 ) : temporalLoading ? (
-                  <p className="text-sm text-neutral-500">Updating calendar…</p>
+                  <p className="text-sm text-faint">Updating calendar…</p>
                 ) : (
                   <>
-                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-wide text-faint mb-1">
                       {WEEKDAY_SHORT.map((d) => (
                         <div key={d}>{d}</div>
                       ))}
@@ -813,13 +813,13 @@ export function AnalysisPage() {
                         ) : (
                           <div
                             key={cell.key}
-                            className="group relative min-h-[44px] rounded border border-neutral-700/80 flex flex-col items-center justify-center gap-0.5 px-0.5 py-1 text-neutral-100"
+                            className="group relative min-h-[44px] rounded border border-edge/80 flex flex-col items-center justify-center gap-0.5 px-0.5 py-1 text-on-canvas"
                             style={{ backgroundColor: dayCellBg(cell.count) }}
                             aria-label={`${cell.dateStr}: ${cell.count} tutor messages${
                               cell.milestones.length ? `; ${cell.milestones.length} assignment event(s)` : ''
                             }`}
                           >
-                            <span className="text-[10px] text-neutral-400 leading-none">{cell.day}</span>
+                            <span className="text-[10px] text-muted leading-none">{cell.day}</span>
                             <span className="text-[11px] font-medium tabular-nums leading-none">{cell.count}</span>
                             {cell.milestones.length > 0 && (
                               <div className="flex items-center gap-0.5">
@@ -830,34 +830,34 @@ export function AnalysisPage() {
                                   />
                                 ))}
                                 {cell.milestones.length > 3 && (
-                                  <span className="text-[9px] text-neutral-300 leading-none">+{cell.milestones.length - 3}</span>
+                                  <span className="text-[9px] text-tertiary leading-none">+{cell.milestones.length - 3}</span>
                                 )}
                               </div>
                             )}
                             <div
-                              className="pointer-events-none absolute left-1/2 z-50 w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-neutral-600 bg-neutral-950 px-2.5 py-2 text-left text-[10px] leading-snug text-neutral-200 shadow-xl opacity-0 shadow-black/40 transition-opacity duration-150 group-hover:opacity-100"
+                              className="pointer-events-none absolute left-1/2 z-50 w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-edge-strong bg-canvas px-2.5 py-2 text-left text-[10px] leading-snug text-on-surface shadow-xl opacity-0 shadow-black/40 transition-opacity duration-150 group-hover:opacity-100"
                               style={{ bottom: 'calc(100% + 6px)' }}
                               role="tooltip"
                             >
-                              <div className="font-medium text-neutral-100">{cell.dateStr}</div>
-                              <div className="text-neutral-400">{cell.count} tutor messages</div>
+                              <div className="font-medium text-on-canvas">{cell.dateStr}</div>
+                              <div className="text-muted">{cell.count} tutor messages</div>
                               {cell.milestones.length > 0 ? (
-                                <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto border-t border-neutral-800 pt-1.5">
+                                <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto border-t border-edge-subtle pt-1.5">
                                   {cell.milestones.map((m, i) => (
                                     <li key={`${cell.key}-tip-${m.title}-${i}`} className="flex gap-1.5">
                                       <span
                                         className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${milestoneKindColor(m.kind)}`}
                                       />
                                       <span>
-                                        <span className="text-neutral-500">{milestoneKindLabel(m.kind)}:</span>{' '}
+                                        <span className="text-faint">{milestoneKindLabel(m.kind)}:</span>{' '}
                                         {m.title}
-                                        {m.note ? <span className="text-neutral-500"> — {m.note}</span> : null}
+                                        {m.note ? <span className="text-faint"> — {m.note}</span> : null}
                                       </span>
                                     </li>
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="mt-1.5 border-t border-neutral-800 pt-1.5 text-neutral-500">
+                                <p className="mt-1.5 border-t border-edge-subtle pt-1.5 text-faint">
                                   No assignment milestones on this date.
                                 </p>
                               )}
@@ -867,7 +867,7 @@ export function AnalysisPage() {
                         ),
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-neutral-400">
+                    <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-muted">
                       <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-400" />Due</span>
                       <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />Late due</span>
                       <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-cyan-400" />Release / posted</span>
@@ -876,9 +876,9 @@ export function AnalysisPage() {
                 )}
               </section>
 
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
+              <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h3 className="text-sm font-medium text-neutral-300">Notebook × label heatmap</h3>
+                  <h3 className="text-sm font-medium text-tertiary">Notebook × label heatmap</h3>
                   <div className="flex gap-2 text-xs">
                     {(['raw', 'row', 'column'] as const).map((m) => (
                       <button
@@ -887,8 +887,8 @@ export function AnalysisPage() {
                         onClick={() => setHeatmapMode(m)}
                         className={`px-2 py-1 rounded border ${
                           heatmapMode === m
-                            ? 'bg-neutral-700 border-neutral-500 text-neutral-100'
-                            : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:border-neutral-600'
+                            ? 'bg-elevated-hl border-edge-strong text-on-canvas'
+                            : 'bg-surface border-edge text-muted hover:border-edge-strong'
                         }`}
                       >
                         {m === 'raw' ? 'Raw counts' : m === 'row' ? 'Row %' : 'Column %'}
@@ -897,7 +897,7 @@ export function AnalysisPage() {
                   </div>
                 </div>
                 {!hm || hm.notebooks.length === 0 || hm.labels.length === 0 ? (
-                  <p className="text-sm text-neutral-500">
+                  <p className="text-sm text-faint">
                     No notebook × label matrix yet (needs Postgres + labeled applications).
                   </p>
                 ) : (
@@ -905,13 +905,13 @@ export function AnalysisPage() {
                     <table className="text-xs border-collapse min-w-[320px]">
                       <thead>
                         <tr>
-                          <th className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-left text-neutral-400 font-medium">
+                          <th className="border border-edge bg-elevated/80 px-2 py-1.5 text-left text-muted font-medium">
                             Notebook
                           </th>
                           {hm.labels.map((lbl) => (
                             <th
                               key={lbl}
-                              className="border border-neutral-700 bg-neutral-800/80 px-2 py-1.5 text-neutral-300 font-medium max-w-[140px]"
+                              className="border border-edge bg-elevated/80 px-2 py-1.5 text-tertiary font-medium max-w-[140px]"
                             >
                               {lbl}
                             </th>
@@ -921,7 +921,7 @@ export function AnalysisPage() {
                       <tbody>
                         {hm.notebooks.map((nb, ri) => (
                           <tr key={nb}>
-                            <td className="border border-neutral-700 bg-neutral-800/40 px-2 py-1.5 text-neutral-300 whitespace-nowrap">
+                            <td className="border border-edge bg-elevated/40 px-2 py-1.5 text-tertiary whitespace-nowrap">
                               {nb}
                             </td>
                             {hm.labels.map((lbl, ci) => {
@@ -934,7 +934,7 @@ export function AnalysisPage() {
                               return (
                                 <td
                                   key={lbl}
-                                  className="border border-neutral-700 px-2 py-1.5 text-center text-neutral-200 tabular-nums"
+                                  className="border border-edge px-2 py-1.5 text-center text-on-surface tabular-nums"
                                   style={{ backgroundColor: heatmapCellBg(heatmapMode === 'raw' ? rawVal : disp) }}
                                   title={title}
                                 >
@@ -950,14 +950,14 @@ export function AnalysisPage() {
                 )}
               </section>
 
-              <section className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-4 min-h-[280px]">
-                <h3 className="text-sm font-medium text-neutral-300 mb-4">Labeling throughput</h3>
-                <p className="text-xs text-neutral-500 mb-2">
-                  SQLite <code className="text-neutral-400">LabelApplication.created_at</code> by day —
+              <section className="rounded-xl border border-edge-subtle bg-surface/50 p-4 min-h-[280px]">
+                <h3 className="text-sm font-medium text-tertiary mb-4">Labeling throughput</h3>
+                <p className="text-xs text-faint mb-2">
+                  SQLite <code className="text-muted">LabelApplication.created_at</code> by day —
                   human vs AI pipeline volume.
                 </p>
                 {throughputData.length === 0 ? (
-                  <p className="text-sm text-neutral-500">No labels with timestamps yet.</p>
+                  <p className="text-sm text-faint">No labels with timestamps yet.</p>
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
                     <LineChart data={throughputData} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
