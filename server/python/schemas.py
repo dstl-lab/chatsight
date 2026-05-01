@@ -1,6 +1,6 @@
 # server/python/schemas.py
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional, Tuple
 from pydantic import BaseModel
 
 
@@ -164,6 +164,11 @@ class ChatlogResponse(BaseModel):
 
 # ── Concept Induction ──────────────────────────────────────────────
 
+class StartDiscoverRequest(BaseModel):
+    query_kind: Literal["broad_label", "co_occurrence"]
+    trigger: Literal["manual", "badge"] = "manual"
+
+
 class DiscoverConceptsResponse(BaseModel):
     run_id: str
     status: str  # "running"
@@ -178,6 +183,63 @@ class ConceptCandidateResponse(BaseModel):
     source_run_id: str
     similar_to: Optional[str] = None
     created_at: datetime
+    # New RAG-discovery fields
+    kind: str = "broad_label"
+    discovery_run_id: Optional[int] = None
+    decision: Optional[str] = None
+    created_label_id: Optional[int] = None
+    evidence_message_ids: Optional[List[dict]] = None
+    co_occurrence_label_ids: Optional[List[int]] = None
+    co_occurrence_count: Optional[int] = None
+
+
+class RipeSignalResponse(BaseModel):
+    ripe: bool
+    pool_size: int
+    drift_value: Optional[float] = None
+    reasons: List[str]
+
+
+class AcceptCandidateResponse(BaseModel):
+    candidate_id: int
+    created_label_id: int
+    applied_count: int
+
+
+class DismissRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class GenericOk(BaseModel):
+    ok: bool = True
+
+
+class MakeLabelResponse(BaseModel):
+    candidate_id: int
+    created_label_id: int
+
+
+class SuggestMergeRequest(BaseModel):
+    archive_label_id: int
+    keep_label_id: int
+
+
+class SuggestMergeResponse(BaseModel):
+    archived_label_id: int
+    kept_label_id: int
+    retagged_count: int
+
+
+class DiscoveryRunResponse(BaseModel):
+    id: int
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    query_kind: str
+    trigger: str
+    drift_value_at_trigger: Optional[float] = None
+    pool_size_at_trigger: int
+    n_candidates: int
+    error: Optional[str] = None
 
 
 class ResolveCandidateRequest(BaseModel):
