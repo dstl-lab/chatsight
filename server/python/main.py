@@ -830,10 +830,29 @@ def get_queue_stats(db: Session = Depends(get_session)):
     ).one()
     skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
     total = db.exec(select(func.count(MessageCache.id))).one() or 0
+
+    # Count messages with >= 2 active human labels (gates Mode B in UI).
+    multi_labeled_subq = (
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            func.count(LabelApplication.id).label("n"),
+        )
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelApplication.applied_by == "human")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .subquery()
+    )
+    multi_labeled_count = db.exec(
+        select(func.count()).select_from(multi_labeled_subq)
+        .where(multi_labeled_subq.c.n >= 2)
+    ).one()
     return {
         "total_messages": total,
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
+        "multi_labeled_count": multi_labeled_count,
     }
 
 

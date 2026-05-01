@@ -937,6 +937,7 @@ export function QueuePage() {
 						onDiscover={handleDiscover}
 						onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
 						discovering={discovering}
+						multiLabeledCount={stats?.multi_labeled_count ?? 0}
 						recalibration={recalibration ? {
 							phase: recalibration.phase,
 							originalLabelIds: new Set(recalibration.item.original_label_ids),

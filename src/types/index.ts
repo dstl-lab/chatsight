@@ -99,6 +99,7 @@ export interface QueueStats {
   total_messages: number
   labeled_count: number
   skipped_count: number
+  multi_labeled_count?: number
 }
 
 export interface ApplyLabelRequest {
