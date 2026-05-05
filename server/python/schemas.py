@@ -220,3 +220,167 @@ class RecalibrationStatsResponse(BaseModel):
     trend: str  # "improving" | "steady" | "shifting"
     current_interval: int
     total_recalibrations: int
+
+
+# ─── Single-label binary flow ───
+
+class CreateSingleLabelRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class QueueLabelRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class DecideRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    value: str  # "yes" | "no" | "skip"
+
+
+class SingleLabelResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    mode: str
+    phase: str
+    is_active: bool
+    queue_position: Optional[int]
+    yes_count: int
+    no_count: int
+    skip_count: int
+    conversations_walked: int
+    total_conversations: int
+
+
+class TurnResponse(BaseModel):
+    message_index: int
+    role: str  # "student" | "tutor"
+    text: str
+
+
+class FocusedMessageResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    text: str
+    notebook: Optional[str]
+    conversation_turn_count: int
+    thread: List[TurnResponse]
+    focus_index: int
+
+
+class ReadinessResponse(BaseModel):
+    tier: str  # "gray" | "amber" | "green"
+    yes_count: int
+    no_count: int
+    skip_count: int
+    conversations_walked: int
+    total_conversations: int
+    hint: Optional[str]
+
+
+class SummaryPattern(BaseModel):
+    excerpt: str
+    frequency: str  # "common" | "moderate" | "rare"
+    confidence_avg: float
+
+
+class SummaryResponse(BaseModel):
+    label_id: int
+    label_name: str
+    yes_count: int
+    no_count: int
+    review_threshold: float
+    review_count: int
+    included: List[SummaryPattern]
+    excluded: List[SummaryPattern]
+
+
+class HandoffResponse(BaseModel):
+    label_id: int
+    classified: int
+    yes_count: int
+    no_count: int
+    review_count: int
+
+
+class ReviewItemResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    text: str
+    notebook: Optional[str]
+    ai_value: str
+    ai_confidence: float
+
+
+class ReviewRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    value: str  # "yes" | "no"
+
+
+# ─── Assignment mappings ───
+
+class CreateAssignmentRequest(BaseModel):
+    pattern: str
+    name: str
+    description: Optional[str] = None
+
+
+class AssignmentResponse(BaseModel):
+    id: int
+    pattern: str
+    name: str
+    description: Optional[str]
+    message_count: int
+
+
+class UnmappedCountResponse(BaseModel):
+    unmapped_count: int
+    total_count: int
+
+
+class InferAssignmentsResponse(BaseModel):
+    created: int
+    total_notebooks: int
+    groups: List[dict]
+
+
+class HandoffSummaryListItem(BaseModel):
+    label_id: int
+    label_name: str
+    description: Optional[str]
+    phase: str
+    yes_count: int
+    no_count: int
+    review_count: int
+    review_threshold: float
+    included: List[SummaryPattern]
+    excluded: List[SummaryPattern]
+    classified_count: Optional[int] = None
+    classification_total: Optional[int] = None
+    error: Optional[str] = None
+    error_kind: Optional[str] = None  # "rate_limited" | "error" | None
+
+
+class MergeAssignmentsRequest(BaseModel):
+    source_ids: List[int]
+    target_id: int
+    new_name: Optional[str] = None
+
+
+class MergeAssignmentsResponse(BaseModel):
+    merged: int
+    moved_messages: int
+    target_id: int
+
+
+class SkipConversationRequest(BaseModel):
+    chatlog_id: int
+
+
+class SkipConversationResponse(BaseModel):
+    skipped: int
+    chatlog_id: int

@@ -31,12 +31,6 @@ interface UndoState {
 	fromSkippedTab: boolean;
 }
 
-interface RecalibrationState {
-  item: RecalibrationItem
-  phase: 'blind' | 'reconcile'
-  relabelIds: Set<number>
-}
-
 export function QueuePage() {
 	const [queue, setQueue] = useState<QueueItem[]>([]);
 	const [currentIdx, setCurrentIdx] = useState(0);

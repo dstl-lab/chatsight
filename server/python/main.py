@@ -9,7 +9,10 @@ import csv
 import os
 import io
 import logging
+import tempfile
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from calendar import monthrange
 from fastapi import FastAPI, Depends, HTTPException, Query, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +21,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent, ConversationCursor
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -29,15 +32,32 @@ from schemas import (
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
     LabelReviewResponse,
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
+    CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
+    SkipConversationRequest, SkipConversationResponse,
+    SingleLabelResponse, FocusedMessageResponse, ReadinessResponse,
+    SummaryResponse, SummaryPattern, HandoffResponse,
+    ReviewItemResponse, ReviewRequest,
+    CreateAssignmentRequest, AssignmentResponse, UnmappedCountResponse,
+    InferAssignmentsResponse, HandoffSummaryListItem,
+    MergeAssignmentsRequest, MergeAssignmentsResponse,
 )
+import decision_service
+import queue_service
+import binary_autolabel_service
+import assignment_service
+from models import AssignmentMapping
+
+REVIEW_THRESHOLD = 0.75
 from sqlmodel import Session, select
 
 
 def populate_message_cache():
-    """Populate the local MessageCache from the external PostgreSQL events table."""
+    """Populate the local MessageCache from the external PostgreSQL events table.
+    Read-only on the external DB. Idempotent: skips if cache already populated."""
     with Session(engine) as db:
         existing = db.exec(select(func.count(MessageCache.id))).one()
         if existing > 0:
+            backfill_notebooks_if_missing(db)
             return  # Cache already populated
 
     try:
@@ -54,12 +74,14 @@ def populate_message_cache():
                     FROM events WHERE event_type = 'tutor_query'
                 ),
                 chatlog_ids AS (
-                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
+                    SELECT payload->>'conversation_id' AS conv_id,
+                           MIN(id) AS chatlog_id,
+                           MAX(payload->>'notebook') AS notebook
                     FROM events
                     WHERE event_type IN ('tutor_query', 'tutor_response')
                     GROUP BY payload->>'conversation_id'
                 )
-                SELECT s.message_text, s.message_index, ci.chatlog_id,
+                SELECT s.message_text, s.message_index, ci.chatlog_id, ci.notebook,
                     (SELECT e2.payload->>'response' FROM events e2
                      WHERE e2.payload->>'conversation_id' = s.conv_id
                        AND e2.event_type = 'tutor_response' AND e2.id < s.id
@@ -78,12 +100,61 @@ def populate_message_cache():
                     chatlog_id=r["chatlog_id"],
                     message_index=r["message_index"],
                     message_text=r["message_text"],
+                    notebook=r["notebook"],
                     context_before=r["context_before"],
                     context_after=r["context_after"],
                 ))
             db.commit()
     except Exception as e:
         print(f"Warning: could not populate message cache: {e}")
+
+
+def backfill_notebooks_if_missing(db: Session):
+    """If the cache exists but notebook fields are NULL (older cache), fetch notebooks
+    from the external DB by chatlog_id and fill them in. Read-only on external DB."""
+    missing_count = db.exec(
+        select(func.count(MessageCache.id)).where(MessageCache.notebook == None)  # noqa: E711
+    ).one()
+    if missing_count == 0:
+        return
+
+    chatlog_ids = db.exec(
+        select(MessageCache.chatlog_id).distinct().where(MessageCache.notebook == None)  # noqa: E711
+    ).all()
+    if not chatlog_ids:
+        return
+
+    try:
+        with ext_engine.connect() as conn:
+            sql = text("""
+                SELECT MIN(id) AS chatlog_id, MAX(payload->>'notebook') AS notebook
+                FROM events
+                WHERE event_type IN ('tutor_query','tutor_response')
+                  AND payload->>'conversation_id' IS NOT NULL
+                GROUP BY payload->>'conversation_id'
+                HAVING MIN(id) = ANY(:ids)
+            """)
+            rows = conn.execute(sql, {"ids": chatlog_ids}).mappings().all()
+    except Exception as e:
+        print(f"Warning: notebook backfill skipped — external DB unreachable: {e}")
+        return
+
+    notebook_by_chatlog = {r["chatlog_id"]: r["notebook"] for r in rows}
+    if not notebook_by_chatlog:
+        return
+    cache_rows = db.exec(
+        select(MessageCache).where(MessageCache.notebook == None)  # noqa: E711
+    ).all()
+    updated = 0
+    for mc in cache_rows:
+        nb = notebook_by_chatlog.get(mc.chatlog_id)
+        if nb:
+            mc.notebook = nb
+            db.add(mc)
+            updated += 1
+    db.commit()
+    if updated:
+        print(f"Backfilled notebook for {updated} cache rows.")
 
 
 @asynccontextmanager
@@ -259,7 +330,12 @@ def get_chatlog_messages(
 
 @app.get("/api/labels", response_model=List[LabelDefinitionResponse])
 def get_labels(include_archived: bool = False, db: Session = Depends(get_session)):
-    query = select(LabelDefinition).order_by(LabelDefinition.sort_order, LabelDefinition.id)
+    # Multi-label flow only — single-mode labels are exposed via /api/single-labels/.
+    query = (
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "multi")
+        .order_by(LabelDefinition.sort_order, LabelDefinition.id)
+    )
     if not include_archived:
         query = query.where(LabelDefinition.archived_at == None)  # noqa: E711
     labels = db.exec(query).all()
@@ -2484,3 +2560,953 @@ def get_recalibration_stats(db: Session = Depends(get_session)):
 @app.get("/api/queue/sample")
 def get_sample():
     return {"message": "Sampling strategy not yet implemented"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Single-label binary flow
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelResponse:
+    yes, no, skip, walked = decision_service.label_counts(db, label.id)
+    total_convs = db.exec(select(MessageCache.chatlog_id).distinct()).all()
+    return SingleLabelResponse(
+        id=label.id,
+        name=label.name,
+        description=label.description,
+        mode=label.mode,
+        phase=label.phase,
+        is_active=label.is_active,
+        queue_position=label.queue_position,
+        yes_count=yes,
+        no_count=no,
+        skip_count=skip,
+        conversations_walked=walked,
+        total_conversations=len(total_convs),
+    )
+
+
+@app.get("/api/single-labels", response_model=List[SingleLabelResponse])
+def list_single_labels(
+    phase: Optional[str] = None,
+    db: Session = Depends(get_session),
+):
+    q = (
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    )
+    if phase:
+        q = q.where(LabelDefinition.phase == phase)
+    q = q.order_by(LabelDefinition.queue_position, LabelDefinition.created_at)
+    labels = db.exec(q).all()
+    return [_label_to_response(db, lab) for lab in labels]
+
+
+@app.get("/api/single-labels/active", response_model=Optional[SingleLabelResponse])
+def get_active_single_label(db: Session = Depends(get_session)):
+    label = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.is_active == True)  # noqa: E712
+    ).first()
+    if not label:
+        return None
+    return _label_to_response(db, label)
+
+
+@app.post("/api/single-labels", response_model=SingleLabelResponse)
+def create_single_label(
+    req: CreateSingleLabelRequest,
+    db: Session = Depends(get_session),
+):
+    label = LabelDefinition(
+        name=req.name,
+        description=req.description,
+        mode="single",
+        phase="labeling",
+        is_active=False,
+    )
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return _label_to_response(db, label)
+
+
+@app.post("/api/single-labels/queue", response_model=SingleLabelResponse)
+def queue_single_label(
+    req: QueueLabelRequest,
+    db: Session = Depends(get_session),
+):
+    """Add a queued label that will auto-activate when the current active label closes."""
+    existing = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.name == req.name)
+    ).first()
+    if existing:
+        # Idempotent: surface the existing label rather than create a duplicate.
+        return _label_to_response(db, existing)
+
+    max_pos = db.exec(
+        select(func.max(LabelDefinition.queue_position))
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+    ).one()
+    next_pos = (max_pos or -1) + 1
+
+    label = LabelDefinition(
+        name=req.name,
+        description=req.description,
+        mode="single",
+        phase="queued",
+        is_active=False,
+        queue_position=next_pos,
+    )
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return _label_to_response(db, label)
+
+
+@app.post("/api/single-labels/{label_id}/activate", response_model=SingleLabelResponse)
+def activate_single_label(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+
+    # Deactivate other single-mode labels.
+    others = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.is_active == True)  # noqa: E712
+        .where(LabelDefinition.id != label_id)
+    ).all()
+    for o in others:
+        o.is_active = False
+        db.add(o)
+
+    label.is_active = True
+    label.phase = "labeling"
+    label.queue_position = None
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return _label_to_response(db, label)
+
+
+@app.post("/api/single-labels/{label_id}/close", response_model=SingleLabelResponse)
+def close_single_label(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    label.is_active = False
+    label.phase = "complete"
+    db.add(label)
+    db.commit()
+
+    # Auto-pop next queued single label
+    next_q = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+        .order_by(LabelDefinition.queue_position)
+    ).first()
+    if next_q:
+        next_q.is_active = True
+        next_q.phase = "labeling"
+        next_q.queue_position = None
+        db.add(next_q)
+        db.commit()
+
+    db.refresh(label)
+    return _label_to_response(db, label)
+
+
+@app.get("/api/single-labels/{label_id}/next", response_model=Optional[FocusedMessageResponse])
+def get_next_focused(
+    label_id: int,
+    assignment_id: Optional[int] = None,
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    if not payload:
+        return None
+    return FocusedMessageResponse(**payload)
+
+
+@app.post("/api/single-labels/{label_id}/decide", response_model=Optional[FocusedMessageResponse])
+def post_decide(
+    label_id: int,
+    req: DecideRequest,
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    if req.value not in {"yes", "no", "skip"}:
+        raise HTTPException(status_code=400, detail="value must be yes|no|skip")
+    decision_service.record_decision(
+        db,
+        label_id=label_id,
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+        value=req.value,
+    )
+    payload = queue_service.next_message_for_label(db, label_id)
+    if not payload:
+        return None
+    return FocusedMessageResponse(**payload)
+
+
+@app.post(
+    "/api/single-labels/{label_id}/skip-conversation",
+    response_model=Optional[FocusedMessageResponse],
+)
+def post_skip_conversation(
+    label_id: int,
+    req: SkipConversationRequest,
+    db: Session = Depends(get_session),
+):
+    """Skip every still-undecided student message in `chatlog_id` for this label so
+    the queue jumps to the next conversation. Already-decided messages are untouched.
+    Returns the next focused message (next conversation in the per-label walk order)
+    or None when nothing remains."""
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
+    if label.mode != "single":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Label {label_id} ({label.name!r}) is mode={label.mode!r}, not 'single'",
+        )
+    decision_service.skip_conversation(db, label_id, req.chatlog_id)
+    payload = queue_service.next_message_for_label(db, label_id)
+    if not payload:
+        return None
+    return FocusedMessageResponse(**payload)
+
+
+@app.post("/api/single-labels/{label_id}/undo", response_model=Optional[FocusedMessageResponse])
+def post_undo(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    decision_service.undo_last_decision(db, label_id)
+    payload = queue_service.next_message_for_label(db, label_id)
+    if not payload:
+        return None
+    return FocusedMessageResponse(**payload)
+
+
+@app.get("/api/single-labels/{label_id}/readiness", response_model=ReadinessResponse)
+def get_readiness(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    state = decision_service.compute_readiness(db, label_id)
+    return ReadinessResponse(**state)
+
+
+CLASSIFICATION_CHUNK_SIZE = 50
+PARALLEL_CONCURRENCY = 8
+# Temporarily bumped from 500 → 100000 for the label 16 resume so the run stays
+# on the parallel-sync path with live progress instead of going to Batch API
+# (which sits at 0% until completion). Revert after that handoff finishes.
+BATCH_THRESHOLD = 100000
+BATCH_POLL_INTERVAL_SEC = 15
+
+
+def _do_classification(db: Session, label: LabelDefinition) -> None:
+    """Classify pending messages for `label` and emit a summary. Routes large jobs
+    (> BATCH_THRESHOLD) to the Gemini Batch API and small jobs to a parallel
+    synchronous path (ThreadPoolExecutor over chunks). Both paths share the
+    pre/post bookkeeping below: collect pending + few-shot examples, write AI
+    rows + progress, then summarize and flip phase to 'handed_off'."""
+    decided_keys = set(
+        db.exec(
+            select(LabelApplication.chatlog_id, LabelApplication.message_index)
+            .where(LabelApplication.label_id == label.id)
+        ).all()
+    )
+    cached = db.exec(
+        select(MessageCache.chatlog_id, MessageCache.message_index, MessageCache.message_text)
+    ).all()
+    pending = [(c, i, t) for (c, i, t) in cached if (c, i) not in decided_keys]
+
+    yes_examples_rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label.id,
+            LabelApplication.applied_by == "human",
+            LabelApplication.value == "yes",
+        )
+        .order_by(LabelApplication.created_at.desc())  # type: ignore[arg-type]
+    ).all()
+    no_examples_rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label.id,
+            LabelApplication.applied_by == "human",
+            LabelApplication.value == "no",
+        )
+        .order_by(LabelApplication.created_at.desc())  # type: ignore[arg-type]
+    ).all()
+
+    def _texts_for(rows):
+        out = []
+        for c, i in rows:
+            mc = db.exec(
+                select(MessageCache).where(
+                    MessageCache.chatlog_id == c, MessageCache.message_index == i
+                )
+            ).first()
+            if mc:
+                out.append(mc.message_text)
+        return out
+
+    yes_examples = _texts_for(yes_examples_rows[:10])
+    no_examples = _texts_for(no_examples_rows[:10])
+
+    label.classification_total = len(pending)
+    label.classified_count = 0
+    db.add(label)
+    db.commit()
+
+    if len(pending) > BATCH_THRESHOLD:
+        yes_msgs, no_msgs = _classify_via_batch_api(
+            db, label, pending, yes_examples, no_examples
+        )
+    else:
+        yes_msgs, no_msgs = _classify_in_parallel(
+            db, label, pending, yes_examples, no_examples
+        )
+
+    summary = binary_autolabel_service.summarize_batch(
+        label_name=label.name,
+        label_description=label.description,
+        yes_messages=yes_msgs,
+        no_messages=no_msgs,
+    )
+    label.summary_json = json_mod.dumps(summary)
+    label.phase = "handed_off"
+    db.add(label)
+    db.commit()
+
+
+def _classify_in_parallel(
+    db: Session,
+    label: LabelDefinition,
+    pending: list,
+    yes_examples: list,
+    no_examples: list,
+) -> tuple[list[str], list[str]]:
+    """Parallel sync path: ThreadPoolExecutor fans out chunks across worker threads,
+    each calling `classify_binary` (still patchable for tests). DB writes happen
+    in the main thread as futures complete; `classified_count` advances by the
+    count of each completed chunk. Exceptions propagate to the caller (matching
+    the legacy fail-fast behavior expected by test_failed_handoff_still_appears_with_error)."""
+    chunks = [
+        pending[i:i + CLASSIFICATION_CHUNK_SIZE]
+        for i in range(0, len(pending), CLASSIFICATION_CHUNK_SIZE)
+    ]
+    yes_msgs: list[str] = []
+    no_msgs: list[str] = []
+
+    def run_chunk(chunk):
+        chunk_texts = [t for _, _, t in chunk]
+        classifications = binary_autolabel_service.classify_binary(
+            label_name=label.name,
+            label_description=label.description,
+            yes_examples=yes_examples,
+            no_examples=no_examples,
+            messages=chunk_texts,
+        )
+        return chunk, classifications
+
+    completed = 0
+    with ThreadPoolExecutor(max_workers=PARALLEL_CONCURRENCY) as ex:
+        futures = [ex.submit(run_chunk, chunk) for chunk in chunks]
+        try:
+            for fut in as_completed(futures):
+                chunk, classifications = fut.result()
+                for (cid, midx, text), cls in zip(chunk, classifications):
+                    value = cls.get("value", "no")
+                    confidence = float(cls.get("confidence", 0.5))
+                    db.add(LabelApplication(
+                        label_id=label.id,
+                        chatlog_id=cid,
+                        message_index=midx,
+                        applied_by="ai",
+                        confidence=confidence,
+                        value=value,
+                    ))
+                    if value == "yes":
+                        yes_msgs.append(text)
+                    else:
+                        no_msgs.append(text)
+                completed += len(chunk)
+                label.classified_count = completed
+                db.add(label)
+                db.commit()
+        finally:
+            for f in futures:
+                f.cancel()
+
+    return yes_msgs, no_msgs
+
+
+def _classify_via_batch_api(
+    db: Session,
+    label: LabelDefinition,
+    pending: list,
+    yes_examples: list,
+    no_examples: list,
+) -> tuple[list[str], list[str]]:
+    """Batch API path: build a JSONL with one request per chunk, upload, submit a
+    batch job, poll until terminal, then download and parse the result file.
+
+    Trade-off vs parallel sync: Google handles internal concurrency (much higher
+    throughput than 8 worker threads) at 50% cost, with a 24h SLA. Progress is
+    coarse — `classified_count` only advances at the end since the Batch API
+    surfaces job-level state, not per-request progress."""
+    from google.genai import types as genai_types
+
+    bas = binary_autolabel_service
+    chunks = [
+        pending[i:i + CLASSIFICATION_CHUNK_SIZE]
+        for i in range(0, len(pending), CLASSIFICATION_CHUNK_SIZE)
+    ]
+
+    # Build JSONL of batch requests. Key encodes the chunk index so we can map
+    # results back to the right pending tuples regardless of return order.
+    jsonl_path = None
+    uploaded_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+        ) as f:
+            jsonl_path = f.name
+            for idx, chunk in enumerate(chunks):
+                chunk_texts = [t for _, _, t in chunk]
+                req = bas.build_classify_batch_request(
+                    key=f"chunk-{idx}",
+                    label_name=label.name,
+                    label_description=label.description,
+                    yes_examples=yes_examples,
+                    no_examples=no_examples,
+                    messages=chunk_texts,
+                )
+                f.write(json_mod.dumps(req) + "\n")
+
+        uploaded = bas.client.files.upload(
+            file=jsonl_path,
+            config=genai_types.UploadFileConfig(
+                display_name=f"binary-classify-label-{label.id}",
+                mime_type="jsonl",
+            ),
+        )
+        uploaded_name = uploaded.name
+
+        job = bas.client.batches.create(
+            model=bas.CLASSIFY_MODEL,
+            src=uploaded.name,
+            config={"display_name": f"binary-classify-label-{label.id}"},
+        )
+
+        terminal = {
+            "JOB_STATE_SUCCEEDED",
+            "JOB_STATE_FAILED",
+            "JOB_STATE_CANCELLED",
+            "JOB_STATE_EXPIRED",
+        }
+        while job.state.name not in terminal:
+            time.sleep(BATCH_POLL_INTERVAL_SEC)
+            job = bas.client.batches.get(name=job.name)
+
+        if job.state.name != "JOB_STATE_SUCCEEDED":
+            err = getattr(job, "error", None)
+            raise RuntimeError(f"Batch job ended in {job.state.name}: {err}")
+
+        # Read results — Batch returns either a result file or inline responses.
+        results_by_key: dict[str, dict] = {}
+        dest = getattr(job, "dest", None)
+        result_file_name = getattr(dest, "file_name", None) if dest else None
+        if result_file_name:
+            content = bas.client.files.download(file=result_file_name)
+            text = content.decode("utf-8") if isinstance(content, (bytes, bytearray)) else content
+            for line in text.splitlines():
+                if not line.strip():
+                    continue
+                row = json_mod.loads(line)
+                key = row.get("key")
+                if key:
+                    results_by_key[key] = row
+        else:
+            inlined = getattr(dest, "inlined_responses", None) or []
+            for i, inline in enumerate(inlined):
+                key = getattr(inline, "key", None) or f"chunk-{i}"
+                results_by_key[key] = {
+                    "key": key,
+                    "response": getattr(inline, "response", None),
+                    "error": getattr(inline, "error", None),
+                }
+    finally:
+        if jsonl_path:
+            try:
+                os.unlink(jsonl_path)
+            except OSError:
+                pass
+        if uploaded_name:
+            try:
+                bas.client.files.delete(name=uploaded_name)
+            except Exception:
+                pass
+
+    yes_msgs: list[str] = []
+    no_msgs: list[str] = []
+    completed = 0
+    for idx, chunk in enumerate(chunks):
+        row = results_by_key.get(f"chunk-{idx}")
+        response_obj = (row or {}).get("response")
+        if response_obj is not None and not isinstance(response_obj, dict):
+            # SDK may return typed objects for inline responses; coerce to dict.
+            response_obj = response_obj.to_json_dict() if hasattr(response_obj, "to_json_dict") else None
+        classifications = bas.parse_classify_batch_response(response_obj, len(chunk))
+        for (cid, midx, text), cls in zip(chunk, classifications):
+            value = cls.get("value", "no")
+            confidence = float(cls.get("confidence", 0.5))
+            db.add(LabelApplication(
+                label_id=label.id,
+                chatlog_id=cid,
+                message_index=midx,
+                applied_by="ai",
+                confidence=confidence,
+                value=value,
+            ))
+            if value == "yes":
+                yes_msgs.append(text)
+            else:
+                no_msgs.append(text)
+        completed += len(chunk)
+        label.classified_count = completed
+        db.add(label)
+        db.commit()
+
+    return yes_msgs, no_msgs
+
+
+def _classify_error_kind(exc: BaseException) -> str:
+    """Categorize a classification failure for the UI. Returns 'rate_limited' for
+    Gemini quota/429 responses, otherwise 'error'. Looks at HTTP status, gRPC code,
+    and the message text since the genai SDK surfaces these inconsistently."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if status in (429, "RESOURCE_EXHAUSTED"):
+        return "rate_limited"
+    text = (str(exc) or "").lower()
+    if "429" in text or "resource_exhausted" in text or "rate limit" in text or "quota" in text:
+        return "rate_limited"
+    return "error"
+
+
+def _classify_in_background(label_id: int) -> None:
+    """Top-level wrapper for FastAPI BackgroundTasks: opens its own session and
+    runs `_do_classification`. On failure, marks the label `phase='failed'` and
+    stashes the error in `summary_json` so the instructor can see what went wrong
+    on /summaries instead of having the label silently disappear."""
+    with Session(engine) as db:
+        label = db.get(LabelDefinition, label_id)
+        if not label:
+            return
+        try:
+            _do_classification(db, label)
+        except Exception as e:
+            logger.exception(f"Background classification failed for label {label_id}: {e}")
+            label.phase = "failed"
+            label.summary_json = json_mod.dumps({
+                "error": str(e) or e.__class__.__name__,
+                "error_kind": _classify_error_kind(e),
+            })
+            db.add(label)
+            db.commit()
+
+
+@app.post("/api/single-labels/{label_id}/handoff", response_model=HandoffResponse)
+def handoff_single_label(
+    label_id: int,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_session),
+):
+    """Hand off a label to Gemini in the background. Returns immediately with
+    the next-active label info — the actual classification runs after response.
+
+    Behavior:
+    - Active label moves to phase = 'classifying' (deactivated)
+    - Next queued label (if any) auto-activates and moves to phase = 'labeling'
+    - Background task runs Gemini classification + summary; on success sets phase
+      to 'handed_off' and stores summary_json
+    - The classifying label appears on /api/handoff-summaries with empty patterns
+      until the background task completes."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    if label.phase == "classifying":
+        raise HTTPException(status_code=409, detail="Already classifying")
+
+    label.phase = "classifying"
+    label.is_active = False
+    db.add(label)
+
+    next_q = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+        .order_by(LabelDefinition.queue_position)
+    ).first()
+    if next_q:
+        next_q.is_active = True
+        next_q.phase = "labeling"
+        next_q.queue_position = None
+        db.add(next_q)
+    db.commit()
+
+    bg.add_task(_classify_in_background, label_id)
+
+    return HandoffResponse(
+        label_id=label_id,
+        classified=0,
+        yes_count=0,
+        no_count=0,
+        review_count=0,
+    )
+
+
+@app.get("/api/single-labels/{label_id}/summary", response_model=SummaryResponse)
+def get_summary(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+
+    yes_count = db.exec(
+        select(func.count(LabelApplication.id))
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+            LabelApplication.value == "yes",
+        )
+    ).one()
+    no_count = db.exec(
+        select(func.count(LabelApplication.id))
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+            LabelApplication.value == "no",
+        )
+    ).one()
+    review_count = db.exec(
+        select(func.count(LabelApplication.id))
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+            LabelApplication.confidence < REVIEW_THRESHOLD,
+        )
+    ).one()
+
+    payload = json_mod.loads(label.summary_json) if label.summary_json else {"included": [], "excluded": []}
+    return SummaryResponse(
+        label_id=label_id,
+        label_name=label.name,
+        yes_count=yes_count,
+        no_count=no_count,
+        review_threshold=REVIEW_THRESHOLD,
+        review_count=review_count,
+        included=[SummaryPattern(**p) for p in payload.get("included", [])],
+        excluded=[SummaryPattern(**p) for p in payload.get("excluded", [])],
+    )
+
+
+@app.post("/api/single-labels/{label_id}/refine", response_model=SingleLabelResponse)
+def refine_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Discard AI predictions and clear summary so the instructor can add more
+    examples and re-run handoff. Phase reverts to 'labeling'."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    ai_rows = db.exec(
+        select(LabelApplication)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    for r in ai_rows:
+        db.delete(r)
+    label.phase = "labeling"
+    label.summary_json = None
+    db.add(label)
+    db.commit()
+    db.refresh(label)
+    return _label_to_response(db, label)
+
+
+@app.get("/api/single-labels/{label_id}/review-queue", response_model=List[ReviewItemResponse])
+def get_review_queue(
+    label_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    rows = db.exec(
+        select(LabelApplication)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "ai",
+            LabelApplication.confidence < REVIEW_THRESHOLD,
+        )
+        .order_by(LabelApplication.confidence)  # type: ignore[arg-type]
+        .limit(limit)
+    ).all()
+    out: list[ReviewItemResponse] = []
+    for r in rows:
+        mc = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == r.chatlog_id,
+                MessageCache.message_index == r.message_index,
+            )
+        ).first()
+        if not mc:
+            continue
+        out.append(ReviewItemResponse(
+            chatlog_id=r.chatlog_id,
+            message_index=r.message_index,
+            text=mc.message_text,
+            notebook=mc.notebook,
+            ai_value=r.value or "no",
+            ai_confidence=r.confidence or 0.0,
+        ))
+    return out
+
+
+@app.post("/api/single-labels/{label_id}/review", response_model=ReviewItemResponse)
+def post_review(
+    label_id: int,
+    req: ReviewRequest,
+    db: Session = Depends(get_session),
+):
+    """Override an AI prediction. Sets applied_by='human', confidence=1.0, value=req.value."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    if req.value not in {"yes", "no"}:
+        raise HTTPException(status_code=400, detail="value must be yes|no for review")
+    row = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.chatlog_id == req.chatlog_id,
+            LabelApplication.message_index == req.message_index,
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found")
+    row.applied_by = "human"
+    row.confidence = 1.0
+    row.value = req.value
+    db.add(row)
+    db.commit()
+    mc = db.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == req.chatlog_id,
+            MessageCache.message_index == req.message_index,
+        )
+    ).first()
+    return ReviewItemResponse(
+        chatlog_id=req.chatlog_id,
+        message_index=req.message_index,
+        text=mc.message_text if mc else "",
+        notebook=mc.notebook if mc else None,
+        ai_value=req.value,
+        ai_confidence=1.0,
+    )
+
+
+@app.delete("/api/single-labels/{label_id}", response_model=DeleteLabelResponse)
+def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    # Drop all decisions + cursors for this label
+    apps = db.exec(select(LabelApplication).where(LabelApplication.label_id == label_id)).all()
+    for a in apps:
+        db.delete(a)
+    cursors = db.exec(select(ConversationCursor).where(ConversationCursor.label_id == label_id)).all()
+    for c in cursors:
+        db.delete(c)
+    db.delete(label)
+    db.commit()
+    return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Assignment mappings
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/assignments", response_model=List[AssignmentResponse])
+def list_assignments(db: Session = Depends(get_session)):
+    mappings = db.exec(select(AssignmentMapping).order_by(AssignmentMapping.id)).all()
+    counts = assignment_service.message_count_per_assignment(db)
+    return [
+        AssignmentResponse(
+            id=m.id,
+            pattern=m.pattern,
+            name=m.name,
+            description=m.description,
+            message_count=counts.get(m.id, 0),
+        )
+        for m in mappings
+    ]
+
+
+@app.get("/api/assignments/unmapped", response_model=UnmappedCountResponse)
+def get_unmapped_count(db: Session = Depends(get_session)):
+    counts = assignment_service.message_count_per_assignment(db)
+    return UnmappedCountResponse(
+        unmapped_count=counts.get(None, 0),
+        total_count=sum(counts.values()),
+    )
+
+
+@app.post("/api/assignments", response_model=AssignmentResponse)
+def create_assignment(
+    req: CreateAssignmentRequest,
+    db: Session = Depends(get_session),
+):
+    import re as _re
+    try:
+        _re.compile(req.pattern)
+    except _re.error as e:
+        raise HTTPException(status_code=400, detail=f"Invalid regex: {e}")
+
+    mapping = AssignmentMapping(
+        pattern=req.pattern,
+        name=req.name,
+        description=req.description,
+    )
+    db.add(mapping)
+    db.commit()
+    db.refresh(mapping)
+    assignment_service.match_all_messages(db)
+    counts = assignment_service.message_count_per_assignment(db)
+    return AssignmentResponse(
+        id=mapping.id,
+        pattern=mapping.pattern,
+        name=mapping.name,
+        description=mapping.description,
+        message_count=counts.get(mapping.id, 0),
+    )
+
+
+@app.post("/api/assignments/merge", response_model=MergeAssignmentsResponse)
+def merge_assignments_endpoint(
+    req: MergeAssignmentsRequest,
+    db: Session = Depends(get_session),
+):
+    """Merge multiple assignment mappings into one. The target keeps its id;
+    sources are deleted and their tagged messages reassigned to the target.
+    Patterns are unioned so the merge survives a future re-tag pass."""
+    try:
+        return MergeAssignmentsResponse(**assignment_service.merge_assignments(
+            db,
+            source_ids=req.source_ids,
+            target_id=req.target_id,
+            new_name=req.new_name,
+        ))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/assignments/infer", response_model=InferAssignmentsResponse)
+def infer_assignments(db: Session = Depends(get_session)):
+    """Auto-detect assignments from cached notebook filenames. Read-only on external DB.
+    Tries to backfill notebooks first if any cache rows are missing them, then groups
+    distinct notebooks into Lab N / Project N / Homework N (or stem fallback)."""
+    # Best-effort backfill from external DB; safe no-op if unreachable.
+    try:
+        backfill_notebooks_if_missing(db)
+    except Exception as e:
+        logger.warning(f"Notebook backfill skipped: {e}")
+    return InferAssignmentsResponse(**assignment_service.infer_assignments_from_cache(db))
+
+
+@app.delete("/api/assignments/{assignment_id}")
+def delete_assignment(assignment_id: int, db: Session = Depends(get_session)):
+    mapping = db.get(AssignmentMapping, assignment_id)
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    cleared = assignment_service.clear_assignment(db, assignment_id)
+    db.delete(mapping)
+    db.commit()
+    return {"ok": True, "cleared": cleared}
+
+
+@app.get("/api/handoff-summaries", response_model=List[HandoffSummaryListItem])
+def list_handoff_summaries(db: Session = Depends(get_session)):
+    """List every single-label that has been handed off (in-progress, failed, ready
+    for review, actively under review, or fully closed). Failed handoffs surface here
+    too so the instructor can see what went wrong instead of having the label vanish."""
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase.in_(  # type: ignore[attr-defined]
+            ["classifying", "handed_off", "reviewing", "complete", "failed"]
+        ))
+        .order_by(LabelDefinition.id.desc())
+    ).all()
+
+    out: list[HandoffSummaryListItem] = []
+    for label in labels:
+        try:
+            payload = json_mod.loads(label.summary_json) if label.summary_json else {}
+        except json_mod.JSONDecodeError:
+            payload = {}
+        yes_count = db.exec(
+            select(func.count(LabelApplication.id)).where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "ai",
+                LabelApplication.value == "yes",
+            )
+        ).one()
+        no_count = db.exec(
+            select(func.count(LabelApplication.id)).where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "ai",
+                LabelApplication.value == "no",
+            )
+        ).one()
+        review_count = db.exec(
+            select(func.count(LabelApplication.id)).where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "ai",
+                LabelApplication.confidence < REVIEW_THRESHOLD,
+            )
+        ).one()
+        out.append(HandoffSummaryListItem(
+            label_id=label.id,
+            label_name=label.name,
+            description=label.description,
+            phase=label.phase,
+            yes_count=yes_count,
+            no_count=no_count,
+            review_count=review_count,
+            review_threshold=REVIEW_THRESHOLD,
+            included=[SummaryPattern(**p) for p in payload.get("included", [])],
+            excluded=[SummaryPattern(**p) for p in payload.get("excluded", [])],
+            classified_count=label.classified_count,
+            classification_total=label.classification_total,
+            error=payload.get("error") if label.phase == "failed" else None,
+            error_kind=payload.get("error_kind") if label.phase == "failed" else None,
+        ))
+    return out

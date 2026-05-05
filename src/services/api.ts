@@ -6,8 +6,14 @@ import type {
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
+  SingleLabel, FocusedMessage, ReadinessState, DecisionValue,
+  SingleLabelSummary, HandoffResponse, ReviewItem,
+  AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
 } from '../types'
 import { mockApi } from '../mocks'
+import {
+  mockActiveLabel, mockQueuedLabels, mockFocusedMessage, mockReadiness,
+} from '../mocks/runMock'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
@@ -234,4 +240,238 @@ export const api = {
   getRecalibrationStats: (): Promise<RecalibrationStats> =>
     USE_MOCK ? Promise.resolve(mockApi.recalibrationStats)
              : req('/api/session/recalibration/stats'),
+
+  // ─── Single-label binary flow ───
+  listSingleLabels: (params?: { phase?: string }): Promise<SingleLabel[]> =>
+    USE_MOCK
+      ? Promise.resolve(
+          params?.phase === 'queued' ? mockQueuedLabels : [mockActiveLabel, ...mockQueuedLabels]
+        )
+      : req(`/api/single-labels${params?.phase ? `?phase=${params.phase}` : ''}`),
+
+  getActiveSingleLabel: (): Promise<SingleLabel | null> =>
+    USE_MOCK ? Promise.resolve(mockActiveLabel) : req('/api/single-labels/active'),
+
+  createSingleLabel: (body: { name: string; description?: string }): Promise<SingleLabel> =>
+    USE_MOCK
+      ? Promise.resolve({ ...mockActiveLabel, id: Math.random(), name: body.name, description: body.description ?? null })
+      : req('/api/single-labels', { method: 'POST', ...json(body) }),
+
+  queueSingleLabel: (body: { name: string; description?: string }): Promise<SingleLabel> =>
+    USE_MOCK
+      ? Promise.resolve({
+          ...mockActiveLabel,
+          id: Math.random(),
+          name: body.name,
+          description: body.description ?? null,
+          phase: 'queued',
+          is_active: false,
+          queue_position: mockQueuedLabels.length,
+        })
+      : req('/api/single-labels/queue', { method: 'POST', ...json(body) }),
+
+  activateSingleLabel: (id: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
+             : req(`/api/single-labels/${id}/activate`, { method: 'POST' }),
+
+  closeSingleLabel: (id: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
+             : req(`/api/single-labels/${id}/close`, { method: 'POST' }),
+
+  getNextFocused: (id: number, assignmentId?: number): Promise<FocusedMessage | null> =>
+    USE_MOCK
+      ? Promise.resolve(mockFocusedMessage)
+      : req(`/api/single-labels/${id}/next${assignmentId ? `?assignment_id=${assignmentId}` : ''}`),
+
+  decide: (
+    id: number,
+    body: { chatlog_id: number; message_index: number; value: DecisionValue }
+  ): Promise<FocusedMessage | null> =>
+    USE_MOCK ? Promise.resolve(mockFocusedMessage)
+             : req(`/api/single-labels/${id}/decide`, { method: 'POST', ...json(body) }),
+
+  undoLastDecision: (id: number): Promise<FocusedMessage | null> =>
+    USE_MOCK ? Promise.resolve(mockFocusedMessage)
+             : req(`/api/single-labels/${id}/undo`, { method: 'POST' }),
+
+  skipConversation: (id: number, chatlogId: number): Promise<FocusedMessage | null> =>
+    USE_MOCK
+      ? Promise.resolve(mockFocusedMessage)
+      : req(`/api/single-labels/${id}/skip-conversation`, {
+          method: 'POST',
+          ...json({ chatlog_id: chatlogId }),
+        }),
+
+  getReadiness: (id: number): Promise<ReadinessState> =>
+    USE_MOCK ? Promise.resolve(mockReadiness)
+             : req(`/api/single-labels/${id}/readiness`),
+
+  deleteSingleLabel: (id: number): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/single-labels/${id}`, { method: 'DELETE' }),
+
+  handoffSingleLabel: (id: number): Promise<HandoffResponse> =>
+    USE_MOCK
+      ? Promise.resolve({
+          label_id: id, classified: 142, yes_count: 98, no_count: 44, review_count: 23,
+        })
+      : req(`/api/single-labels/${id}/handoff`, { method: 'POST' }),
+
+  getSingleLabelSummary: (id: number): Promise<SingleLabelSummary> =>
+    USE_MOCK
+      ? Promise.resolve({
+          label_id: id,
+          label_name: 'Help',
+          yes_count: 98,
+          no_count: 44,
+          review_threshold: 0.75,
+          review_count: 23,
+          included: [
+            { excerpt: "i'm stuck", frequency: 'common', confidence_avg: 0.92 },
+            { excerpt: 'getting an error', frequency: 'common', confidence_avg: 0.88 },
+            { excerpt: 'can you help me', frequency: 'moderate', confidence_avg: 0.81 },
+            { excerpt: 'tracebacks & KeyError', frequency: 'moderate', confidence_avg: 0.76 },
+          ],
+          excluded: [
+            { excerpt: 'why does X work?', frequency: 'common', confidence_avg: 0.84 },
+            { excerpt: 'conceptual "what is" questions', frequency: 'moderate', confidence_avg: 0.73 },
+            { excerpt: 'course logistics', frequency: 'rare', confidence_avg: 0.69 },
+            { excerpt: 'exploratory follow-ups', frequency: 'rare', confidence_avg: 0.61 },
+          ],
+        })
+      : req(`/api/single-labels/${id}/summary`),
+
+  refineSingleLabel: (id: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve(mockActiveLabel)
+             : req(`/api/single-labels/${id}/refine`, { method: 'POST' }),
+
+  getReviewQueue: (_id: number): Promise<ReviewItem[]> =>
+    USE_MOCK
+      ? Promise.resolve([
+          {
+            chatlog_id: 2200,
+            message_index: 4,
+            text: "Why does `bins=10` give a different shape than `bins=20`? They're both reasonable, right?",
+            notebook: 'lab3.ipynb',
+            ai_value: 'no',
+            ai_confidence: 0.62,
+          },
+          {
+            chatlog_id: 2218,
+            message_index: 3,
+            text: "I'm getting this weird `KeyError: 'col'` when I try `df['col']`. The column is definitely there.",
+            notebook: 'lab3.ipynb',
+            ai_value: 'yes',
+            ai_confidence: 0.68,
+          },
+          {
+            chatlog_id: 2231,
+            message_index: 7,
+            text: "When the textbook says 'mean', do they always mean arithmetic mean, or sometimes median?",
+            notebook: 'lab4.ipynb',
+            ai_value: 'no',
+            ai_confidence: 0.71,
+          },
+        ])
+      : req(`/api/single-labels/${_id}/review-queue`),
+
+  reviewItem: (
+    id: number,
+    body: { chatlog_id: number; message_index: number; value: 'yes' | 'no' }
+  ): Promise<ReviewItem> =>
+    USE_MOCK ? Promise.resolve({} as ReviewItem)
+             : req(`/api/single-labels/${id}/review`, { method: 'POST', ...json(body) }),
+
+  // ─── Assignment mappings ───
+  listAssignments: (): Promise<AssignmentMapping[]> =>
+    USE_MOCK
+      ? Promise.resolve([
+          { id: 1, pattern: '^lab0?3', name: 'Lab 3 · Histograms', description: null, message_count: 68 },
+          { id: 2, pattern: '^lab0?4', name: 'Lab 4 · Hypothesis testing', description: null, message_count: 54 },
+          { id: 3, pattern: '^proj(ect)?_?1', name: 'Project 1', description: null, message_count: 91 },
+        ])
+      : req('/api/assignments'),
+
+  getUnmappedCount: (): Promise<UnmappedCount> =>
+    USE_MOCK ? Promise.resolve({ unmapped_count: 199, total_count: 412 })
+             : req('/api/assignments/unmapped'),
+
+  createAssignment: (
+    body: { pattern: string; name: string; description?: string }
+  ): Promise<AssignmentMapping> =>
+    USE_MOCK
+      ? Promise.resolve({
+          id: Date.now(),
+          pattern: body.pattern,
+          name: body.name,
+          description: body.description ?? null,
+          message_count: 0,
+        })
+      : req('/api/assignments', { method: 'POST', ...json(body) }),
+
+  deleteAssignment: (id: number): Promise<{ ok: boolean; cleared: number }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, cleared: 0 })
+             : req(`/api/assignments/${id}`, { method: 'DELETE' }),
+
+  inferAssignments: (): Promise<InferAssignmentsResult> =>
+    USE_MOCK
+      ? Promise.resolve({ created: 0, total_notebooks: 0, groups: [] })
+      : req('/api/assignments/infer', { method: 'POST' }),
+
+  mergeAssignments: (body: {
+    source_ids: number[]
+    target_id: number
+    new_name?: string
+  }): Promise<{ merged: number; moved_messages: number; target_id: number }> =>
+    USE_MOCK
+      ? Promise.resolve({ merged: body.source_ids.length, moved_messages: 0, target_id: body.target_id })
+      : req('/api/assignments/merge', { method: 'POST', ...json(body) }),
+
+  // ─── Handoff summaries ───
+  listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>
+    USE_MOCK
+      ? Promise.resolve([
+          {
+            label_id: 2,
+            label_name: 'frustration',
+            description: null,
+            phase: 'classifying',
+            yes_count: 0,
+            no_count: 0,
+            review_count: 0,
+            review_threshold: 0.75,
+            included: [],
+            excluded: [],
+            classified_count: 87,
+            classification_total: 142,
+            error: null,
+            error_kind: null,
+          },
+          {
+            label_id: 1,
+            label_name: 'Help',
+            description: 'Student is asking for assistance, expressing being stuck, or reporting an error.',
+            phase: 'reviewing',
+            yes_count: 98,
+            no_count: 44,
+            review_count: 23,
+            review_threshold: 0.75,
+            included: [
+              { excerpt: "i'm stuck", frequency: 'common', confidence_avg: 0.92 },
+              { excerpt: 'getting an error', frequency: 'common', confidence_avg: 0.88 },
+              { excerpt: 'can you help me', frequency: 'moderate', confidence_avg: 0.81 },
+              { excerpt: 'tracebacks & KeyError', frequency: 'moderate', confidence_avg: 0.76 },
+            ],
+            excluded: [
+              { excerpt: 'why does X work?', frequency: 'common', confidence_avg: 0.84 },
+              { excerpt: 'conceptual "what is" questions', frequency: 'moderate', confidence_avg: 0.73 },
+              { excerpt: 'course logistics', frequency: 'rare', confidence_avg: 0.69 },
+            ],
+            classified_count: 142,
+            classification_total: 142,
+            error: null,
+            error_kind: null,
+          },
+        ])
+      : req('/api/handoff-summaries'),
 }

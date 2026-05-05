@@ -212,3 +212,123 @@ export interface SaveRecalibrationResponse {
   matched: boolean
   trend: 'improving' | 'steady' | 'shifting'
 }
+
+// ─── Single-label binary flow ───
+
+export type LabelMode = 'multi' | 'single'
+export type LabelPhase = 'labeling' | 'handed_off' | 'reviewing' | 'complete' | 'queued'
+export type DecisionValue = 'yes' | 'no' | 'skip'
+export type TurnRole = 'student' | 'tutor'
+
+export interface SingleLabel {
+  id: number
+  name: string
+  description: string | null
+  mode: LabelMode
+  phase: LabelPhase
+  is_active: boolean
+  queue_position: number | null
+  yes_count: number
+  no_count: number
+  skip_count: number
+  conversations_walked: number
+  total_conversations: number
+}
+
+export interface ConversationTurn {
+  message_index: number
+  role: TurnRole
+  text: string
+}
+
+export interface FocusedMessage {
+  chatlog_id: number
+  message_index: number
+  text: string
+  notebook: string | null
+  conversation_turn_count: number
+  thread: ConversationTurn[]
+  focus_index: number
+}
+
+export type ReadinessTier = 'gray' | 'amber' | 'green'
+
+export interface ReadinessState {
+  tier: ReadinessTier
+  yes_count: number
+  no_count: number
+  skip_count: number
+  conversations_walked: number
+  total_conversations: number
+  hint: string | null
+}
+
+export interface SummaryPattern {
+  excerpt: string
+  frequency: string
+  confidence_avg: number
+}
+
+export interface SingleLabelSummary {
+  label_id: number
+  label_name: string
+  yes_count: number
+  no_count: number
+  review_threshold: number
+  review_count: number
+  included: SummaryPattern[]
+  excluded: SummaryPattern[]
+}
+
+export interface HandoffResponse {
+  label_id: number
+  classified: number
+  yes_count: number
+  no_count: number
+  review_count: number
+}
+
+export interface ReviewItem {
+  chatlog_id: number
+  message_index: number
+  text: string
+  notebook: string | null
+  ai_value: 'yes' | 'no'
+  ai_confidence: number
+}
+
+export interface AssignmentMapping {
+  id: number
+  pattern: string
+  name: string
+  description: string | null
+  message_count: number
+}
+
+export interface UnmappedCount {
+  unmapped_count: number
+  total_count: number
+}
+
+export interface InferAssignmentsResult {
+  created: number
+  total_notebooks: number
+  groups: { name: string; notebooks: string[]; count: number }[]
+}
+
+export interface HandoffSummaryItem {
+  label_id: number
+  label_name: string
+  description: string | null
+  phase: string
+  yes_count: number
+  no_count: number
+  review_count: number
+  review_threshold: number
+  included: SummaryPattern[]
+  excluded: SummaryPattern[]
+  classified_count: number | null
+  classification_total: number | null
+  error: string | null
+  error_kind: 'rate_limited' | 'error' | null
+}

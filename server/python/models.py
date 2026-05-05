@@ -12,9 +12,20 @@ class LabelDefinition(SQLModel, table=True):
     sort_order: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     archived_at: Optional[datetime] = Field(default=None)
+    # Single-label pivot additions
+    mode: str = Field(default="multi")  # "multi" | "single"
+    phase: str = Field(default="labeling")  # "labeling" | "handed_off" | "reviewing" | "complete" | "queued"
+    is_active: bool = Field(default=False)
+    queue_position: Optional[int] = Field(default=None)
+    summary_json: Optional[str] = Field(default=None)  # cached AI summary blob
+    classified_count: Optional[int] = Field(default=None)  # progress: rows AI has classified
+    classification_total: Optional[int] = Field(default=None)  # progress: total to classify
 
 
 class LabelApplication(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("label_id", "chatlog_id", "message_index", name="uq_labelapp_msg"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     label_id: int = Field(foreign_key="labeldefinition.id")
     chatlog_id: int
@@ -22,6 +33,8 @@ class LabelApplication(SQLModel, table=True):
     applied_by: str = "human"
     confidence: Optional[float] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Single-label pivot: explicit decision value (multi-label leaves NULL)
+    value: Optional[str] = Field(default=None)  # "yes" | "no" | "skip" | None (multi)
 
 
 class LabelingSession(SQLModel, table=True):
@@ -29,6 +42,27 @@ class LabelingSession(SQLModel, table=True):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     last_active: datetime = Field(default_factory=datetime.utcnow)
     labeled_count: int = 0
+    # Single-label pivot: per-label run tracking
+    label_id: Optional[int] = Field(default=None, foreign_key="labeldefinition.id")
+    handed_off_at: Optional[datetime] = Field(default=None)
+    closed_at: Optional[datetime] = Field(default=None)
+
+
+class ConversationCursor(SQLModel, table=True):
+    """Tracks resume position per (label_id, chatlog_id) for the single-label flow."""
+    label_id: int = Field(foreign_key="labeldefinition.id", primary_key=True)
+    chatlog_id: int = Field(primary_key=True)
+    last_message_index_decided: int
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AssignmentMapping(SQLModel, table=True):
+    """Instructor-curated mapping: regex on notebook filename → assignment name."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    pattern: str  # regex evaluated against MessageCache.notebook
+    name: str
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class SkippedMessage(SQLModel, table=True):
@@ -45,6 +79,9 @@ class MessageCache(SQLModel, table=True):
     message_text: str
     context_before: Optional[str] = None
     context_after: Optional[str] = None
+    # Single-label pivot: assignment metadata derived from external events.payload->notebook
+    notebook: Optional[str] = Field(default=None)
+    assignment_id: Optional[int] = Field(default=None, foreign_key="assignmentmapping.id")
 
 
 class MessageEmbedding(SQLModel, table=True):
