@@ -22,6 +22,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
+import assist_service
 from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent, ConversationCursor
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
@@ -41,6 +42,7 @@ from schemas import (
     CreateAssignmentRequest, AssignmentResponse, UnmappedCountResponse,
     InferAssignmentsResponse, HandoffSummaryListItem,
     MergeAssignmentsRequest, MergeAssignmentsResponse,
+    AssistNeighbor, AssistResponse,
 )
 import decision_service
 import queue_service
@@ -2729,13 +2731,40 @@ def get_next_focused(
     assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
+    """Walk the next focused message for the active labeling label.
+    Also opportunistically rebuilds the assist cache if it has gone stale."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
+
+    # Lazy assist-cache rebuild. Cheap when not stale (one count + one row read).
+    assist_service.rebuild_cache_if_stale(db, label_id)
+
     payload = queue_service.next_message_for_label(db, label_id, assignment_id)
     if not payload:
         return None
     return FocusedMessageResponse(**payload)
+
+
+@app.get("/api/single-labels/{label_id}/assist", response_model=AssistResponse)
+def get_assist(
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    db: Session = Depends(get_session),
+):
+    """Return cached nearest-neighbor decisions for the focused message.
+    The cache is built lazily by /next; if there is no row, returns []."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+
+    neighbors = assist_service.get_cached_neighbors(
+        db, label_id, chatlog_id, message_index
+    )
+    return AssistResponse(
+        neighbors=[AssistNeighbor(**n) for n in neighbors]
+    )
 
 
 @app.post("/api/single-labels/{label_id}/decide", response_model=Optional[FocusedMessageResponse])

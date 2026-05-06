@@ -9,6 +9,7 @@ import type {
   SingleLabel, FocusedMessage, ReadinessState, DecisionValue,
   SingleLabelSummary, HandoffResponse, ReviewItem,
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
+  AssistResponse,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -309,6 +310,29 @@ export const api = {
   deleteSingleLabel: (id: number): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
              : req(`/api/single-labels/${id}`, { method: 'DELETE' }),
+
+  getAssist: (
+    labelId: number,
+    chatlogId: number,
+    messageIndex: number,
+  ): Promise<AssistResponse> =>
+    USE_MOCK
+      ? Promise.resolve({
+          neighbors: [
+            { chatlog_id: 100, message_index: 0, value: 'yes',
+              similarity: 0.84,
+              message_text: "i'm stuck on q3, can you walk me through how to compute the standard deviation" },
+            { chatlog_id: 101, message_index: 0, value: 'yes',
+              similarity: 0.79,
+              message_text: 'how do i actually solve part 2 — i tried mean(arr) but the autograder says wrong' },
+            { chatlog_id: 102, message_index: 0, value: 'no',
+              similarity: 0.71,
+              message_text: 'why does numpy default to dividing by n instead of n minus 1' },
+          ],
+        })
+      : req(
+          `/api/single-labels/${labelId}/assist?chatlog_id=${chatlogId}&message_index=${messageIndex}`,
+        ),
 
   handoffSingleLabel: (id: number, sampleSize?: number): Promise<HandoffResponse> => {
     const qs = sampleSize !== undefined ? `?sample_size=${sampleSize}` : ''

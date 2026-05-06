@@ -321,6 +321,18 @@ class ReviewRequest(BaseModel):
     value: str  # "yes" | "no"
 
 
+class AssistNeighbor(BaseModel):
+    chatlog_id: int
+    message_index: int
+    value: str  # "yes" | "no"
+    similarity: float
+    message_text: str
+
+
+class AssistResponse(BaseModel):
+    neighbors: List[AssistNeighbor]
+
+
 # ─── Assignment mappings ───
 
 class CreateAssignmentRequest(BaseModel):

@@ -37,6 +37,22 @@ class LabelApplication(SQLModel, table=True):
     value: Optional[str] = Field(default=None)  # "yes" | "no" | "skip" | None (multi)
 
 
+class LabelPrediction(SQLModel, table=True):
+    """Cached nearest-neighbor results for a label's unlabeled messages.
+    Rebuilt lazily by assist_service when the human label count diverges
+    from the stored model_version by >= 5."""
+    __table_args__ = (
+        UniqueConstraint("label_id", "chatlog_id", "message_index", name="uq_labelpred_msg"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label_id: int = Field(foreign_key="labeldefinition.id", index=True)
+    chatlog_id: int = Field(index=True)
+    message_index: int
+    nearest_neighbors: str  # JSON-encoded list of AssistNeighbor dicts
+    model_version: int  # = human_label_count at the time of build
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LabelingSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     started_at: datetime = Field(default_factory=datetime.utcnow)

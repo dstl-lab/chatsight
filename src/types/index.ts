@@ -332,3 +332,15 @@ export interface HandoffSummaryItem {
   error: string | null
   error_kind: 'rate_limited' | 'error' | null
 }
+
+export interface AssistNeighbor {
+  chatlog_id: number
+  message_index: number
+  value: 'yes' | 'no'
+  similarity: number
+  message_text: string
+}
+
+export interface AssistResponse {
+  neighbors: AssistNeighbor[]
+}

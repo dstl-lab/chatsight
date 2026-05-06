@@ -31,11 +31,16 @@ export function StripBar({
         {label.name}
       </span>
       <span className="flex-1" />
-      <button className="inline-flex items-center gap-2 px-[11px] py-[5px] rounded-full font-mono text-[11px] tracking-[0.04em] text-muted hover:text-on-canvas transition-colors">
-        <span className="text-on-surface">{label.yes_count + label.no_count + label.skip_count}</span>
-        <span className="opacity-50">/</span>
-        <span>{label.total_conversations * 3 || 35}</span>
-      </button>
+      <span className="inline-flex items-baseline gap-1.5 px-[11px] py-[5px] font-mono text-[11px] tracking-[0.04em] text-muted">
+        <span className="text-on-surface">{label.yes_count + label.no_count}</span>
+        <span className="opacity-50 text-[11px]">labels</span>
+        <span className="opacity-40 mx-1.5">·</span>
+        <span className="text-moss">{label.yes_count}</span>
+        <span className="text-faint text-[9px] tracking-[0.14em] uppercase">yes</span>
+        <span className="opacity-40 mx-1.5">·</span>
+        <span className="text-brick">{label.no_count}</span>
+        <span className="text-faint text-[9px] tracking-[0.14em] uppercase">no</span>
+      </span>
       <AssignmentPicker
         assignments={assignments}
         unmapped={unmapped}

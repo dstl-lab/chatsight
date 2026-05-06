@@ -3,6 +3,7 @@ import { StripBar } from '../components/run/StripBar'
 import { QueueLine } from '../components/run/QueueLine'
 import { ConversationMeta } from '../components/run/ConversationMeta'
 import { ThreadView } from '../components/run/ThreadView'
+import { AssistFlank } from '../components/run/AssistFlank'
 import { DecisionDock } from '../components/run/DecisionDock'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
@@ -17,6 +18,7 @@ import type {
   AssignmentMapping,
   UnmappedCount,
   ReviewItem,
+  AssistNeighbor,
 } from '../types'
 
 export function LabelRunPage() {
@@ -36,6 +38,7 @@ export function LabelRunPage() {
   const [reviewQueue, setReviewQueue] = useState<ReviewItem[] | null>(null)
   const [reviewIdx, setReviewIdx] = useState(0)
   const [recent, setRecent] = useState<{ value: DecisionValue; label: string } | null>(null)
+  const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
 
   // Auto-clear the inline confirmation in the dock after a few seconds.
   useEffect(() => {
@@ -43,6 +46,25 @@ export function LabelRunPage() {
     const t = setTimeout(() => setRecent(null), 4000)
     return () => clearTimeout(t)
   }, [recent])
+
+  // Fetch assist neighbors whenever the focused message changes. Clear
+  // synchronously so the previous message's neighbors don't linger during
+  // the in-flight fetch, and swallow errors to a clean empty state.
+  useEffect(() => {
+    setAssistNeighbors([])
+    if (!activeLabel || !focused) return
+    let cancelled = false
+    api.getAssist(
+      activeLabel.id,
+      focused.chatlog_id,
+      focused.thread[focused.focus_index].message_index,
+    ).then((res) => {
+      if (!cancelled) setAssistNeighbors(res.neighbors)
+    }).catch(() => {
+      if (!cancelled) setAssistNeighbors([])
+    })
+    return () => { cancelled = true }
+  }, [activeLabel?.id, focused?.chatlog_id, focused?.focus_index])
 
   // Refetch the page state. Called on mount, after decisions, after undo, after queue add.
   const refresh = useCallback(async () => {
@@ -319,10 +341,13 @@ export function LabelRunPage() {
           turnCount={1}
         />
         <ReviewIntro item={item} />
-        <ThreadView
-          thread={[{ message_index: 0, role: 'student', text: item.text }]}
-          focusIndex={0}
-        />
+        <div className="grid grid-cols-[1fr_320px] min-h-0 overflow-hidden">
+          <ThreadView
+            thread={[{ message_index: 0, role: 'student', text: item.text }]}
+            focusIndex={0}
+          />
+          <AssistFlank neighbors={assistNeighbors} />
+        </div>
         <ReviewDock
           aiValue={item.ai_value}
           aiConfidence={item.ai_confidence}
@@ -370,7 +395,10 @@ export function LabelRunPage() {
         notebook={focused.notebook}
         turnCount={focused.conversation_turn_count}
       />
-      <ThreadView thread={focused.thread} focusIndex={focused.focus_index} />
+      <div className="grid grid-cols-[1fr_320px] min-h-0 overflow-hidden">
+        <ThreadView thread={focused.thread} focusIndex={focused.focus_index} />
+        <AssistFlank neighbors={assistNeighbors} />
+      </div>
       <DecisionDock
         onDecide={handleDecide}
         onUndo={handleUndo}
