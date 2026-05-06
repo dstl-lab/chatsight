@@ -237,25 +237,34 @@ def build_classify_batch_request(
     no_examples: List[str],
     messages: List[str],
 ) -> Dict[str, Any]:
-    """Return one entry for the Batch API JSONL, mirroring the sync `classify_binary`
-    prompt + tool config. The `request` shape follows GenerateContentRequest in
-    camelCase (Batch JSONL hits the REST API directly)."""
+    """Return one entry for the Batch API JSONL.
+
+    Uses the SDK's own `model_dump` to serialize the same `Tool` and `ToolConfig`
+    objects we already use in `CLASSIFY_CONFIG` for the synchronous path. This
+    avoids two bugs we hit when building the dict by hand: (1) JSON-schema
+    `parameters` types must be the proto Type enum in UPPERCASE (`OBJECT`,
+    `STRING`, etc.) — the SDK normalizes typed objects before dumping; (2) the
+    Batch JSONL docs example uses snake_case for protocol fields, so we dump
+    with `by_alias=False`."""
     prompt = _build_classify_prompt(
         label_name, label_description, yes_examples, no_examples, messages
     )
+    tool_dict = CLASSIFY_TOOL.model_dump(by_alias=False, exclude_none=True)
+    tool_config = types.ToolConfig(
+        function_calling_config=types.FunctionCallingConfig(
+            mode="ANY",
+            allowed_function_names=["classify_binary"],
+        )
+    )
+    tool_config_dict = tool_config.model_dump(by_alias=False, exclude_none=True)
     return {
         "key": key,
         "request": {
             "contents": [{"parts": [{"text": prompt}]}],
-            "systemInstruction": {"parts": [{"text": CLASSIFY_SYSTEM_INSTRUCTION}]},
-            "generationConfig": {"temperature": 0},
-            "tools": [{"functionDeclarations": [CLASSIFY_FUNCTION_DECLARATION]}],
-            "toolConfig": {
-                "functionCallingConfig": {
-                    "mode": "ANY",
-                    "allowedFunctionNames": ["classify_binary"],
-                }
-            },
+            "system_instruction": {"parts": [{"text": CLASSIFY_SYSTEM_INSTRUCTION}]},
+            "generation_config": {"temperature": 0},
+            "tools": [tool_dict],
+            "tool_config": tool_config_dict,
         },
     }
 

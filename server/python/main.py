@@ -9,6 +9,7 @@ import csv
 import os
 import io
 import logging
+import random
 import tempfile
 import threading
 import time
@@ -2812,19 +2813,25 @@ def get_readiness(label_id: int, db: Session = Depends(get_session)):
 
 CLASSIFICATION_CHUNK_SIZE = 50
 PARALLEL_CONCURRENCY = 8
-# Temporarily bumped from 500 → 100000 for the label 16 resume so the run stays
-# on the parallel-sync path with live progress instead of going to Batch API
-# (which sits at 0% until completion). Revert after that handoff finishes.
-BATCH_THRESHOLD = 100000
+BATCH_THRESHOLD = 500
 BATCH_POLL_INTERVAL_SEC = 15
 
 
-def _do_classification(db: Session, label: LabelDefinition) -> None:
+def _do_classification(
+    db: Session,
+    label: LabelDefinition,
+    sample_size: Optional[int] = None,
+) -> None:
     """Classify pending messages for `label` and emit a summary. Routes large jobs
     (> BATCH_THRESHOLD) to the Gemini Batch API and small jobs to a parallel
     synchronous path (ThreadPoolExecutor over chunks). Both paths share the
     pre/post bookkeeping below: collect pending + few-shot examples, write AI
-    rows + progress, then summarize and flip phase to 'handed_off'."""
+    rows + progress, then summarize and flip phase to 'handed_off'.
+
+    `sample_size` (dev smoke-test): when set, `pending` is reduced to
+    `random.sample(pending, min(sample_size, len(pending)))` immediately after
+    it is computed. All downstream logic — chunk size, parallel/batch routing,
+    `classification_total`, summary — operates on the sampled subset."""
     decided_keys = set(
         db.exec(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
@@ -2835,6 +2842,9 @@ def _do_classification(db: Session, label: LabelDefinition) -> None:
         select(MessageCache.chatlog_id, MessageCache.message_index, MessageCache.message_text)
     ).all()
     pending = [(c, i, t) for (c, i, t) in cached if (c, i) not in decided_keys]
+
+    if sample_size is not None:
+        pending = random.sample(pending, min(sample_size, len(pending)))
 
     yes_examples_rows = db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index)
@@ -3111,7 +3121,7 @@ def _classify_error_kind(exc: BaseException) -> str:
     return "error"
 
 
-def _classify_in_background(label_id: int) -> None:
+def _classify_in_background(label_id: int, sample_size: Optional[int] = None) -> None:
     """Top-level wrapper for FastAPI BackgroundTasks: opens its own session and
     runs `_do_classification`. On failure, marks the label `phase='failed'` and
     stashes the error in `summary_json` so the instructor can see what went wrong
@@ -3121,7 +3131,7 @@ def _classify_in_background(label_id: int) -> None:
         if not label:
             return
         try:
-            _do_classification(db, label)
+            _do_classification(db, label, sample_size=sample_size)
         except Exception as e:
             logger.exception(f"Background classification failed for label {label_id}: {e}")
             label.phase = "failed"
@@ -3138,9 +3148,15 @@ def handoff_single_label(
     label_id: int,
     bg: BackgroundTasks,
     db: Session = Depends(get_session),
+    sample_size: Optional[int] = None,
 ):
     """Hand off a label to Gemini in the background. Returns immediately with
     the next-active label info — the actual classification runs after response.
+
+    `sample_size` (dev smoke-test): when set to a positive int, classification
+    runs against a random sample of pending messages of that size instead of
+    the full pending set. Rejected with HTTP 400 if <= 0. No upper cap — values
+    larger than `len(pending)` clamp to all of pending.
 
     Behavior:
     - Active label moves to phase = 'classifying' (deactivated)
@@ -3149,6 +3165,11 @@ def handoff_single_label(
       to 'handed_off' and stores summary_json
     - The classifying label appears on /api/handoff-summaries with empty patterns
       until the background task completes."""
+    if sample_size is not None and sample_size <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="sample_size must be a positive integer when provided",
+        )
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
@@ -3170,6 +3191,44 @@ def handoff_single_label(
         next_q.phase = "labeling"
         next_q.queue_position = None
         db.add(next_q)
+    db.commit()
+
+    bg.add_task(_classify_in_background, label_id, sample_size)
+
+    return HandoffResponse(
+        label_id=label_id,
+        classified=0,
+        yes_count=0,
+        no_count=0,
+        review_count=0,
+    )
+
+
+@app.post("/api/single-labels/{label_id}/retry-handoff", response_model=HandoffResponse)
+def retry_handoff_single_label(
+    label_id: int,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_session),
+):
+    """Re-run a previously failed classification (e.g. rate-limited). Unlike
+    /handoff, this doesn't require the label to be active and doesn't disturb
+    whatever is currently active on the Run page — the background task just
+    re-runs against `pending`, which already excludes the AI rows from prior
+    partial runs."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    if label.phase != "failed":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Retry only allowed from phase='failed' (got '{label.phase}')",
+        )
+
+    label.phase = "classifying"
+    label.summary_json = None
+    label.classified_count = None
+    label.classification_total = None
+    db.add(label)
     db.commit()
 
     bg.add_task(_classify_in_background, label_id)

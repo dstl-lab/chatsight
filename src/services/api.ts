@@ -310,12 +310,21 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ok: true })
              : req(`/api/single-labels/${id}`, { method: 'DELETE' }),
 
-  handoffSingleLabel: (id: number): Promise<HandoffResponse> =>
+  handoffSingleLabel: (id: number, sampleSize?: number): Promise<HandoffResponse> => {
+    const qs = sampleSize !== undefined ? `?sample_size=${sampleSize}` : ''
+    return USE_MOCK
+      ? Promise.resolve({
+          label_id: id, classified: sampleSize ?? 142, yes_count: 98, no_count: 44, review_count: 23,
+        })
+      : req(`/api/single-labels/${id}/handoff${qs}`, { method: 'POST' })
+  },
+
+  retryHandoffSingleLabel: (id: number): Promise<HandoffResponse> =>
     USE_MOCK
       ? Promise.resolve({
-          label_id: id, classified: 142, yes_count: 98, no_count: 44, review_count: 23,
+          label_id: id, classified: 0, yes_count: 0, no_count: 0, review_count: 0,
         })
-      : req(`/api/single-labels/${id}/handoff`, { method: 'POST' }),
+      : req(`/api/single-labels/${id}/retry-handoff`, { method: 'POST' }),
 
   getSingleLabelSummary: (id: number): Promise<SingleLabelSummary> =>
     USE_MOCK

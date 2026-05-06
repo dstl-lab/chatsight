@@ -260,6 +260,169 @@ def test_two_sequential_handoffs_both_appear_in_summaries(client, session):
     assert len(items) == 2
 
 
+def test_handoff_rejects_zero_sample_size(client, session):
+    """sample_size must be a positive int — zero is rejected before any work starts."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    r = client.post(f"/api/single-labels/{a['id']}/handoff?sample_size=0")
+    assert r.status_code == 400
+    # Label should still be in 'labeling' phase (not flipped to 'classifying')
+    fresh = session.get(LabelDefinition, a["id"])
+    assert fresh.phase == "labeling"
+
+
+def test_handoff_rejects_negative_sample_size(client, session):
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    r = client.post(f"/api/single-labels/{a['id']}/handoff?sample_size=-5")
+    assert r.status_code == 400
+
+
+def test_sample_size_caps_pending_to_n(client, session):
+    """With sample_size set, only that many AI rows are written and
+    classification_total reflects the sample size, not the full pending set."""
+    _seed(session, conversations=5, per_conv=4)  # 20 cached messages
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+        return [
+            {"index": i, "value": "yes", "confidence": 0.9}
+            for i in range(len(messages))
+        ]
+
+    def fake_summary(label_name, label_description, yes_messages, no_messages):
+        return {"included": [], "excluded": []}
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=fake_classify), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary):
+        main._do_classification(session, label, sample_size=8)
+
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) == 8
+
+    fresh = session.get(LabelDefinition, a["id"])
+    assert fresh.classification_total == 8
+    assert fresh.classified_count == 8
+
+
+def test_sample_size_above_pending_uses_all(client, session):
+    """sample_size > len(pending) clamps to all of pending."""
+    _seed(session, conversations=2, per_conv=3)  # 6 cached messages
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+        return [
+            {"index": i, "value": "yes", "confidence": 0.9}
+            for i in range(len(messages))
+        ]
+
+    def fake_summary(label_name, label_description, yes_messages, no_messages):
+        return {"included": [], "excluded": []}
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=fake_classify), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary):
+        main._do_classification(session, label, sample_size=400)
+
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) == 6  # all of pending, clamped from 400
+
+
+def test_sample_size_omitted_classifies_all_pending(client, session):
+    """Regression check: when sample_size is None, behavior is identical to before."""
+    _seed(session, conversations=3, per_conv=4)  # 12 cached messages
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+        return [
+            {"index": i, "value": "yes", "confidence": 0.9}
+            for i in range(len(messages))
+        ]
+
+    def fake_summary(label_name, label_description, yes_messages, no_messages):
+        return {"included": [], "excluded": []}
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=fake_classify), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary):
+        main._do_classification(session, label)  # no sample_size
+
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) == 12
+
+    fresh = session.get(LabelDefinition, a["id"])
+    assert fresh.classification_total == 12
+
+
+def test_batch_request_shape_uses_snake_case_protocol_and_uppercase_type_enums():
+    """Regression: Gemini's Batch API rejects requests when JSON-schema `type`
+    values aren't the proto Type enum (UPPERCASE) or when protocol-level fields
+    aren't snake_case. The synchronous path is permissive about both because the
+    SDK normalizes typed objects before sending, but the Batch JSONL is sent
+    raw. Locking the wire shape here so we don't regress to the hand-built
+    camelCase + lowercase-types shape that originally bounced with HTTP 400
+    INVALID_ARGUMENT."""
+    import binary_autolabel_service as bas
+    req = bas.build_classify_batch_request(
+        key="t",
+        label_name="x",
+        label_description=None,
+        yes_examples=["yes ex"],
+        no_examples=["no ex"],
+        messages=["m1", "m2"],
+    )
+    body = req["request"]
+
+    # Protocol fields must be snake_case (matches the docs Batch JSONL example).
+    assert "system_instruction" in body
+    assert "generation_config" in body
+    assert "tool_config" in body
+    assert "function_calling_config" in body["tool_config"]
+    assert "allowed_function_names" in body["tool_config"]["function_calling_config"]
+
+    # No camelCase leftovers that would confuse the validator.
+    assert "systemInstruction" not in body
+    assert "generationConfig" not in body
+    assert "toolConfig" not in body
+
+    # function_declarations is also snake_case here (not functionDeclarations).
+    fd = body["tools"][0]["function_declarations"][0]
+    params = fd["parameters"]
+
+    # Type enum must be the proto UPPERCASE form, not JSON-schema lowercase.
+    assert params["type"] == "OBJECT"
+    classifications = params["properties"]["classifications"]
+    assert classifications["type"] == "ARRAY"
+    item = classifications["items"]
+    assert item["type"] == "OBJECT"
+    assert item["properties"]["index"]["type"] == "INTEGER"
+    assert item["properties"]["value"]["type"] == "STRING"
+    assert item["properties"]["confidence"]["type"] == "NUMBER"
+
+
 def test_failed_handoff_still_appears_with_error(client, session):
     """When the background classification raises, the label is marked phase='failed'
     with the error stashed in summary_json. It still appears on /summaries so the

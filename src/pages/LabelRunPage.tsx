@@ -159,6 +159,19 @@ export function LabelRunPage() {
     }
   }, [activeLabel, handoffPending, refresh])
 
+  const handleSampleHandoff = useCallback(async (n: number) => {
+    if (!activeLabel || handoffPending) return
+    setHandoffPending(true)
+    try {
+      await api.handoffSingleLabel(activeLabel.id, n)
+      await refresh()
+    } catch (e) {
+      console.error('sample handoff failed', e)
+    } finally {
+      setHandoffPending(false)
+    }
+  }, [activeLabel, handoffPending, refresh])
+
   const handleContinueToReview = useCallback(async () => {
     setSummaryOpen(false)
     if (!activeLabel) return
@@ -296,6 +309,7 @@ export function LabelRunPage() {
             selectedAssignmentId={selectedAssignmentId}
             onSelectAssignment={() => {}}
             onHandoff={handleHandoff}
+            onSampleHandoff={handleSampleHandoff}
           />
           <QueueLine queued={queued} onAdd={() => setNoteOpen(true)} />
         </div>
@@ -347,6 +361,7 @@ export function LabelRunPage() {
           selectedAssignmentId={selectedAssignmentId}
           onSelectAssignment={(id) => setSelectedAssignmentId(id)}
           onHandoff={handleHandoff}
+          onSampleHandoff={handleSampleHandoff}
         />
         <QueueLine queued={queued} onAdd={() => setNoteOpen(true)} />
       </div>

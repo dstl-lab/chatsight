@@ -2,10 +2,14 @@ import { useEffect, useState } from 'react'
 import { api } from '../services/api'
 import type { HandoffSummaryItem, SummaryPattern } from '../types'
 
+const RETRY_HOLD_MS = 1500
+
 export function SummariesPage() {
   const [summaries, setSummaries] = useState<HandoffSummaryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [openIds, setOpenIds] = useState<Set<number>>(new Set())
+
+  const refresh = () => api.listHandoffSummaries().then(setSummaries)
 
   useEffect(() => {
     let cancelled = false
@@ -73,6 +77,7 @@ export function SummariesPage() {
                 summary={s}
                 open={openIds.has(s.label_id)}
                 onToggle={() => toggle(s.label_id)}
+                onRetry={refresh}
               />
             ))}
           </div>
@@ -86,9 +91,25 @@ interface SummaryCardProps {
   summary: HandoffSummaryItem
   open: boolean
   onToggle: () => void
+  onRetry: () => void
 }
 
-function SummaryCard({ summary, open, onToggle }: SummaryCardProps) {
+function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
+  const [retrying, setRetrying] = useState(false)
+
+  const retry = async () => {
+    if (retrying) return
+    setRetrying(true)
+    try {
+      await api.retryHandoffSingleLabel(summary.label_id)
+      // Brief hold so the spinner doesn't flash before the parent re-fetch.
+      await new Promise((r) => setTimeout(r, RETRY_HOLD_MS))
+      onRetry()
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   const isClassifying = summary.phase === 'classifying'
   const isFailed = summary.phase === 'failed'
   const isRateLimited = isFailed && summary.error_kind === 'rate_limited'
@@ -195,18 +216,17 @@ function SummaryCard({ summary, open, onToggle }: SummaryCardProps) {
               </div>
               <div className="font-serif text-[13px] text-on-surface leading-[1.55]">
                 Gemini returned a rate-limit / quota response while classifying this
-                label. Nothing was committed. Wait for the per-minute window to reset
-                (or upgrade your tier) and re-run the handoff from the Run page once
-                this label is active again. Large jobs (&gt; 500 messages) route
-                through the Batch API, which has its own quota — try the smaller path
-                first if you hit this repeatedly.
+                label. Nothing new was committed. Wait for the per-minute window to
+                reset (or upgrade your tier) and try again. Large jobs (&gt; 500
+                messages) route through the Batch API, which has its own quota — try
+                the smaller path first if you hit this repeatedly.
               </div>
             </>
           ) : (
             <div className="font-serif text-[13px] text-on-surface leading-[1.55] mb-1">
               The background classification failed and was not committed. Your human
-              decisions are intact — you can re-run the handoff from the Run page once
-              this label is active again.
+              decisions and any prior partial AI rows are intact — retry will pick up
+              where it left off.
             </div>
           )}
           {summary.error && (
@@ -216,6 +236,23 @@ function SummaryCard({ summary, open, onToggle }: SummaryCardProps) {
               {summary.error}
             </div>
           )}
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={retry}
+              disabled={retrying}
+              className={`appearance-none border px-3 py-1.5 rounded-sm font-mono text-[11px] tracking-[0.16em] uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                isRateLimited
+                  ? 'border-ochre text-ochre hover:bg-ochre/10'
+                  : 'border-edge text-on-surface hover:bg-surface'
+              }`}
+            >
+              {retrying
+                ? 'Retrying…'
+                : isRateLimited
+                ? 'Try again — quota may have reset'
+                : 'Retry handoff'}
+            </button>
+          </div>
         </div>
       )}
 
