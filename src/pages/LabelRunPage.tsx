@@ -8,6 +8,7 @@ import { DecisionDock } from '../components/run/DecisionDock'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { ReviewDock } from '../components/run/ReviewDock'
+import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
 import { api } from '../services/api'
 import type {
   DecisionValue,
@@ -39,6 +40,7 @@ export function LabelRunPage() {
   const [reviewIdx, setReviewIdx] = useState(0)
   const [recent, setRecent] = useState<{ value: DecisionValue; label: string } | null>(null)
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
+  const [abortOpen, setAbortOpen] = useState(false)
 
   // Auto-clear the inline confirmation in the dock after a few seconds.
   useEffect(() => {
@@ -235,6 +237,28 @@ export function LabelRunPage() {
     await refresh()
   }, [activeLabel, refresh])
 
+  const handleAbortActive = useCallback(async () => {
+    if (!activeLabel) return
+    setAbortOpen(false)
+    await api.deleteSingleLabel(activeLabel.id)
+    await refresh()
+  }, [activeLabel, refresh])
+
+  const handleRemoveQueued = useCallback(
+    async (id: number) => {
+      await api.deleteSingleLabel(id)
+      const q = await api.listSingleLabels({ phase: 'queued' })
+      setQueued(q)
+    },
+    []
+  )
+
+  const handleClearQueue = useCallback(async () => {
+    await Promise.all(queued.map((q) => api.deleteSingleLabel(q.id)))
+    const q = await api.listSingleLabels({ phase: 'queued' })
+    setQueued(q)
+  }, [queued])
+
   const handleNoteSubmit = useCallback(
     async (name: string, description: string) => {
       await api.queueSingleLabel({ name, description: description || undefined })
@@ -332,8 +356,14 @@ export function LabelRunPage() {
             onSelectAssignment={() => {}}
             onHandoff={handleHandoff}
             onSampleHandoff={handleSampleHandoff}
+            onAbort={() => setAbortOpen(true)}
           />
-          <QueueLine queued={queued} onAdd={() => setNoteOpen(true)} />
+          <QueueLine
+            queued={queued}
+            onAdd={() => setNoteOpen(true)}
+            onRemove={handleRemoveQueued}
+            onClearAll={handleClearQueue}
+          />
         </div>
         <ConversationMeta
           chatlogId={item.chatlog_id}
@@ -364,6 +394,16 @@ export function LabelRunPage() {
           onClose={() => setNoteOpen(false)}
           onSubmit={handleNoteSubmit}
         />
+
+        {abortOpen && (
+          <AbortConfirmModal
+            labelName={activeLabel.name}
+            yesCount={activeLabel.yes_count}
+            noCount={activeLabel.no_count}
+            onConfirm={handleAbortActive}
+            onCancel={() => setAbortOpen(false)}
+          />
+        )}
       </div>
     )
   }
@@ -387,8 +427,14 @@ export function LabelRunPage() {
           onSelectAssignment={(id) => setSelectedAssignmentId(id)}
           onHandoff={handleHandoff}
           onSampleHandoff={handleSampleHandoff}
+          onAbort={() => setAbortOpen(true)}
         />
-        <QueueLine queued={queued} onAdd={() => setNoteOpen(true)} />
+        <QueueLine
+          queued={queued}
+          onAdd={() => setNoteOpen(true)}
+          onRemove={handleRemoveQueued}
+          onClearAll={handleClearQueue}
+        />
       </div>
       <ConversationMeta
         chatlogId={focused.chatlog_id}
@@ -421,6 +467,16 @@ export function LabelRunPage() {
         onContinue={handleContinueToReview}
         onRefine={handleRefine}
       />
+
+      {abortOpen && (
+        <AbortConfirmModal
+          labelName={activeLabel.name}
+          yesCount={activeLabel.yes_count}
+          noCount={activeLabel.no_count}
+          onConfirm={handleAbortActive}
+          onCancel={() => setAbortOpen(false)}
+        />
+      )}
     </div>
   )
 }

@@ -12,6 +12,7 @@ interface StripBarProps {
   onSelectAssignment: (id: number | null) => void
   onHandoff: () => void
   onSampleHandoff?: (n: number) => void
+  onAbort: () => void
 }
 
 export function StripBar({
@@ -23,6 +24,7 @@ export function StripBar({
   onSelectAssignment,
   onHandoff,
   onSampleHandoff,
+  onAbort,
 }: StripBarProps) {
   return (
     <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
@@ -51,6 +53,14 @@ export function StripBar({
         <SampleHandoffControl onSubmit={onSampleHandoff} />
       )}
       <ReadinessChip readiness={readiness} onHandoff={onHandoff} />
+      <button
+        type="button"
+        onClick={onAbort}
+        title="Abort labeling — discard all decisions for this label"
+        className="appearance-none font-mono text-[10px] tracking-[0.06em] uppercase text-faint hover:text-brick transition-colors px-2 py-[5px]"
+      >
+        ✕ abort
+      </button>
     </div>
   )
 }
