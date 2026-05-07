@@ -1,5 +1,6 @@
 """Queue logic for the single-label flow: pick the next conversation + message
 that needs a decision for the active label."""
+import logging
 import hashlib
 from typing import Optional
 
@@ -8,6 +9,8 @@ from sqlmodel import Session, select
 
 from database import ext_engine
 from models import LabelApplication, MessageCache
+
+logger = logging.getLogger(__name__)
 
 
 def _shuffle_key(label_id: int, chatlog_id: int) -> int:
@@ -95,6 +98,78 @@ def next_message_for_label(
     return None
 
 
+def _thread_from_message_cache(session: Session, chatlog_id: int) -> list[dict]:
+    """Reconstruct tutor + student turns from SQLite MessageCache only.
+
+    Each cached student row stores tutor snippets from ingest time:
+    `context_before` = tutor reply immediately preceding this question,
+    `context_after` = tutor reply immediately following this question.
+    Interleave them in order and dedupe back-to-back identical tutor text
+    (neighboring rows share the same boundary reply).
+    """
+    cached_rows = session.exec(
+        select(
+            MessageCache.message_index,
+            MessageCache.message_text,
+            MessageCache.context_before,
+            MessageCache.context_after,
+        )
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .order_by(MessageCache.message_index)
+    ).all()
+    thread: list[dict] = []
+    seq = 0
+
+    def last_turn_meta():
+        if not thread:
+            return None, None
+        last = thread[-1]
+        return last["role"], last.get("text")
+
+    def append_tutor(txt: str) -> None:
+        nonlocal seq
+        stripped = (txt or "").strip()
+        if not stripped:
+            return
+        role, prev_text = last_turn_meta()
+        if role == "tutor" and prev_text == stripped:
+            return
+        thread.append({"message_index": seq, "role": "tutor", "text": stripped})
+        seq += 1
+
+    def append_student(student_idx: int, txt: str) -> None:
+        nonlocal seq
+        thread.append({
+            "message_index": seq,
+            "role": "student",
+            "text": txt,
+            "student_index": student_idx,
+        })
+        seq += 1
+
+    for midx, msg_text, ctx_before, ctx_after in cached_rows:
+        append_tutor(ctx_before or "")
+        append_student(midx, msg_text)
+        append_tutor(ctx_after or "")
+
+    return thread
+
+
+def _student_focus_index(thread: list[dict], message_index: int) -> Optional[int]:
+    return next(
+        (
+            i
+            for i, t in enumerate(thread)
+            if t["role"] == "student" and t.get("student_index") == message_index
+        ),
+        None,
+    )
+
+
+def _thread_has_tutor(thread: list[dict]) -> bool:
+    return any(t.get("role") == "tutor" for t in thread)
+
+
 def _build_focus_payload(
     session: Session,
     label_id: int,
@@ -103,18 +178,34 @@ def _build_focus_payload(
     text: str,
     notebook: Optional[str],
 ) -> dict:
-    thread = _fetch_full_thread(chatlog_id)
-    # Locate the focused turn within the full thread by matching message_index
-    # (computed identically on both sides — student-only ordering).
-    focus_index = next(
-        (i for i, t in enumerate(thread)
-         if t["role"] == "student" and t.get("student_index") == message_index),
-        None,
+    thread_pg = _fetch_full_thread(chatlog_id)
+    focus_pg = _student_focus_index(thread_pg, message_index)
+
+    # Only hit SQLite for rebuild when Postgres thread is missing, mismatched,
+    # or student-only (tutor replies live in MessageCache.context_*).
+    needs_cache = focus_pg is None or not _thread_has_tutor(thread_pg)
+    thread_cache = (
+        _thread_from_message_cache(session, chatlog_id) if needs_cache else []
     )
-    if focus_index is None:
-        # Fallback when external DB is unreachable: synthesize a single-turn thread
-        # so the UI still renders the focused message.
-        thread = [{"message_index": 0, "role": "student", "text": text}]
+    focus_cache = (
+        _student_focus_index(thread_cache, message_index) if thread_cache else None
+    )
+
+    if focus_pg is not None and _thread_has_tutor(thread_pg):
+        thread, focus_index = thread_pg, focus_pg
+    elif focus_cache is not None and _thread_has_tutor(thread_cache):
+        thread, focus_index = thread_cache, focus_cache
+    elif focus_pg is not None:
+        thread, focus_index = thread_pg, focus_pg
+    elif focus_cache is not None:
+        thread, focus_index = thread_cache, focus_cache
+    elif thread_cache:
+        thread = thread_cache
+        focus_index = focus_cache if focus_cache is not None else 0
+    else:
+        thread = [
+            {"message_index": 0, "role": "student", "text": text, "student_index": message_index}
+        ]
         focus_index = 0
     return {
         "chatlog_id": chatlog_id,
@@ -159,7 +250,12 @@ def _fetch_full_thread(chatlog_id: int) -> list[dict]:
     try:
         with ext_engine.connect() as conn:
             rows = conn.execute(sql_text(sql), {"chatlog_id": chatlog_id}).fetchall()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Failed to fetch full thread from external DB for chatlog_id=%s: %s",
+            chatlog_id,
+            exc,
+        )
         return []  # external DB unreachable in tests / mock mode
 
     turns: list[dict] = []

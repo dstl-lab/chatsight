@@ -1,4 +1,5 @@
 """End-to-end tests for the single-label binary flow via FastAPI."""
+import queue_service
 from sqlmodel import select
 
 from models import LabelApplication, LabelDefinition, MessageCache
@@ -257,3 +258,36 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     ).all()
     assert len(skips) == 3
     assert all(r.value == "skip" for r in skips)
+
+
+def test_next_focused_fallback_includes_tutor_from_cache(client, session, monkeypatch):
+    """When Postgres thread fetch fails, rebuild thread from MessageCache including tutor snippets."""
+    monkeypatch.setattr(queue_service, "_fetch_full_thread", lambda chatlog_id: [])
+
+    session.add(MessageCache(
+        chatlog_id=910,
+        message_index=0,
+        message_text="first student question",
+        context_before=None,
+        context_after="tutor reply after first",
+    ))
+    session.add(MessageCache(
+        chatlog_id=910,
+        message_index=1,
+        message_text="second student question",
+        context_before="tutor reply after first",
+        context_after="tutor reply after second",
+    ))
+    session.commit()
+
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    r = client.get(f"/api/single-labels/{label['id']}/next")
+    assert r.status_code == 200
+    data = r.json()
+    roles = [t["role"] for t in data["thread"]]
+    assert roles == ["student", "tutor", "student", "tutor"]
+    blob = "\n".join(t["text"] for t in data["thread"])
+    assert "tutor reply after first" in blob
+    assert "tutor reply after second" in blob
+    assert data["focus_index"] == 0
