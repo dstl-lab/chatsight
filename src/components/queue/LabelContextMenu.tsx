@@ -32,28 +32,28 @@ export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription,
     <div
       ref={menuRef}
       style={{ position: 'fixed', left: x, top: y, zIndex: 50 }}
-      className="bg-neutral-800 border border-neutral-700 rounded-lg py-1 min-w-[160px] shadow-xl"
+      className="bg-elevated border border-edge rounded-lg py-1 min-w-[160px] shadow-xl"
     >
-      <div className="px-3 py-1 text-[10px] text-neutral-500 truncate max-w-[160px]">{labelName}</div>
-      <div className="border-t border-neutral-700 my-1" />
+      <div className="px-3 py-1 text-[10px] text-faint truncate max-w-[160px]">{labelName}</div>
+      <div className="border-t border-edge my-1" />
       <button
         onClick={() => { onRename(); onClose() }}
-        className="w-full text-left px-3 py-1.5 text-[12px] text-neutral-200 hover:bg-neutral-700 transition-colors"
+        className="w-full text-left px-3 py-1.5 text-[12px] text-on-surface hover:bg-elevated-hl transition-colors"
       >
         Rename
       </button>
       <button
         onClick={() => { onEditDescription(); onClose() }}
-        className="w-full text-left px-3 py-1.5 text-[12px] text-neutral-200 hover:bg-neutral-700 transition-colors"
+        className="w-full text-left px-3 py-1.5 text-[12px] text-on-surface hover:bg-elevated-hl transition-colors"
       >
         Edit description
       </button>
       {onArchive && (
         <>
-          <div className="border-t border-neutral-700 my-1" />
+          <div className="border-t border-edge my-1" />
           <button
             onClick={() => { onArchive(); onClose() }}
-            className="w-full text-left px-3 py-1.5 text-[12px] text-red-400 hover:bg-neutral-700 transition-colors"
+            className="w-full text-left px-3 py-1.5 text-[12px] text-danger-text hover:bg-elevated-hl transition-colors"
           >
             Archive
           </button>

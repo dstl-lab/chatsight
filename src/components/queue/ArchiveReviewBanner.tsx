@@ -10,10 +10,10 @@ export function ArchiveReviewBanner({ labelName, remainingCount, onSkipAndArchiv
   const allDone = remainingCount === 0
 
   return (
-    <div className={`${allDone ? 'bg-green-900/60 border-b border-green-800' : 'bg-amber-900/60 border-b border-amber-800'} px-4 py-2 flex items-center justify-between`}>
+    <div className={`${allDone ? 'bg-success-surface border-b border-success-border' : 'bg-warning-surface border-b border-warning-border'} px-4 py-2 flex items-center justify-between`}>
       <div className="flex items-center gap-2">
-        <span className={`${allDone ? 'text-green-400' : 'text-amber-400'} text-sm`}>{allDone ? '\u2713' : '\u26A0'}</span>
-        <span className={`${allDone ? 'text-green-200' : 'text-amber-200'} text-xs font-medium`}>
+        <span className={`${allDone ? 'text-success' : 'text-warning'} text-sm`}>{allDone ? '\u2713' : '\u26A0'}</span>
+        <span className={`${allDone ? 'text-success-on-surface' : 'text-warning-on-surface'} text-xs font-medium`}>
           {allDone
             ? `All messages relabeled — ready to archive \u201C${labelName}\u201D`
             : `Archiving \u201C${labelName}\u201D — relabel ${remainingCount} remaining ${remainingCount === 1 ? 'message' : 'messages'}`
@@ -24,21 +24,21 @@ export function ArchiveReviewBanner({ labelName, remainingCount, onSkipAndArchiv
         {allDone ? (
           <button
             onClick={onCompleteArchive}
-            className="text-[11px] text-green-200 border border-green-700 rounded px-2.5 py-1 hover:bg-green-800/50 transition-colors"
+            className="text-[11px] text-success-on-surface border border-success-border rounded px-2.5 py-1 hover:bg-success-surface transition-colors"
           >
             Complete archive
           </button>
         ) : (
           <button
             onClick={onSkipAndArchive}
-            className="text-[11px] text-amber-200 border border-amber-700 rounded px-2.5 py-1 hover:bg-amber-800/50 transition-colors"
+            className="text-[11px] text-warning-on-surface border border-warning-border rounded px-2.5 py-1 hover:bg-warning-surface transition-colors"
           >
             Skip remaining & archive
           </button>
         )}
         <button
           onClick={onCancel}
-          className="text-[11px] text-neutral-400 border border-neutral-700 rounded px-2.5 py-1 hover:bg-neutral-800 transition-colors"
+          className="text-[11px] text-muted border border-edge rounded px-2.5 py-1 hover:bg-elevated transition-colors"
         >
           Cancel
         </button>

@@ -66,7 +66,8 @@ test('shows count in hover popover', async () => {
 test('shows selected state for applied labels', () => {
   render(<ProgressSidebar {...defaultProps} appliedLabelIds={new Set([1])} />)
   const btn = screen.getByRole('button', { name: /Concept Question/ })
-  expect(btn.className).toContain('blue-500')
+  // Selected/applied state uses the accent token (was 'blue-500' pre-theming).
+  expect(btn.className).toContain('accent')
 })
 
 test('shows + New label button', () => {
@@ -136,5 +137,6 @@ test('highlights the currently reviewed item', () => {
   render(<ProgressSidebar {...defaultProps} history={historyItems} reviewingKey="1-0" />)
   fireEvent.click(screen.getByText(/recent/i))
   const item = screen.getByText('Short message').closest('[data-history-item]')
-  expect(item?.className).toContain('blue')
+  // The accent token drives the highlight (was 'blue' before theming).
+  expect(item?.className).toContain('accent')
 })

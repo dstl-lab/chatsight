@@ -1,3 +1,310 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 @plugin "@tailwindcss/typography";
+
+/* Theme: data-theme attribute on <html> */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ─── Light theme (default) ─── */
+:root {
+  /* Backgrounds */
+  --app-canvas: #ffffff;
+  --app-surface: #fafafa;
+  --app-elevated: #f5f5f5;
+  --app-elevated-hl: #e5e5e5;
+  --app-overlay: rgba(0, 0, 0, 0.4);
+  --app-message-student: #eff6ff;
+  --app-modal-deep: #ffffff;
+
+  /* Borders */
+  --app-edge: #d4d4d4;
+  --app-edge-subtle: #e5e5e5;
+  --app-edge-strong: #a3a3a3;
+
+  /* Text */
+  --app-on-canvas: #171717;
+  --app-on-surface: #404040;
+  --app-tertiary: #525252;
+  --app-muted: #737373;
+  --app-faint: #a3a3a3;
+  --app-disabled: #d4d4d4;
+
+  /* Accent (blue) */
+  --app-accent: #2563eb;
+  --app-accent-hover: #1d4ed8;
+  --app-accent-text: #2563eb;
+  --app-accent-surface: #dbeafe;
+  --app-accent-border: #93c5fd;
+  --app-accent-on-surface: #1d4ed8;
+  --app-accent-muted: #3b82f6;
+  --app-message-border: #bfdbfe;
+
+  /* Warning (amber) */
+  --app-warning: #d97706;
+  --app-warning-surface: #fef3c7;
+  --app-warning-border: #fde68a;
+  --app-warning-on-surface: #92400e;
+  --app-warning-name: #b45309;
+
+  /* Success (green) */
+  --app-success: #16a34a;
+  --app-success-surface: #dcfce7;
+  --app-success-border: #bbf7d0;
+  --app-success-on-surface: #166534;
+
+  /* Danger (red) */
+  --app-danger: #dc2626;
+  --app-danger-hover: #b91c1c;
+  --app-danger-text: #dc2626;
+  --app-danger-surface: #fee2e2;
+
+  /* AI (purple) */
+  --app-ai-action: #9333ea;
+  --app-ai-hover: #7e22ce;
+  --app-ai-text: #7e22ce;
+  --app-ai-surface: #f3e8ff;
+  --app-ai-border: #e9d5ff;
+  --app-ai-progress: #a855f7;
+
+  /* Discover (violet) */
+  --app-discover-text: #7c3aed;
+  --app-discover-strong: #6d28d9;
+  --app-discover-surface: #ede9fe;
+  --app-discover-border: #c4b5fd;
+  --app-discover-dot: #8b5cf6;
+
+  /* Run flow (single-label binary) — editorial accent palette */
+  --app-paper: #1a1408;          /* "ink" reads as deep on cream in light mode */
+  --app-ochre: #b87a0e;
+  --app-ochre-dim: #8c6d1f;
+  --app-moss: #6b8456;           /* yes */
+  --app-moss-dim: #4d5c3f;
+  --app-brick: #a14c34;           /* no */
+  --app-brick-dim: #7a3a26;
+  --app-stone: #6b6457;           /* skip */
+  --app-bg-warm: #f6efdb;         /* warm cream — focused message backdrop */
+  --app-edge-warm: #e7dfc7;
+}
+
+/* ─── Dark theme ─── */
+[data-theme="dark"] {
+  /* Backgrounds */
+  --app-canvas: #0a0a0a;
+  --app-surface: #171717;
+  --app-elevated: #262626;
+  --app-elevated-hl: #404040;
+  --app-overlay: rgba(0, 0, 0, 0.6);
+  --app-message-student: #0d1f33;
+  --app-modal-deep: #16161f;
+
+  /* Borders */
+  --app-edge: #404040;
+  --app-edge-subtle: #262626;
+  --app-edge-strong: #525252;
+
+  /* Text */
+  --app-on-canvas: #f5f5f5;
+  --app-on-surface: #e5e5e5;
+  --app-tertiary: #d4d4d4;
+  --app-muted: #a3a3a3;
+  --app-faint: #737373;
+  --app-disabled: #525252;
+
+  /* Accent (blue) */
+  --app-accent: #2563eb;
+  --app-accent-hover: #3b82f6;
+  --app-accent-text: #60a5fa;
+  --app-accent-surface: rgba(30, 58, 138, 0.5);
+  --app-accent-border: #3b82f6;
+  --app-accent-on-surface: #bfdbfe;
+  --app-accent-muted: #93c5fd;
+  --app-message-border: rgba(29, 78, 216, 0.6);
+
+  /* Warning (amber) */
+  --app-warning: #fbbf24;
+  --app-warning-surface: rgba(120, 53, 15, 0.4);
+  --app-warning-border: #b45309;
+  --app-warning-on-surface: #fde68a;
+  --app-warning-name: #fcd34d;
+
+  /* Success (green) */
+  --app-success: #4ade80;
+  --app-success-surface: rgba(20, 83, 45, 0.6);
+  --app-success-border: #166534;
+  --app-success-on-surface: #bbf7d0;
+
+  /* Danger (red) */
+  --app-danger: #dc2626;
+  --app-danger-hover: #ef4444;
+  --app-danger-text: #f87171;
+  --app-danger-surface: rgba(239, 68, 68, 0.15);
+
+  /* AI (purple) */
+  --app-ai-action: #9333ea;
+  --app-ai-hover: #a855f7;
+  --app-ai-text: #d8b4fe;
+  --app-ai-surface: rgba(147, 51, 234, 0.2);
+  --app-ai-border: #7e22ce;
+  --app-ai-progress: #a855f7;
+
+  /* Discover (violet) */
+  --app-discover-text: #a78bfa;
+  --app-discover-strong: #c4b5fd;
+  --app-discover-surface: rgba(139, 92, 246, 0.1);
+  --app-discover-border: rgba(139, 92, 246, 0.5);
+  --app-discover-dot: #8b5cf6;
+
+  /* Run flow (single-label binary) — editorial accent palette */
+  --app-paper: #ece5d7;          /* warm "paper" ink for the focused message */
+  --app-ochre: #e4b53b;
+  --app-ochre-dim: #8c6d1f;
+  --app-moss: #8fa876;           /* yes */
+  --app-moss-dim: #4d5c3f;
+  --app-brick: #bb5c42;          /* no */
+  --app-brick-dim: #5e2f23;
+  --app-stone: #8a8479;          /* skip */
+  --app-bg-warm: #15130f;        /* warmer near-black for the focused panel */
+  --app-edge-warm: #2a2620;
+}
+
+/* ─── Warm-flow palette (single-label flow) ───
+   Scopes the editorial palette from the design mock so the single-label
+   experience feels like a focused research instrument, distinct from the
+   cool gray of the multi-label flow. Cascades to all descendants. */
+
+.warm-flow {
+  /* Light theme — cream paper with warm-brown ink */
+  --color-canvas: #F6EFDB;
+  --color-surface: #F0E8CF;
+  --color-elevated: #E8DFC0;
+  --color-edge: #D4C9AE;
+  --color-edge-subtle: #E0D7BD;
+  --color-on-canvas: #1A1408;
+  --color-on-surface: #3A2E1B;
+  --color-muted: #7B6E55;
+  --color-faint: #A99B81;
+  --color-bg-warm: #FAF3DF;
+  background-color: var(--color-canvas);
+  color: var(--color-on-canvas);
+  position: relative;
+}
+[data-theme="dark"] .warm-flow {
+  /* Dark theme — exact palette from the design mockup */
+  --color-canvas: #0F0E0C;
+  --color-surface: #181613;
+  --color-elevated: #1E1B17;
+  --color-edge: #2A2620;
+  --color-edge-subtle: #221E1A;
+  --color-on-canvas: #ECE5D7;
+  --color-on-surface: #C9C0AE;
+  --color-muted: #948B7E;
+  --color-faint: #6B6457;
+  --color-bg-warm: #15130F;
+}
+
+/* Subtle warm radial gradients evoke the mockup's editorial atmosphere */
+.warm-flow::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 80% -10%, rgba(228,181,59,.06), transparent 60%),
+    radial-gradient(700px 400px at -10% 110%, rgba(143,168,118,.04), transparent 60%);
+  z-index: 0;
+}
+/* Paper-grain noise — fixed so it doesn't repeat under scrollable areas */
+.warm-flow::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .92  0 0 0 0 .87  0 0 0 0 .76  0 0 0 .04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity: .35;
+  z-index: 0;
+  mix-blend-mode: soft-light;
+}
+
+/* ─── Register tokens with Tailwind v4 ─── */
+@theme inline {
+  /* Backgrounds */
+  --color-canvas: var(--app-canvas);
+  --color-surface: var(--app-surface);
+  --color-elevated: var(--app-elevated);
+  --color-elevated-hl: var(--app-elevated-hl);
+  --color-overlay: var(--app-overlay);
+  --color-message-student: var(--app-message-student);
+  --color-modal-deep: var(--app-modal-deep);
+
+  /* Borders */
+  --color-edge: var(--app-edge);
+  --color-edge-subtle: var(--app-edge-subtle);
+  --color-edge-strong: var(--app-edge-strong);
+
+  /* Text */
+  --color-on-canvas: var(--app-on-canvas);
+  --color-on-surface: var(--app-on-surface);
+  --color-tertiary: var(--app-tertiary);
+  --color-muted: var(--app-muted);
+  --color-faint: var(--app-faint);
+  --color-disabled: var(--app-disabled);
+
+  /* Accent (blue) */
+  --color-accent: var(--app-accent);
+  --color-accent-hover: var(--app-accent-hover);
+  --color-accent-text: var(--app-accent-text);
+  --color-accent-surface: var(--app-accent-surface);
+  --color-accent-border: var(--app-accent-border);
+  --color-accent-on-surface: var(--app-accent-on-surface);
+  --color-accent-muted: var(--app-accent-muted);
+  --color-message-border: var(--app-message-border);
+
+  /* Warning (amber) */
+  --color-warning: var(--app-warning);
+  --color-warning-surface: var(--app-warning-surface);
+  --color-warning-border: var(--app-warning-border);
+  --color-warning-on-surface: var(--app-warning-on-surface);
+  --color-warning-name: var(--app-warning-name);
+
+  /* Success (green) */
+  --color-success: var(--app-success);
+  --color-success-surface: var(--app-success-surface);
+  --color-success-border: var(--app-success-border);
+  --color-success-on-surface: var(--app-success-on-surface);
+
+  /* Danger (red) */
+  --color-danger: var(--app-danger);
+  --color-danger-hover: var(--app-danger-hover);
+  --color-danger-text: var(--app-danger-text);
+  --color-danger-surface: var(--app-danger-surface);
+
+  /* AI (purple) */
+  --color-ai-action: var(--app-ai-action);
+  --color-ai-hover: var(--app-ai-hover);
+  --color-ai-text: var(--app-ai-text);
+  --color-ai-surface: var(--app-ai-surface);
+  --color-ai-border: var(--app-ai-border);
+  --color-ai-progress: var(--app-ai-progress);
+
+  /* Discover (violet) */
+  --color-discover-text: var(--app-discover-text);
+  --color-discover-strong: var(--app-discover-strong);
+  --color-discover-surface: var(--app-discover-surface);
+  --color-discover-border: var(--app-discover-border);
+  --color-discover-dot: var(--app-discover-dot);
+
+  /* Run flow */
+  --color-paper: var(--app-paper);
+  --color-ochre: var(--app-ochre);
+  --color-ochre-dim: var(--app-ochre-dim);
+  --color-moss: var(--app-moss);
+  --color-moss-dim: var(--app-moss-dim);
+  --color-brick: var(--app-brick);
+  --color-brick-dim: var(--app-brick-dim);
+  --color-stone: var(--app-stone);
+  --color-bg-warm: var(--app-bg-warm);
+  --color-edge-warm: var(--app-edge-warm);
+
+  /* Fonts */
+  --font-serif: 'Source Serif 4', Georgia, serif;
+}

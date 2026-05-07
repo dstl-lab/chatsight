@@ -87,11 +87,11 @@ export function ArchiveReviewSidebar({
   }
 
   return (
-    <aside className="w-52 shrink-0 border-r border-neutral-800 flex flex-col overflow-y-auto">
+    <aside className="w-52 shrink-0 border-r border-edge-subtle flex flex-col overflow-y-auto">
       {/* Message list */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="px-4 pt-4 pb-2">
-          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">
+          <p className="text-[10px] uppercase tracking-widest text-faint mb-1">
             {remaining.length} of {orphanedMessages.length} to relabel
           </p>
         </div>
@@ -104,20 +104,20 @@ export function ArchiveReviewSidebar({
               <button
                 key={key}
                 onClick={() => onSelectMessage(msg.chatlog_id, msg.message_index)}
-                className={`text-left px-4 py-2.5 border-b border-neutral-800 transition-colors ${
-                  isSelected ? 'bg-neutral-900/80 border-l-2 border-l-blue-500' : 'border-l-2 border-l-transparent hover:bg-neutral-900/40'
+                className={`text-left px-4 py-2.5 border-b border-edge-subtle transition-colors ${
+                  isSelected ? 'bg-surface/80 border-l-2 border-l-accent-border' : 'border-l-2 border-l-transparent hover:bg-surface/40'
                 } ${isComplete ? 'opacity-50' : ''}`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-neutral-200 font-medium">
-                    {isComplete && <span className="text-green-400 mr-1">&#10003;</span>}
+                  <span className="text-[11px] text-on-surface font-medium">
+                    {isComplete && <span className="text-success mr-1">&#10003;</span>}
                     Conv #{msg.chatlog_id}
                   </span>
-                  <span className="text-[9px] bg-neutral-800 text-neutral-500 px-1.5 py-0.5 rounded-full">
+                  <span className="text-[9px] bg-elevated text-faint px-1.5 py-0.5 rounded-full">
                     msg {msg.message_index}
                   </span>
                 </div>
-                <p className="text-[10px] text-neutral-500 truncate">{msg.preview_text}</p>
+                <p className="text-[10px] text-faint truncate">{msg.preview_text}</p>
               </button>
             )
           })}
@@ -125,8 +125,8 @@ export function ArchiveReviewSidebar({
       </div>
 
       {/* Label buttons at bottom */}
-      <div className="border-t border-neutral-800 p-4">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labels</p>
+      <div className="border-t border-edge-subtle p-4">
+        <p className="text-[10px] uppercase tracking-widest text-faint mb-2">Labels</p>
         <div className="flex flex-col gap-1.5">
           {labels.map(label => {
             const isArchived = label.id === archivedLabelId
@@ -153,7 +153,7 @@ export function ArchiveReviewSidebar({
                       if (e.key === 'Escape') setRenamingLabelId(null)
                     }}
                     onBlur={() => setRenamingLabelId(null)}
-                    className="w-full bg-neutral-900 border border-blue-500 rounded px-2.5 py-1.5 text-[11px] text-neutral-100 focus:outline-none"
+                    className="w-full bg-surface border border-accent-border rounded px-2.5 py-1.5 text-[11px] text-on-canvas focus:outline-none"
                   />
                 ) : (
                   <button
@@ -161,15 +161,15 @@ export function ArchiveReviewSidebar({
                     disabled={isArchived}
                     className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
                       isArchived
-                        ? 'bg-neutral-800 border border-neutral-700 text-neutral-600 line-through cursor-not-allowed'
+                        ? 'bg-elevated border border-edge text-disabled line-through cursor-not-allowed'
                         : isApplied
-                          ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
-                          : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
+                          ? 'bg-accent-surface border border-accent-border text-accent-on-surface'
+                          : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
                     }`}
                   >
                     <span className="truncate flex-1">{label.name}</span>
                     {!isArchived && activeIdx < 9 && (
-                      <span className="text-[9px] text-neutral-600 shrink-0 ml-2 select-none tabular-nums">
+                      <span className="text-[9px] text-disabled shrink-0 ml-2 select-none tabular-nums">
                         {activeIdx + 1}
                       </span>
                     )}
@@ -178,7 +178,7 @@ export function ArchiveReviewSidebar({
 
                 {(isHovered || isEditing) && !isRenaming && !isArchived && (
                   <div
-                    className="bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 mt-1"
+                    className="bg-elevated border border-edge rounded-lg p-2.5 mt-1"
                     onMouseEnter={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
                     onMouseLeave={() => cancelHover(label.id)}
                   >
@@ -190,21 +190,21 @@ export function ArchiveReviewSidebar({
                           onChange={e => setEditDesc(e.target.value)}
                           placeholder="Description..."
                           rows={2}
-                          className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-[11px] text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600 resize-none"
+                          className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
                         />
                         <div className="flex gap-2 justify-end">
-                          <button onClick={() => { setEditingLabelId(null); setHoveredLabelId(null) }} className="text-[10px] text-neutral-500 hover:text-neutral-300">
+                          <button onClick={() => { setEditingLabelId(null); setHoveredLabelId(null) }} className="text-[10px] text-faint hover:text-tertiary">
                             Cancel
                           </button>
-                          <button onClick={() => handleSaveDescription(label.id)} className="text-[10px] text-blue-400 hover:text-blue-300">
+                          <button onClick={() => handleSaveDescription(label.id)} className="text-[10px] text-accent-text hover:text-accent-muted">
                             Save
                           </button>
                         </div>
                       </>
                     ) : (
                       <>
-                        <p className="text-[10px] text-neutral-500 mb-1.5">{label.count} labeled</p>
-                        <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        <p className="text-[10px] text-faint mb-1.5">{label.count} labeled</p>
+                        <p className="text-[11px] text-muted leading-relaxed">
                           {label.description || 'No description'}
                         </p>
                       </>
@@ -225,7 +225,7 @@ export function ArchiveReviewSidebar({
           ) : (
             <button
               onClick={() => setShowPopover(true)}
-              className="w-full text-left bg-transparent border border-dashed border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-blue-400 hover:border-blue-500 transition-colors"
+              className="w-full text-left bg-transparent border border-dashed border-edge rounded px-2.5 py-1.5 text-[11px] text-accent-text hover:border-accent-border transition-colors"
             >
               + New label
             </button>

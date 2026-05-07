@@ -5,7 +5,7 @@ dist/
 # Python
 server/python/.venv/
 server/python/__pycache__/
-server/python/*.db
+server/python/*.db*
 server/python/*.pyc
 **/__pycache__/
 *.pyc

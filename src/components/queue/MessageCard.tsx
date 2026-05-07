@@ -121,25 +121,25 @@ export function MessageCard({
 	return (
 		<div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
 			{isReviewing && (
-				<div className="bg-amber-900/30 border border-amber-700/40 rounded px-3 py-2">
-					<span className="text-[10px] text-amber-400 uppercase tracking-wide">
+				<div className="bg-warning-surface border border-warning-border rounded px-3 py-2">
+					<span className="text-[10px] text-warning uppercase tracking-wide">
 						Reviewing previous message
 					</span>
 				</div>
 			)}
 			{item.context_before && (
 				<div
-					className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3 cursor-pointer group"
+					className="bg-surface/70 border-l-2 border-edge-strong rounded px-4 py-3 cursor-pointer group"
 					onClick={() => setBeforeExpanded((v) => !v)}
 				>
-					<span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">
+					<span className="text-[10px] uppercase tracking-wide text-faint block mb-2">
 						Preceding AI response
-						<span className="ml-2 text-neutral-600 group-hover:text-neutral-400 transition-colors">
+						<span className="ml-2 text-disabled group-hover:text-muted transition-colors">
 							{beforeExpanded ? "▾ collapse" : "▸ expand"}
 						</span>
 					</span>
 					{beforeExpanded ? (
-						<div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
+						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -148,16 +148,16 @@ export function MessageCard({
 							</ReactMarkdown>
 						</div>
 					) : (
-						<p className="text-sm text-neutral-400 leading-relaxed italic">
+						<p className="text-sm text-muted leading-relaxed italic">
 							{truncateAtWord(stripMarkdown(item.context_before), 200, "tail")}
 						</p>
 					)}
 				</div>
 			)}
 
-			<div className="bg-[#0d1f33] border border-blue-700/60 rounded-lg p-4">
+			<div className="bg-[#0d1f33] border border-message-border rounded-lg p-4">
 				<div className="flex items-center justify-between mb-2">
-					<span className="text-[10px] uppercase tracking-wide text-blue-400">
+					<span className="text-[10px] uppercase tracking-wide text-accent-text">
 						Student · message {item.message_index}
 					</span>
 					{(conversationLoading ||
@@ -172,12 +172,12 @@ export function MessageCard({
 							disabled={conversationLoading || conversationError}
 							className={`flex items-center gap-1 text-[9px] transition-colors ${
 								conversationLoading
-									? "text-neutral-600 cursor-default"
+									? "text-disabled cursor-default"
 									: conversationError
-										? "text-neutral-500 cursor-default"
+										? "text-faint cursor-default"
 										: showConversation
-											? "text-blue-300 hover:text-blue-200"
-											: "text-blue-400 hover:text-blue-300"
+											? "text-accent-on-surface hover:text-accent-on-surface"
+											: "text-accent-text hover:text-accent-on-surface"
 							}`}
 							title={
 								conversationError
@@ -194,21 +194,21 @@ export function MessageCard({
 						</button>
 					)}
 				</div>
-				<p className="text-sm text-neutral-100 leading-relaxed">
+				<p className="text-sm text-on-canvas leading-relaxed">
 					{item.message_text}
 				</p>
 
 				<div className="flex justify-end mt-2">
 					{aiUnlocked && suggestionLoading ? (
-						<span className="text-[9px] text-blue-400 bg-neutral-900 border border-blue-500/40 rounded px-1.5 py-0.5 animate-pulse">
+						<span className="text-[9px] text-accent-text bg-surface border border-accent-border rounded px-1.5 py-0.5 animate-pulse">
 							✦ suggesting label...
 						</span>
 					) : aiUnlocked && suggestion ? (
 						<span
 							className={`inline-flex items-center gap-0 text-[9px] rounded overflow-hidden border ${
 								isSuggestionApplied
-									? "bg-blue-900/50 border-blue-500"
-									: "bg-neutral-900 border-blue-500/40"
+									? "bg-accent-surface border-accent-border"
+									: "bg-surface border-accent-border"
 							}`}
 						>
 							<button
@@ -222,8 +222,8 @@ export function MessageCard({
 								}}
 								className={`px-1.5 py-0.5 transition-colors ${
 									isSuggestionApplied
-										? "text-blue-200 hover:text-blue-100"
-										: "text-blue-400 hover:text-blue-300"
+										? "text-accent-on-surface hover:text-blue-100"
+										: "text-accent-text hover:text-accent-on-surface"
 								}`}
 								title="Click to toggle this label"
 							>
@@ -240,15 +240,15 @@ export function MessageCard({
 								}}
 								className={`px-1.5 py-0.5 transition-colors border-l ${
 									isSuggestionApplied
-										? "border-blue-700 text-blue-400 hover:text-blue-200"
-										: "border-blue-500/40 text-blue-500 hover:text-blue-300"
+										? "border-blue-700 text-accent-text hover:text-accent-on-surface"
+										: "border-accent-border text-accent-muted hover:text-accent-on-surface"
 								}`}
 							>
 								why?
 							</button>
 						</span>
 					) : !aiUnlocked ? (
-						<span className="text-[8px] text-neutral-600 bg-neutral-900 border border-neutral-800 rounded px-1.5 py-0.5">
+						<span className="text-[8px] text-disabled bg-surface border border-edge-subtle rounded px-1.5 py-0.5">
 							AI unlocks at 20
 						</span>
 					) : null}
@@ -256,13 +256,13 @@ export function MessageCard({
 			</div>
 
 			{showRationale && suggestion && (
-				<div className="border-l-2 border-neutral-700 pl-3 py-1">
-					<p className="text-[10px] text-neutral-400 leading-relaxed">
-						<span className="text-neutral-600">Evidence: </span>
+				<div className="border-l-2 border-edge pl-3 py-1">
+					<p className="text-[10px] text-muted leading-relaxed">
+						<span className="text-disabled">Evidence: </span>
 						&ldquo;{suggestion.evidence}&rdquo;
 					</p>
-					<p className="text-[10px] text-neutral-400 leading-relaxed mt-1">
-						<span className="text-neutral-600">Rationale: </span>
+					<p className="text-[10px] text-muted leading-relaxed mt-1">
+						<span className="text-disabled">Rationale: </span>
 						{suggestion.rationale}
 					</p>
 				</div>
@@ -270,17 +270,17 @@ export function MessageCard({
 
 			{item.context_after && (
 				<div
-					className="bg-neutral-900/70 border-l-2 border-neutral-600 rounded px-4 py-3 cursor-pointer group"
+					className="bg-surface/70 border-l-2 border-edge-strong rounded px-4 py-3 cursor-pointer group"
 					onClick={() => setAfterExpanded((v) => !v)}
 				>
-					<span className="text-[10px] uppercase tracking-wide text-neutral-500 block mb-2">
+					<span className="text-[10px] uppercase tracking-wide text-faint block mb-2">
 						Following AI response
-						<span className="ml-2 text-neutral-600 group-hover:text-neutral-400 transition-colors">
+						<span className="ml-2 text-disabled group-hover:text-muted transition-colors">
 							{afterExpanded ? "▾ collapse" : "▸ expand"}
 						</span>
 					</span>
 					{afterExpanded ? (
-						<div className="prose prose-sm prose-invert prose-p:text-neutral-300 prose-headings:text-neutral-200 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-blue-300 max-w-none text-neutral-300 leading-relaxed">
+						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -289,7 +289,7 @@ export function MessageCard({
 							</ReactMarkdown>
 						</div>
 					) : (
-						<p className="text-sm text-neutral-400 leading-relaxed italic">
+						<p className="text-sm text-muted leading-relaxed italic">
 							{truncateAtWord(stripMarkdown(item.context_after), 200, "head")}
 						</p>
 					)}
@@ -302,19 +302,19 @@ export function MessageCard({
 						<button
 							onClick={onBack}
 							disabled={!canGoBack}
-							className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+							className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
 						>
 							← Back
 						</button>
 						<button
 							onClick={onForward}
-							className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+							className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 						>
 							Forward →
 						</button>
 						<button
 							onClick={onNext}
-							className="text-xs text-white bg-blue-600 rounded px-3 py-1.5 hover:bg-blue-500 transition-colors"
+							className="text-xs text-white bg-accent rounded px-3 py-1.5 hover:bg-accent-hover transition-colors"
 						>
 							Next →
 						</button>
@@ -324,7 +324,7 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && canGoBack && (
 							<button
 								onClick={onBack}
-								className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+								className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 							>
 								← Back
 							</button>
@@ -332,7 +332,7 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && (
 							<button
 								onClick={onSkip}
-								className="text-xs text-neutral-400 border border-neutral-700 rounded px-3 py-1.5 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+								className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 							>
 								Skip
 							</button>
@@ -343,9 +343,9 @@ export function MessageCard({
 							className={`text-xs text-white rounded px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
 								isRecalibrating
 									? recalibrationPhase === 'reconcile'
-										? 'bg-amber-600 hover:bg-amber-500'
-										: 'bg-purple-600 hover:bg-purple-500'
-									: 'bg-blue-600 hover:bg-blue-500'
+										? 'bg-warning hover:bg-warning'
+										: 'bg-ai-action hover:bg-ai-hover'
+									: 'bg-accent hover:bg-accent-hover'
 							}`}
 						>
 							{isReviewing ? "Back to queue" : isRecalibrating

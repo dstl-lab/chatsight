@@ -98,15 +98,15 @@ function SortableLabelItem({
             if (e.key === 'Escape') onCancelRename()
           }}
           onBlur={onCancelRename}
-          className="w-full bg-neutral-900 border border-blue-500 rounded px-2.5 py-1.5 text-[11px] text-neutral-100 focus:outline-none"
+          className="w-full bg-surface border border-accent-border rounded px-2.5 py-1.5 text-[11px] text-on-canvas focus:outline-none"
         />
       ) : (
         <button
           onClick={onToggle}
           className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
             isApplied
-              ? 'bg-blue-900/50 border border-blue-500 text-blue-200'
-              : 'bg-neutral-900 border border-neutral-700 text-neutral-200 hover:bg-neutral-800 hover:border-blue-600'
+              ? 'bg-accent-surface border border-accent-border text-accent-on-surface'
+              : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
           }`}
         >
           <span className="truncate flex-1">{label.name}</span>
@@ -114,7 +114,7 @@ function SortableLabelItem({
             <span
               {...attributes}
               {...listeners}
-              className="text-[9px] text-neutral-600 shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums"
+              className="text-[9px] text-disabled shrink-0 ml-2 cursor-grab active:cursor-grabbing select-none tabular-nums"
               onClick={e => e.stopPropagation()}
             >
               {index + 1}
@@ -125,7 +125,7 @@ function SortableLabelItem({
 
       {(isHovered || isEditing) && !isRenaming && (
         <div
-          className="bg-neutral-800 border border-neutral-700 rounded-lg p-2.5 mt-1"
+          className="bg-elevated border border-edge rounded-lg p-2.5 mt-1"
           onMouseEnter={onClearHoverTimer}
           onMouseLeave={onCancelHover}
         >
@@ -137,21 +137,21 @@ function SortableLabelItem({
                 onChange={e => onSetEditDesc(e.target.value)}
                 placeholder="Description..."
                 rows={2}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-[11px] text-neutral-100 placeholder-neutral-600 mb-2 focus:outline-none focus:border-blue-600 resize-none"
+                className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
               />
               <div className="flex gap-2 justify-end">
-                <button onClick={onCancelEditing} className="text-[10px] text-neutral-500 hover:text-neutral-300">
+                <button onClick={onCancelEditing} className="text-[10px] text-faint hover:text-tertiary">
                   Cancel
                 </button>
-                <button onClick={onSaveDescription} className="text-[10px] text-blue-400 hover:text-blue-300">
+                <button onClick={onSaveDescription} className="text-[10px] text-accent-text hover:text-accent-on-surface">
                   Save
                 </button>
               </div>
             </>
           ) : (
             <>
-              <p className="text-[10px] text-neutral-500 mb-1.5">{label.count} labeled</p>
-              <p className="text-[11px] text-neutral-400 leading-relaxed">
+              <p className="text-[10px] text-faint mb-1.5">{label.count} labeled</p>
+              <p className="text-[11px] text-muted leading-relaxed">
                 {label.description || 'No description'}
               </p>
             </>
@@ -251,46 +251,46 @@ export function ProgressSidebar({
   }, [labels, onReorderLabels])
 
   return (
-    <aside className="w-52 shrink-0 border-r border-neutral-800 p-4 flex flex-col gap-5 overflow-y-auto">
+    <aside className="w-52 shrink-0 border-r border-edge-subtle p-4 flex flex-col gap-5 overflow-y-auto">
       <div>
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Labeled</p>
-        <div className="h-1.5 bg-neutral-800 rounded-full mb-1.5">
-          <div className="h-1.5 bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <p className="text-[10px] uppercase tracking-widest text-faint mb-2">Labeled</p>
+        <div className="h-1.5 bg-elevated rounded-full mb-1.5">
+          <div className="h-1.5 bg-accent rounded-full transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <p className="text-sm text-neutral-200 font-medium">{labeled} <span className="text-neutral-500 font-normal">/ {total.toLocaleString()}</span></p>
+        <p className="text-sm text-on-surface font-medium">{labeled} <span className="text-faint font-normal">/ {total.toLocaleString()}</span></p>
         {skippedCount > 0 && (
-          <p className="text-[10px] text-neutral-500 mt-1">Skipped: {skippedCount}</p>
+          <p className="text-[10px] text-faint mt-1">Skipped: {skippedCount}</p>
         )}
         {remaining !== null && (
-          <p className="text-[10px] text-neutral-500 mt-1">Remaining: {remaining.toLocaleString()}</p>
+          <p className="text-[10px] text-faint mt-1">Remaining: {remaining.toLocaleString()}</p>
         )}
       </div>
 
       <div className="flex flex-col gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">AI suggestions</p>
+          <p className="text-[10px] uppercase tracking-widest text-faint mb-1.5">AI suggestions</p>
           {suggestUnlocked ? (
-            <p className="text-[10px] text-green-400">Active</p>
+            <p className="text-[10px] text-success">Active</p>
           ) : (
             <>
-              <div className="h-1 bg-neutral-800 rounded-full mb-1">
-                <div className="h-1 bg-amber-500/70 rounded-full transition-all" style={{ width: `${suggestPct}%` }} />
+              <div className="h-1 bg-elevated rounded-full mb-1">
+                <div className="h-1 bg-warning rounded-full transition-all" style={{ width: `${suggestPct}%` }} />
               </div>
-              <p className="text-[10px] text-neutral-400">{labeled} / {suggestThreshold} to unlock</p>
+              <p className="text-[10px] text-muted">{labeled} / {suggestThreshold} to unlock</p>
             </>
           )}
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1.5">Auto-labeling</p>
+          <p className="text-[10px] uppercase tracking-widest text-faint mb-1.5">Auto-labeling</p>
           {autolabelStatus?.running ? (
             <>
-              <div className="h-1 bg-neutral-800 rounded-full mb-1">
+              <div className="h-1 bg-elevated rounded-full mb-1">
                 <div
                   className="h-1 bg-purple-500 rounded-full transition-all"
                   style={{ width: `${autolabelStatus.total > 0 ? Math.round((autolabelStatus.processed / autolabelStatus.total) * 100) : 0}%` }}
                 />
               </div>
-              <p className="text-[10px] text-purple-300">
+              <p className="text-[10px] text-ai-text">
                 Labeling... {autolabelStatus.processed.toLocaleString()} / {autolabelStatus.total.toLocaleString()}
               </p>
             </>
@@ -298,20 +298,20 @@ export function ProgressSidebar({
             <>
               <button
                 onClick={onStartAutolabel}
-                className="w-full text-[10px] bg-purple-600 text-white rounded px-2 py-1.5 hover:bg-purple-500 transition-colors"
+                className="w-full text-[10px] bg-ai-action text-white rounded px-2 py-1.5 hover:bg-ai-hover transition-colors"
               >
                 Auto-label {(total - labeled).toLocaleString()} remaining
               </button>
               {autolabelStatus?.error && (
-                <p className="text-[10px] text-red-400 mt-1">{autolabelStatus.error}</p>
+                <p className="text-[10px] text-danger-text mt-1">{autolabelStatus.error}</p>
               )}
             </>
           ) : (
             <>
-              <div className="h-1 bg-neutral-800 rounded-full mb-1">
+              <div className="h-1 bg-elevated rounded-full mb-1">
                 <div className="h-1 bg-purple-500/50 rounded-full transition-all" style={{ width: `${autolabelPct}%` }} />
               </div>
-              <p className="text-[10px] text-neutral-400">{labeled} / {autolabelThreshold} to unlock</p>
+              <p className="text-[10px] text-muted">{labeled} / {autolabelThreshold} to unlock</p>
             </>
           )}
         </div>
@@ -327,11 +327,11 @@ export function ProgressSidebar({
       />
 
       <div className="flex-1 min-h-0 flex flex-col">
-        <p className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">
+        <p className="text-[10px] uppercase tracking-widest text-faint mb-2">
           {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
         </p>
         {recalibration?.phase === 'reconcile' && (
-          <p className="text-[10px] text-neutral-600 mb-2">Toggle with 1-9 keys, Enter to confirm</p>
+          <p className="text-[10px] text-disabled mb-2">Toggle with 1-9 keys, Enter to confirm</p>
         )}
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -343,11 +343,11 @@ export function ProgressSidebar({
                   const wasOriginal = recalibration.originalLabelIds.has(label.id)
                   const wasRelabeled = recalibration.relabelIds.has(label.id)
                   if (wasOriginal && wasRelabeled) {
-                    diffBadge = { text: 'MATCH', color: 'text-green-400' }
+                    diffBadge = { text: 'MATCH', color: 'text-success' }
                   } else if (wasOriginal && !wasRelabeled) {
-                    diffBadge = { text: 'WAS ON', color: 'text-red-400' }
+                    diffBadge = { text: 'WAS ON', color: 'text-danger-text' }
                   } else if (!wasOriginal && wasRelabeled) {
-                    diffBadge = { text: 'NEW', color: 'text-blue-400' }
+                    diffBadge = { text: 'NEW', color: 'text-accent-text' }
                   }
                 }
 
@@ -395,7 +395,7 @@ export function ProgressSidebar({
           ) : (
             <button
               onClick={() => setShowPopover(true)}
-              className="w-full text-left bg-transparent border border-dashed border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-blue-400 hover:border-blue-500 transition-colors"
+              className="w-full text-left bg-transparent border border-dashed border-edge rounded px-2.5 py-1.5 text-[11px] text-accent-text hover:border-accent-border transition-colors"
             >
               + New label
             </button>
@@ -404,22 +404,22 @@ export function ProgressSidebar({
       </div>
       <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
       {recalibrationStats && recalibrationStats.total_recalibrations > 0 && (
-        <div className="border-t border-neutral-800 pt-3">
-          <p className="text-[10px] uppercase tracking-widest text-neutral-600 mb-2">Calibration</p>
+        <div className="border-t border-edge-subtle pt-3">
+          <p className="text-[10px] uppercase tracking-widest text-disabled mb-2">Calibration</p>
           <div className="flex items-center gap-2">
             <span className={`text-sm ${
-              recalibrationStats.trend === 'improving' ? 'text-green-400' :
-              recalibrationStats.trend === 'shifting' ? 'text-amber-400' :
-              'text-neutral-400'
+              recalibrationStats.trend === 'improving' ? 'text-success' :
+              recalibrationStats.trend === 'shifting' ? 'text-warning' :
+              'text-muted'
             }`}>
               {recalibrationStats.trend === 'improving' ? '↗' :
                recalibrationStats.trend === 'shifting' ? '↘' : '→'}
             </span>
             <div>
               <p className={`text-[11px] ${
-                recalibrationStats.trend === 'improving' ? 'text-neutral-300' :
-                recalibrationStats.trend === 'shifting' ? 'text-neutral-300' :
-                'text-neutral-400'
+                recalibrationStats.trend === 'improving' ? 'text-tertiary' :
+                recalibrationStats.trend === 'shifting' ? 'text-tertiary' :
+                'text-muted'
               }`}>
                 {recalibrationStats.trend === 'improving' ? 'Improving' :
                  recalibrationStats.trend === 'shifting' ? 'Shifting' : 'Steady'}
@@ -429,9 +429,9 @@ export function ProgressSidebar({
                   <span
                     key={i}
                     className={matched
-                      ? recalibrationStats.trend === 'improving' ? 'text-green-400' :
-                        recalibrationStats.trend === 'shifting' ? 'text-amber-400' : 'text-neutral-400'
-                      : 'text-neutral-700'
+                      ? recalibrationStats.trend === 'improving' ? 'text-success' :
+                        recalibrationStats.trend === 'shifting' ? 'text-warning' : 'text-muted'
+                      : 'text-disabled'
                     }
                     style={{ fontSize: '11px', lineHeight: 1 }}
                   >
