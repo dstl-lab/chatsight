@@ -29,6 +29,8 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN classified_count INTEGER"))
     if "classification_total" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN classification_total INTEGER"))
+    if "hybrid_explore_fraction" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN hybrid_explore_fraction FLOAT"))
 
 
 def _migrate_label_application(conn, inspect, text):
@@ -57,6 +59,26 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN assignment_id INTEGER"))
 
 
+def _migrate_conversation_cursor(conn, inspect, text):
+    cols = [c["name"] for c in inspect(conn).get_columns("conversationcursor")]
+    if "last_message_index" not in cols:
+        conn.execute(
+            text(
+                "ALTER TABLE conversationcursor "
+                "ADD COLUMN last_message_index INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+    if "last_message_index_decided" not in cols:
+        conn.execute(
+            text(
+                "ALTER TABLE conversationcursor "
+                "ADD COLUMN last_message_index_decided INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+    if "updated_at" not in cols:
+        conn.execute(text("ALTER TABLE conversationcursor ADD COLUMN updated_at DATETIME"))
+
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     with engine.connect() as conn:
@@ -65,6 +87,7 @@ def create_db_and_tables():
         _migrate_label_application(conn, inspect, text)
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
+        _migrate_conversation_cursor(conn, inspect, text)
         # Indexes
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_labelapp_chatlog_msg "

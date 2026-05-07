@@ -35,7 +35,10 @@ def session_fixture(engine):
 
 
 @pytest.fixture(name="client")
-def client_fixture(session):
+def client_fixture(session, monkeypatch):
+    # Deterministic queue: disable hybrid explore so tests match legacy ordering.
+    monkeypatch.setenv("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0")
+
     def override():
         yield session
 

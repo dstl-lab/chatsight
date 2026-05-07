@@ -233,6 +233,10 @@ export interface SingleLabel {
   skip_count: number
   conversations_walked: number
   total_conversations: number
+  /** Per-label override for hybrid explore rate; null = server env default */
+  hybrid_explore_fraction: number | null
+  /** Resolved 0–1 fraction used when picking the next conversation */
+  hybrid_explore_effective: number
 }
 
 export interface ConversationTurn {

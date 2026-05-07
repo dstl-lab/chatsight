@@ -18,6 +18,8 @@ export const mockActiveLabel: SingleLabel = {
   skip_count: 0,
   conversations_walked: 4,
   total_conversations: 12,
+  hybrid_explore_fraction: null,
+  hybrid_explore_effective: 0.35,
 }
 
 export const mockQueuedLabels: SingleLabel[] = [
@@ -34,6 +36,8 @@ export const mockQueuedLabels: SingleLabel[] = [
     skip_count: 0,
     conversations_walked: 0,
     total_conversations: 12,
+    hybrid_explore_fraction: null,
+    hybrid_explore_effective: 0.35,
   },
   {
     id: 3,
@@ -48,6 +52,8 @@ export const mockQueuedLabels: SingleLabel[] = [
     skip_count: 0,
     conversations_walked: 0,
     total_conversations: 12,
+    hybrid_explore_fraction: null,
+    hybrid_explore_effective: 0.35,
   },
 ]
 

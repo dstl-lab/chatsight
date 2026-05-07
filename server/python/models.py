@@ -20,6 +20,9 @@ class LabelDefinition(SQLModel, table=True):
     summary_json: Optional[str] = Field(default=None)  # cached AI summary blob
     classified_count: Optional[int] = Field(default=None)  # progress: rows AI has classified
     classification_total: Optional[int] = Field(default=None)  # progress: total to classify
+    # Hybrid queue: fraction [0,1] of picks that bias toward richer conversations;
+    # None → use CHATSIGHT_HYBRID_EXPLORE_FRACTION env (default 0.35).
+    hybrid_explore_fraction: Optional[float] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):
@@ -68,6 +71,8 @@ class ConversationCursor(SQLModel, table=True):
     """Tracks resume position per (label_id, chatlog_id) for the single-label flow."""
     label_id: int = Field(foreign_key="labeldefinition.id", primary_key=True)
     chatlog_id: int = Field(primary_key=True)
+    # Legacy compatibility for older local SQLite schemas.
+    last_message_index: int = Field(default=0)
     last_message_index_decided: int
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -1,7 +1,9 @@
 """Queue logic for the single-label flow: pick the next conversation + message
 that needs a decision for the active label."""
-import logging
 import hashlib
+import logging
+import os
+import random
 from typing import Optional
 
 from sqlalchemy import text as sql_text
@@ -11,6 +13,16 @@ from database import ext_engine
 from models import LabelApplication, MessageCache
 
 logger = logging.getLogger(__name__)
+
+
+def default_hybrid_explore_fraction() -> float:
+    """Server default when `LabelDefinition.hybrid_explore_fraction` is unset.
+    Env `CHATSIGHT_HYBRID_EXPLORE_FRACTION` (0–1). Default 0.35 = ~35% explore picks."""
+    try:
+        v = float(os.environ.get("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0.35"))
+    except (TypeError, ValueError):
+        v = 0.35
+    return max(0.0, min(1.0, v))
 
 
 def _shuffle_key(label_id: int, chatlog_id: int) -> int:
@@ -25,28 +37,89 @@ def _shuffle_key(label_id: int, chatlog_id: int) -> int:
     return int.from_bytes(digest, "big", signed=False)
 
 
+def _first_pending_turn(
+    cid: int,
+    msgs: list[tuple[int, str, Optional[str]]],
+    decided: set,
+) -> Optional[tuple[int, str, Optional[str]]]:
+    for midx, text, notebook in sorted(msgs, key=lambda t: t[0]):
+        if (cid, midx) not in decided:
+            return midx, text, notebook
+    return None
+
+
+def _select_next_chatlog_id(
+    label_id: int,
+    conv: dict[int, list[tuple[int, str, Optional[str]]]],
+    assign_by_cid: dict[int, Optional[int]],
+    decided: set,
+    in_progress: list[int],
+    not_started: list[int],
+    explore_fraction: float,
+) -> Optional[int]:
+    """Hybrid conversation choice: baseline (deterministic) vs explore (richer chats)."""
+    ip_pending = [c for c in in_progress if _first_pending_turn(c, conv[c], decided)]
+    ns_pending = [c for c in not_started if _first_pending_turn(c, conv[c], decided)]
+    if not ip_pending and not ns_pending:
+        return None
+
+    pool = ip_pending if ip_pending else ns_pending
+    in_prog_bucket = bool(ip_pending)
+
+    if len(pool) == 1:
+        return pool[0]
+
+    explore = random.random() < explore_fraction
+    scored = [(c, len(conv[c])) for c in pool]
+    scored.sort(key=lambda x: (-x[1], x[0]))
+    top_k = max(1, (len(scored) + 3) // 4)
+    explore_choices = [c for c, _ in scored[:top_k]]
+
+    if not explore:
+        if in_prog_bucket:
+            pool_sorted = sorted(pool, key=lambda c: _shuffle_key(label_id, c))
+            return pool_sorted[0]
+        # Deterministic spread across assignment buckets (then per-label shuffle key).
+        pool_sorted = sorted(
+            pool,
+            key=lambda c: (
+                assign_by_cid.get(c) is None,
+                assign_by_cid.get(c) if assign_by_cid.get(c) is not None else -1,
+                _shuffle_key(label_id, c),
+            ),
+        )
+        return pool_sorted[0]
+
+    return random.choice(explore_choices)
+
+
 def next_message_for_label(
     session: Session,
     label_id: int,
     assignment_id: Optional[int] = None,
+    explore_fraction: Optional[float] = None,
 ) -> Optional[dict]:
     """Return the next student-message that needs a decision for this label.
 
-    Conversation-by-conversation walk: in-progress conversations first (ones with
-    some decisions but not all), then not-started conversations by chatlog_id ascending.
-    Within a conversation, walks message_index ascending.
+    **Hybrid queue (conversation sampling):**
+    • In-progress conversations are always prioritized over brand-new ones.
+    • Within the active pool, each pick flips ``explore_fraction`` toward an
+      **explore** branch that favors chats with **more student messages** (top
+      quartile among eligible), else **baseline**: deterministic shuffle for
+      in-progress, or assignment-bucket ordering then shuffle key for not-started.
+    Within a conversation, message_index always advances ascending.
 
-    `assignment_id`: when provided, only conversations whose `MessageCache.assignment_id`
-    matches are considered.
+    `assignment_id`: when provided, only conversations whose rows match.
 
-    Returns:
-        {
-          "chatlog_id", "message_index", "text", "notebook",
-          "conversation_turn_count", "thread": [...all turns...], "focus_index": int
-        } or None if there's nothing left to decide. The full conversation thread is
-        returned so the UI can render every turn in chronological order with the focused
-        turn highlighted in place.
+    explore_fraction:
+        Resolved rate in [0, 1]; ``None`` → :func:`default_hybrid_explore_fraction`.
     """
+    eff_explore = (
+        max(0.0, min(1.0, explore_fraction))
+        if explore_fraction is not None
+        else default_hybrid_explore_fraction()
+    )
+
     cache_q = select(
         MessageCache.id,
         MessageCache.chatlog_id,
@@ -59,7 +132,6 @@ def next_message_for_label(
         cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
     cache_rows = session.exec(cache_q).all()
 
-    # All decisions already recorded for this label, keyed by (chatlog_id, message_index).
     decided = set(
         session.exec(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
@@ -67,10 +139,12 @@ def next_message_for_label(
         ).all()
     )
 
-    # Per-conversation: list of student messages, and how many are decided.
     conv: dict[int, list[tuple[int, str, Optional[str]]]] = {}
-    for _id, cid, midx, text, notebook, _assign in cache_rows:
+    assign_by_cid: dict[int, Optional[int]] = {}
+    for _id, cid, midx, text, notebook, assign in cache_rows:
         conv.setdefault(cid, []).append((midx, text, notebook))
+        if cid not in assign_by_cid:
+            assign_by_cid[cid] = assign
 
     in_progress: list[int] = []
     not_started: list[int] = []
@@ -81,21 +155,26 @@ def next_message_for_label(
         elif decided_in_conv < len(msgs):
             in_progress.append(cid)
 
-    # In-progress conversations stay first (so the instructor finishes what they
-    # started), but ordering among them, and especially among not-started ones,
-    # uses a per-label deterministic shuffle so different labels don't all open at
-    # chatlog #1 and feel like a loop.
     in_progress.sort(key=lambda c: _shuffle_key(label_id, c))
     not_started.sort(key=lambda c: _shuffle_key(label_id, c))
 
-    for cid in in_progress + not_started:
-        msgs = sorted(conv[cid], key=lambda t: t[0])
-        for midx, text, notebook in msgs:
-            if (cid, midx) in decided:
-                continue
-            return _build_focus_payload(session, label_id, cid, midx, text, notebook)
+    cid_pick = _select_next_chatlog_id(
+        label_id,
+        conv,
+        assign_by_cid,
+        decided,
+        in_progress,
+        not_started,
+        eff_explore,
+    )
+    if cid_pick is None:
+        return None
 
-    return None
+    tup = _first_pending_turn(cid_pick, conv[cid_pick], decided)
+    if not tup:
+        return None
+    midx, text, notebook = tup
+    return _build_focus_payload(session, label_id, cid_pick, midx, text, notebook)
 
 
 def _thread_from_message_cache(session: Session, chatlog_id: int) -> list[dict]:

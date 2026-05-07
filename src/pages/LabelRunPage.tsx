@@ -369,6 +369,7 @@ export function LabelRunPage() {
             onHandoff={handleHandoff}
             onSampleHandoff={handleSampleHandoff}
             onAbort={() => setAbortOpen(true)}
+            onLabelMetaUpdated={refresh}
           />
           <QueueLine
             queued={queued}
@@ -440,6 +441,7 @@ export function LabelRunPage() {
           onHandoff={handleHandoff}
           onSampleHandoff={handleSampleHandoff}
           onAbort={() => setAbortOpen(true)}
+          onLabelMetaUpdated={refresh}
         />
         <QueueLine
           queued={queued}

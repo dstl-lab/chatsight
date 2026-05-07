@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount } from '../../types'
+import { api } from '../../services/api'
 import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
 
@@ -13,6 +14,8 @@ interface StripBarProps {
   onHandoff: () => void
   onSampleHandoff?: (n: number) => void
   onAbort: () => void
+  /** After PATCH explore rate, refetch active label */
+  onLabelMetaUpdated?: () => void | Promise<void>
 }
 
 export function StripBar({
@@ -25,6 +28,7 @@ export function StripBar({
   onHandoff,
   onSampleHandoff,
   onAbort,
+  onLabelMetaUpdated,
 }: StripBarProps) {
   return (
     <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
@@ -49,6 +53,9 @@ export function StripBar({
         selectedId={selectedAssignmentId}
         onSelect={onSelectAssignment}
       />
+      {onLabelMetaUpdated && (
+        <HybridExploreMix label={label} onSaved={onLabelMetaUpdated} />
+      )}
       {import.meta.env.DEV && onSampleHandoff && (
         <SampleHandoffControl onSubmit={onSampleHandoff} />
       )}
@@ -61,6 +68,80 @@ export function StripBar({
       >
         ✕ abort
       </button>
+    </div>
+  )
+}
+
+function HybridExploreMix({
+  label,
+  onSaved,
+}: {
+  label: SingleLabel
+  onSaved: () => void | Promise<void>
+}) {
+  const [pct, setPct] = useState(0)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setPct(Math.round(label.hybrid_explore_effective * 100))
+  }, [label.hybrid_explore_effective, label.id])
+
+  const apply = async () => {
+    const v = Math.max(0, Math.min(100, pct)) / 100
+    setBusy(true)
+    try {
+      await api.patchSingleLabel(label.id, { hybrid_explore_fraction: v })
+      await onSaved()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const useDefault = async () => {
+    setBusy(true)
+    try {
+      await api.patchSingleLabel(label.id, { hybrid_explore_fraction: null })
+      await onSaved()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 shrink-0 max-w-[200px] flex-wrap"
+      title="Hybrid queue: this % of picks favor longer conversations (more student messages). The rest samples fairly by assignment. Per-label override; empty uses server default."
+    >
+      <span className="text-[9px] tracking-[0.06em] uppercase text-faint whitespace-nowrap">
+        explore
+      </span>
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={pct}
+        onChange={(e) => setPct(parseInt(e.target.value, 10) || 0)}
+        className="w-10 bg-transparent border-b border-edge focus:border-ochre-dim focus:outline-none text-on-surface text-center tabular-nums text-[11px]"
+      />
+      <span className="text-faint text-[10px]">%</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void apply()}
+        className="text-ochre hover:text-paper text-[10px] disabled:opacity-40"
+      >
+        set
+      </button>
+      {label.hybrid_explore_fraction != null && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void useDefault()}
+          className="text-faint hover:text-muted text-[10px] disabled:opacity-40"
+        >
+          default
+        </button>
+      )}
     </div>
   )
 }

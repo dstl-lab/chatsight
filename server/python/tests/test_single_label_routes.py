@@ -260,6 +260,20 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     assert all(r.value == "skip" for r in skips)
 
 
+def test_patch_hybrid_explore_fraction(client, session):
+    lab = client.post("/api/single-labels", json={"name": "hybrid"}).json()
+    lid = lab["id"]
+    r = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": 0.42})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["hybrid_explore_fraction"] == 0.42
+    assert body["hybrid_explore_effective"] == 0.42
+    r2 = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": None})
+    assert r2.status_code == 200
+    assert r2.json()["hybrid_explore_fraction"] is None
+    assert r2.json()["hybrid_explore_effective"] == 0.0  # tests force env explore=0
+
+
 def test_next_focused_fallback_includes_tutor_from_cache(client, session, monkeypatch):
     """When Postgres thread fetch fails, rebuild thread from MessageCache including tutor snippets."""
     monkeypatch.setattr(queue_service, "_fetch_full_thread", lambda chatlog_id: [])

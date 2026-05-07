@@ -1,7 +1,7 @@
 # server/python/schemas.py
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Request shapes ────────────────────────────────────────────────────────────
@@ -234,6 +234,16 @@ class QueueLabelRequest(BaseModel):
     description: Optional[str] = None
 
 
+class PatchSingleLabelRequest(BaseModel):
+    """Partial update for single-label rows."""
+    hybrid_explore_fraction: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Use None to revert to env default.",
+    )
+
+
 class DecideRequest(BaseModel):
     chatlog_id: int
     message_index: int
@@ -253,6 +263,18 @@ class SingleLabelResponse(BaseModel):
     skip_count: int
     conversations_walked: int
     total_conversations: int
+    hybrid_explore_fraction: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Per-label hybrid explore rate; None = env default applies server-side.",
+    )
+    hybrid_explore_effective: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Resolved explore fraction actually used when picking conversations.",
+    )
 
 
 class TurnResponse(BaseModel):

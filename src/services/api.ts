@@ -279,6 +279,25 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
              : req(`/api/single-labels/${id}/close`, { method: 'POST' }),
 
+  patchSingleLabel: (
+    id: number,
+    body: { hybrid_explore_fraction?: number | null },
+  ): Promise<SingleLabel> =>
+    USE_MOCK
+      ? Promise.resolve({
+          ...mockActiveLabel,
+          id,
+          ...(body.hybrid_explore_fraction !== undefined
+            ? {
+                hybrid_explore_fraction: body.hybrid_explore_fraction,
+                hybrid_explore_effective:
+                  body.hybrid_explore_fraction ??
+                  mockActiveLabel.hybrid_explore_effective,
+              }
+            : {}),
+        })
+      : req(`/api/single-labels/${id}`, { method: 'PATCH', ...json(body) }),
+
   getNextFocused: (id: number, assignmentId?: number): Promise<FocusedMessage | null> =>
     USE_MOCK
       ? Promise.resolve(mockFocusedMessage)
