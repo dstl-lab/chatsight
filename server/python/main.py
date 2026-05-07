@@ -2817,6 +2817,8 @@ def post_decide(
         message_index=req.message_index,
         value=req.value,
     )
+    # Sampling uses LabelPrediction neighbor-cache; ensure it exists/stays fresh.
+    assist_service.rebuild_cache_if_stale(db, label_id)
     payload = queue_service.next_message_for_label(
         db,
         label_id,
@@ -2850,6 +2852,7 @@ def post_skip_conversation(
             detail=f"Label {label_id} ({label.name!r}) is mode={label.mode!r}, not 'single'",
         )
     decision_service.skip_conversation(db, label_id, req.chatlog_id)
+    assist_service.rebuild_cache_if_stale(db, label_id)
     payload = queue_service.next_message_for_label(
         db,
         label_id,
@@ -2867,6 +2870,7 @@ def post_undo(label_id: int, db: Session = Depends(get_session)):
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
     decision_service.undo_last_decision(db, label_id)
+    assist_service.rebuild_cache_if_stale(db, label_id)
     payload = queue_service.next_message_for_label(
         db,
         label_id,
