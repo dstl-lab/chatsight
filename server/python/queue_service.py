@@ -1,16 +1,18 @@
 """Queue logic for the single-label flow: pick the next conversation + message
 that needs a decision for the active label."""
 import hashlib
+import json
 import logging
 import os
 import random
+import math
 from typing import Optional
 
 from sqlalchemy import text as sql_text
 from sqlmodel import Session, select
 
 from database import ext_engine
-from models import LabelApplication, MessageCache
+from models import LabelApplication, LabelPrediction, MessageCache
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ def _first_pending_turn(
 
 
 def _select_next_chatlog_id(
+    session: Session,
     label_id: int,
     conv: dict[int, list[tuple[int, str, Optional[str]]]],
     assign_by_cid: dict[int, Optional[int]],
@@ -70,11 +73,6 @@ def _select_next_chatlog_id(
         return pool[0]
 
     explore = random.random() < explore_fraction
-    scored = [(c, len(conv[c])) for c in pool]
-    scored.sort(key=lambda x: (-x[1], x[0]))
-    top_k = max(1, (len(scored) + 3) // 4)
-    explore_choices = [c for c, _ in scored[:top_k]]
-
     if not explore:
         if in_prog_bucket:
             pool_sorted = sorted(pool, key=lambda c: _shuffle_key(label_id, c))
@@ -89,6 +87,88 @@ def _select_next_chatlog_id(
             ),
         )
         return pool_sorted[0]
+
+    # Explore branch: prefer conversations whose *first pending message* has
+    # high uncertainty and low novelty according to the cached neighbor data.
+    explore_candidates = sorted(pool, key=lambda c: (-len(conv[c]), c))[
+        : max(1, (len(pool) + 3) // 4)
+    ]
+
+    unc_w = float(os.environ.get("CHATSIGHT_CONV_UNCERTAINTY_WEIGHT", "0.7"))
+    nov_w = float(os.environ.get("CHATSIGHT_CONV_NOVELTY_WEIGHT", "0.3"))
+    unc_w = max(0.0, min(1.0, unc_w))
+    nov_w = max(0.0, min(1.0, nov_w))
+
+    def _first_pending_message_for(cid: int) -> Optional[tuple[int, str, Optional[str]]]:
+        return _first_pending_turn(cid, conv[cid], decided)
+
+    def _uncertainty_novelty_for_message(cid: int, midx: int) -> tuple[float, float] | None:
+        row = session.exec(
+            select(LabelPrediction).where(
+                LabelPrediction.label_id == label_id,
+                LabelPrediction.chatlog_id == cid,
+                LabelPrediction.message_index == midx,
+            )
+        ).first()
+        if not row or not row.nearest_neighbors:
+            return None
+        try:
+            neighbors = json.loads(row.nearest_neighbors)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(neighbors, list) or not neighbors:
+            return None
+
+        # Similarity-weighted vote between "yes" and "no".
+        yes_sum = 0.0
+        no_sum = 0.0
+        max_sim = None
+        for n in neighbors:
+            sim = float(n.get("similarity", 0.0))
+            max_sim = sim if max_sim is None else max(max_sim, sim)
+            v = n.get("value")
+            if v == "yes":
+                yes_sum += max(sim, 0.0)
+            elif v == "no":
+                no_sum += max(sim, 0.0)
+
+        denom = yes_sum + no_sum
+        if denom <= 0.0:
+            return None
+
+        p_yes = yes_sum / denom
+        # Binary entropy normalized to [0,1].
+        # entropy(p) = -p log p - (1-p) log(1-p), divided by log(2)
+        eps = 1e-12
+        p_yes = max(eps, min(1.0 - eps, p_yes))
+        entropy = -p_yes * math.log(p_yes) - (1.0 - p_yes) * math.log(1.0 - p_yes)
+        uncertainty = entropy / math.log(2.0)
+
+        # If the nearest labeled neighbors are very similar, the item is less novel.
+        max_sim = float(max_sim if max_sim is not None else 0.0)
+        max_sim = max(0.0, min(1.0, max_sim))
+        novelty = 1.0 - max_sim
+        return uncertainty, novelty
+
+    def _conversation_utility(cid: int) -> float:
+        pending = _first_pending_message_for(cid)
+        if not pending:
+            return 0.0
+        midx, _text, _notebook = pending
+        result = _uncertainty_novelty_for_message(cid, midx)
+        if not result:
+            # Fallback: if we don't have prediction-cache, prefer longer convos
+            # (previous v1 behavior).
+            return float(len(conv[cid]))
+        uncertainty, novelty = result
+        return unc_w * uncertainty + nov_w * novelty
+
+    scored = sorted(
+        explore_candidates,
+        key=lambda c: (-_conversation_utility(c), c),
+    )
+    top_k = max(1, (len(scored) + 3) // 4)
+    explore_choices = [c for c in scored[:top_k]]
 
     return random.choice(explore_choices)
 
@@ -159,6 +239,7 @@ def next_message_for_label(
     not_started.sort(key=lambda c: _shuffle_key(label_id, c))
 
     cid_pick = _select_next_chatlog_id(
+        session,
         label_id,
         conv,
         assign_by_cid,
