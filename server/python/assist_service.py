@@ -15,7 +15,7 @@ from models import LabelApplication, MessageCache, MessageEmbedding
 _lock = threading.Lock()
 
 
-def _build_cache(db: Session) -> dict:
+def _build_cache(db: Session, fingerprint: tuple[int, int, int]) -> dict:
     rows = db.exec(
         select(
             MessageEmbedding.chatlog_id,
@@ -24,7 +24,7 @@ def _build_cache(db: Session) -> dict:
         )
     ).all()
     if not rows:
-        return {"matrix": None, "keys_idx": {}, "count": 0}
+        return {"matrix": None, "keys_idx": {}, "fingerprint": fingerprint}
     keys = [(c, i) for (c, i, _) in rows]
     vecs = np.stack([np.frombuffer(b, dtype=np.float32) for (_, _, b) in rows])
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -33,19 +33,34 @@ def _build_cache(db: Session) -> dict:
     return {
         "matrix": matrix,
         "keys_idx": {k: i for i, k in enumerate(keys)},
-        "count": len(rows),
+        "fingerprint": fingerprint,
     }
 
 
+def _embedding_fingerprint(db: Session) -> tuple[int, int, int]:
+    """A cheap signal that detects inserts, deletes, and in-place re-embeds.
+    (count, max_id, sum_id) — pure-count was insufficient because re-embedding
+    an existing (chatlog_id, message_index) does not change the row count, but
+    does change which rows we are now serving."""
+    row = db.exec(
+        select(
+            func.count(MessageEmbedding.id),
+            func.coalesce(func.max(MessageEmbedding.id), 0),
+            func.coalesce(func.sum(MessageEmbedding.id), 0),
+        )
+    ).one()
+    return (int(row[0]), int(row[1]), int(row[2]))
+
+
 def _get_cache(db: Session) -> dict:
-    """Per-engine cached matrix; reloads when MessageEmbedding row count diverges."""
+    """Per-engine cached matrix; reloads when the embedding fingerprint diverges."""
     bind = db.get_bind()
-    current = db.exec(select(func.count()).select_from(MessageEmbedding)).one()
+    current = _embedding_fingerprint(db)
     with _lock:
         cache = bind.info.get("assist_cache") if hasattr(bind, "info") else None
-        if cache is not None and cache["count"] == current:
+        if cache is not None and cache.get("fingerprint") == current:
             return cache
-        cache = _build_cache(db)
+        cache = _build_cache(db, current)
         if hasattr(bind, "info"):
             bind.info["assist_cache"] = cache
         return cache
@@ -57,9 +72,12 @@ def nearest_neighbors(
     chatlog_id: int,
     message_index: int,
     k: int = 3,
+    assignment_id: int | None = None,
 ) -> list[dict]:
     """Up to k cosine-nearest human yes/no labeled neighbors of the focused message.
     Returns [] if the focused message has no embedding or no labeled neighbors do.
+    When assignment_id is set, neighbors are restricted to messages tagged with the
+    same assignment so calibration anchors stay within the same lab/project context.
     Each result: {chatlog_id, message_index, value, similarity, message_text}."""
     cache = _get_cache(db)
     if cache["matrix"] is None:
@@ -72,17 +90,22 @@ def nearest_neighbors(
         return []
     focused = matrix[focused_idx]
 
-    apps = db.exec(
-        select(
-            LabelApplication.chatlog_id,
-            LabelApplication.message_index,
-            LabelApplication.value,
-        ).where(
-            LabelApplication.label_id == label_id,
-            LabelApplication.applied_by == "human",
-            LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
-        )
-    ).all()
+    stmt = select(
+        LabelApplication.chatlog_id,
+        LabelApplication.message_index,
+        LabelApplication.value,
+    ).where(
+        LabelApplication.label_id == label_id,
+        LabelApplication.applied_by == "human",
+        LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
+    )
+    if assignment_id is not None:
+        stmt = stmt.join(
+            MessageCache,
+            (MessageCache.chatlog_id == LabelApplication.chatlog_id)
+            & (MessageCache.message_index == LabelApplication.message_index),
+        ).where(MessageCache.assignment_id == assignment_id)
+    apps = db.exec(stmt).all()
 
     candidate_idx: list[int] = []
     candidate_meta: list[tuple[int, int, str]] = []
@@ -139,6 +162,12 @@ def rebuild_cache_if_stale(db: Session, label_id: int) -> bool:
 
 
 def get_cached_neighbors(
-    db: Session, label_id: int, chatlog_id: int, message_index: int
+    db: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    assignment_id: int | None = None,
 ) -> list[dict]:
-    return nearest_neighbors(db, label_id, chatlog_id, message_index, k=3)
+    return nearest_neighbors(
+        db, label_id, chatlog_id, message_index, k=3, assignment_id=assignment_id
+    )

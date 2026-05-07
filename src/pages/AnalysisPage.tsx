@@ -294,6 +294,30 @@ export function AnalysisPage() {
   const barScale = rawBarPctSum > 100 ? 100 / rawBarPctSum : 1
   const barPct = (n: number) => pctOfTotal(n) * barScale
 
+  // Largest-remainder rounding so the three coverage % rows sum to exactly
+  // 100.0% (with rounding to 1 decimal). Otherwise three independent
+  // .toFixed(1) calls can land on 33.3 + 33.3 + 33.3 = 99.9.
+  const coveragePct = ((): { human: string; ai: string; unlabeled: string } => {
+    const raw = [pctOfTotal(covHuman), pctOfTotal(covAi), pctOfTotal(covUnlabeled)]
+    const totalRaw = raw.reduce((a, b) => a + b, 0)
+    if (totalRaw === 0) return { human: "0.0", ai: "0.0", unlabeled: "0.0" }
+    const target = totalRaw <= 100 ? totalRaw : 100  // overlap edge case
+    const scaled = raw.map((v) => (v / totalRaw) * target * 10)  // tenths of a %
+    const floors = scaled.map(Math.floor)
+    let leftover = Math.round(target * 10) - floors.reduce((a, b) => a + b, 0)
+    const order = scaled
+      .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+      .sort((a, b) => b.frac - a.frac)
+    const tenths = floors.slice()
+    for (const { i } of order) {
+      if (leftover <= 0) break
+      tenths[i] += 1
+      leftover -= 1
+    }
+    const fmt = (t: number) => (t / 10).toFixed(1)
+    return { human: fmt(tenths[0]), ai: fmt(tenths[1]), unlabeled: fmt(tenths[2]) }
+  })()
+
   const posData = Object.entries(summary.position_distribution)
     .map(([label, buckets]) => ({
       label,
@@ -571,17 +595,17 @@ export function AnalysisPage() {
                     <tr className="border-t border-edge-subtle">
                       <td className="p-2">Human-labeled</td>
                       <td className="p-2 text-right tabular-nums">{covHuman.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covHuman).toFixed(1)}%</td>
+                      <td className="p-2 text-right tabular-nums">{coveragePct.human}%</td>
                     </tr>
                     <tr className="border-t border-edge-subtle">
                       <td className="p-2">AI-labeled</td>
                       <td className="p-2 text-right tabular-nums">{covAi.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covAi).toFixed(1)}%</td>
+                      <td className="p-2 text-right tabular-nums">{coveragePct.ai}%</td>
                     </tr>
                     <tr className="border-t border-edge-subtle">
                       <td className="p-2">Unlabeled</td>
                       <td className="p-2 text-right tabular-nums">{covUnlabeled.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums">{pctOfTotal(covUnlabeled).toFixed(1)}%</td>
+                      <td className="p-2 text-right tabular-nums">{coveragePct.unlabeled}%</td>
                     </tr>
                     <tr className="border-t border-edge-subtle bg-surface/60 font-medium text-on-canvas">
                       <td className="p-2">Total messages</td>

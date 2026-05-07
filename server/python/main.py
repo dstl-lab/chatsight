@@ -1009,17 +1009,30 @@ def get_queue_history(
     else:
         all_entries.sort(key=lambda e: e["processed_at"] if e["processed_at"] else "", reverse=True)
 
+    # Pre-fetch message text so the search filter can be applied BEFORE slicing.
+    # Otherwise `total` reflects the pre-search count and pagination math drifts:
+    # the client thinks there are N pages but each page silently drops items.
+    cached_msgs = db.exec(select(MessageCache)).all()
+    cache_lookup = {(c.chatlog_id, c.message_index): c for c in cached_msgs}
+
+    if search:
+        needle = search.lower()
+        all_entries = [
+            e for e in all_entries
+            if needle in (
+                cache_lookup.get((e["chatlog_id"], e["message_index"])).message_text.lower()
+                if cache_lookup.get((e["chatlog_id"], e["message_index"]))
+                else ""
+            )
+        ]
+
     total = len(all_entries)
     page = all_entries[offset:offset + limit]
 
     if not page:
         return {"items": [], "total": total}
 
-    # Batch fetch message text from cache (one query for all page items)
-    page_keys = [(e["chatlog_id"], e["message_index"]) for e in page]
-    page_key_set = set(page_keys)
-    cached_msgs = db.exec(select(MessageCache)).all()
-    cache_lookup = {(c.chatlog_id, c.message_index): c for c in cached_msgs}
+    page_key_set = {(e["chatlog_id"], e["message_index"]) for e in page}
 
     # Batch fetch all labels for labeled items on this page (one query)
     labeled_keys = [(e["chatlog_id"], e["message_index"]) for e in page if e["status"] == "labeled"]
@@ -1050,10 +1063,6 @@ def get_queue_history(
         context_before = cached.context_before if cached else None
         context_after = cached.context_after if cached else None
 
-        # Apply search filter
-        if search and search.lower() not in message_text.lower():
-            continue
-
         processed_at = entry["processed_at"]
         result.append({
             "chatlog_id": chatlog_id,
@@ -1077,6 +1086,7 @@ _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None
 
 
 def _run_split_autolabel(
+    original_label_id: int,
     original_label_name: str,
     new_label_a_id: int,
     new_label_a_name: str,
@@ -1085,7 +1095,13 @@ def _run_split_autolabel(
     human_examples: List[Dict[str, Any]],  # [{text, label_name}]
     remaining_messages: List[Dict[str, Any]],  # [{chatlog_id, message_index, message_text}]
 ):
-    """Background task: split remaining messages between two new labels using Gemini."""
+    """Background task: split remaining messages between two new labels using Gemini.
+
+    On full success, deletes the (already-archived) original label and its
+    applications. If any batch fails, leaves the original archived-but-intact
+    so an admin can un-archive it and replay rather than losing the human
+    examples that produced this split.
+    """
     from autolabel_service import classify_batch
 
     global _autolabel_status
@@ -1108,6 +1124,7 @@ def _run_split_autolabel(
 
     label_map = {new_label_a_name: new_label_a_id, new_label_b_name: new_label_b_id}
 
+    any_batch_failed = False
     BATCH_SIZE = 30
     for i in range(0, len(remaining_messages), BATCH_SIZE):
         batch = remaining_messages[i : i + BATCH_SIZE]
@@ -1116,6 +1133,7 @@ def _run_split_autolabel(
             results = classify_batch(label_defs, examples_by_label, batch)
         except Exception as e:
             _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
+            any_batch_failed = True
             continue
 
         with Session(engine) as db:
@@ -1136,6 +1154,20 @@ def _run_split_autolabel(
             db.commit()
 
         _autolabel_status["processed"] = min(i + BATCH_SIZE, len(remaining_messages))
+
+    # Atomic cleanup: only purge the snapshot once classification succeeded
+    # for every batch. Otherwise leave it archived-but-recoverable.
+    if not any_batch_failed and original_label_id not in (new_label_a_id, new_label_b_id):
+        with Session(engine) as db:
+            old_apps = db.exec(
+                select(LabelApplication).where(LabelApplication.label_id == original_label_id)
+            ).all()
+            for a in old_apps:
+                db.delete(a)
+            old = db.get(LabelDefinition, original_label_id)
+            if old is not None:
+                db.delete(old)
+            db.commit()
 
     _autolabel_status["running"] = False
 
@@ -1478,7 +1510,10 @@ def get_concise_message(req: ConciseRequest, db: Session = Depends(get_session))
         raise HTTPException(status_code=404, detail="Message not found")
 
     from autolabel_service import summarize_message
-    concise = summarize_message(row[0])
+    try:
+        concise = summarize_message(row[0])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Summarization failed: {e}")
     return {"concise_text": concise}
 
 
@@ -1633,19 +1668,25 @@ def split_label_autolabel(
                     }
                 )
 
-    # Delete original label and its applications
-    for app_ in remaining_apps:
-        db.delete(app_)
-    
-    # Only delete original if it's not one of the target labels (edge case)
+    # Defer deletion of the original label and its applications to the
+    # background task. If we deleted now and the Gemini classification later
+    # failed (rate limit, content policy, network), the human-applied examples
+    # would be permanently lost with no retry path. Instead: archive the
+    # original so the UI hides it, leave its rows intact as a recovery
+    # snapshot, and let the background task purge them after classification
+    # succeeds. If the background task fails, the original remains archived
+    # but un-archivable for retry.
     if original_label.id not in [label_a.id, label_b.id]:
-        db.delete(original_label)
-    
+        original_label.archived_at = datetime.utcnow()
+        db.add(original_label)
+
     db.commit()
 
-    # Start background task
+    # Start background task. It will delete original_label_id (and its
+    # remaining applications) only on full success.
     background_tasks.add_task(
         _run_split_autolabel,
+        original_label.id,
         original_label.name,
         label_a.id,
         label_a.name,
@@ -2758,10 +2799,13 @@ def get_assist(
     label_id: int,
     chatlog_id: int,
     message_index: int,
+    assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
     """Return cached nearest-neighbor decisions for the focused message.
-    The cache is built lazily by /next; if there is no row, returns []."""
+    The cache is built lazily by /next; if there is no row, returns [].
+    When assignment_id is provided, neighbors are restricted to the same assignment
+    so calibration stays within the lab/project context the run is scoped to."""
     label = db.get(LabelDefinition, label_id)
     if not label:
         raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
@@ -2772,7 +2816,7 @@ def get_assist(
         )
 
     neighbors = assist_service.get_cached_neighbors(
-        db, label_id, chatlog_id, message_index
+        db, label_id, chatlog_id, message_index, assignment_id=assignment_id
     )
     return AssistResponse(
         neighbors=[AssistNeighbor(**n) for n in neighbors]
@@ -2789,6 +2833,13 @@ def post_decide(
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
+    if label.phase != "labeling":
+        # Reject decisions on queued/handed-off/reviewing/complete labels so a
+        # stale browser tab can't silently overwrite a finished run's data.
+        raise HTTPException(
+            status_code=409,
+            detail=f"Label {label_id} is in phase {label.phase!r}; decisions only allowed in 'labeling'",
+        )
     if req.value not in {"yes", "no", "skip"}:
         raise HTTPException(status_code=400, detail="value must be yes|no|skip")
     decision_service.record_decision(

@@ -3,13 +3,22 @@
 Given human-labeled examples and label definitions, classifies unlabeled
 student messages into existing label categories.
 """
+import logging
 import os
 import json
 from google import genai
 from google.genai import types
 from typing import List, Dict, Any
 
+log = logging.getLogger(__name__)
+
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+
+
+class ClassifyToolMissing(RuntimeError):
+    """Gemini did not return the classify_messages tool call.
+    Distinct from network errors so callers can decide whether to retry,
+    log+continue, or surface to the UI."""
 
 TOOL = types.Tool(function_declarations=[
     types.FunctionDeclaration(
@@ -102,7 +111,15 @@ def classify_batch(
             args = dict(part.function_call.args)
             return list(args.get("classifications", []))
 
-    return []
+    text_reply = getattr(response, "text", None)
+    log.warning(
+        "classify_batch: no tool call returned; n_messages=%d text=%r",
+        len(messages),
+        (text_reply or "")[:200],
+    )
+    raise ClassifyToolMissing(
+        f"Gemini did not call classify_messages (n={len(messages)})"
+    )
 
 def summarize_message(message_text: str) -> str:
     """Summarize a student message to be concise."""
@@ -118,12 +135,9 @@ def summarize_message(message_text: str) -> str:
         temperature=0,
     )
     
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=message_text,
-            config=config,
-        )
-        return response.text.strip()
-    except Exception as e:
-        return f"Error summarizing: {e}"
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=message_text,
+        config=config,
+    )
+    return response.text.strip()
