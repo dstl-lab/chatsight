@@ -13,7 +13,10 @@ export interface LabelExample {
   message_index: number
   message_text: string
   label_id: number
-  applied_by: string
+  /** "human" | "ai" for actual labelings; "none" for unlabeled candidates
+   * surfaced by QuickRefineModal. Filters that branch on this string must
+   * handle the "none" case. */
+  applied_by: "human" | "ai" | "none"
 }
 
 export interface ConciseResponse {
