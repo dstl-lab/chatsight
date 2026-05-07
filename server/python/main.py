@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from calendar import monthrange
 from fastapi import FastAPI, Depends, HTTPException, Query, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, text, update
+from sqlalchemy import func, or_, text, update
 from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
@@ -1873,10 +1873,16 @@ def get_embed_status(db: Session = Depends(get_session)):
 
 @app.get("/api/analysis/summary")
 def get_analysis_summary(db: Session = Depends(get_session)):
+    # Exclude single-mode "no" / "skip" decisions: they are explicit
+    # non-applications and shouldn't inflate label counts. Multi-mode
+    # rows have value=NULL and always mean "label applies".
+    applies = or_(LabelApplication.value.is_(None), LabelApplication.value == "yes")
+
     label_rows = db.exec(
         select(LabelDefinition.name, func.count(LabelApplication.id))
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .where(applies)
         .group_by(LabelDefinition.name)
     ).all()
     label_counts = {name: int(cnt) for name, cnt in label_rows}
@@ -1886,6 +1892,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(LabelApplication.applied_by == "human")
+        .where(applies)
         .group_by(LabelDefinition.name)
     ).all()
     human_label_counts = {name: int(cnt) for name, cnt in human_rows}
@@ -1895,6 +1902,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(LabelApplication.applied_by == "ai")
+        .where(applies)
         .group_by(LabelDefinition.name)
     ).all()
     ai_label_counts = {name: int(cnt) for name, cnt in ai_rows}
@@ -1903,6 +1911,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         select(LabelApplication.message_index, LabelDefinition.name)
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .where(applies)
     ).all()
     pos_acc: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
     for msg_idx, lbl_name in pos_rows:
@@ -1918,6 +1927,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
     ai_pairs = set()
     for row in db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index, LabelApplication.applied_by)
+        .where(applies)
     ).all():
         cid, mid, applied_by = row
         if applied_by == "human":
@@ -1955,6 +1965,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
                 select(LabelDefinition.name, LabelApplication.chatlog_id)
                 .select_from(LabelApplication)
                 .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+                .where(applies)
             ).all():
                 nb_key = chatlog_notebook.get(int(chatlog_id), "unknown")
                 nb_counts[nb_key][lbl_name] += 1
