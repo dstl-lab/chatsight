@@ -2731,14 +2731,10 @@ def get_next_focused(
     assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Walk the next focused message for the active labeling label.
-    Also opportunistically rebuilds the assist cache if it has gone stale."""
+    """Walk the next focused message for the active labeling label."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
-
-    # Lazy assist-cache rebuild. Cheap when not stale (one count + one row read).
-    assist_service.rebuild_cache_if_stale(db, label_id)
 
     payload = queue_service.next_message_for_label(db, label_id, assignment_id)
     if not payload:
@@ -2756,8 +2752,13 @@ def get_assist(
     """Return cached nearest-neighbor decisions for the focused message.
     The cache is built lazily by /next; if there is no row, returns []."""
     label = db.get(LabelDefinition, label_id)
-    if not label or label.mode != "single":
-        raise HTTPException(status_code=404, detail="Single-label not found")
+    if not label:
+        raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
+    if label.mode != "single":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Label {label_id} ({label.name!r}) is mode={label.mode!r}, not 'single'",
+        )
 
     neighbors = assist_service.get_cached_neighbors(
         db, label_id, chatlog_id, message_index

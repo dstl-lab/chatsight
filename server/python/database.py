@@ -1,12 +1,25 @@
 import os
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy import create_engine as sa_create_engine
+from sqlalchemy import create_engine as sa_create_engine, event
 
 load_dotenv()
 
 DATABASE_URL = "sqlite:///./chatsight.db"
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record):
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA busy_timeout=30000")
+    cur.close()
 
 
 def _migrate_label_definition(conn, inspect, text):
