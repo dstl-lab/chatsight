@@ -99,9 +99,25 @@ export function QueuePage() {
 	const currentMessage = queue[currentIdx] ?? null;
 	const isBackNav = navPos !== null;
 	const isRecalibrating = recalibration !== null;
-	const displayedMessage = recalibration?.item
-		?? (isBackNav ? navStack[navPos!] : (reviewTarget ?? currentMessage));
-	const isReviewing = reviewTarget !== null;
+	// Single source of truth for the on-screen message + which mode produced
+	// it. Handlers should branch on `displayMode` rather than independently
+	// testing recalibration / backNav / reviewTarget — when those got out of
+	// sync, archive-review keyboard handlers used to apply labels to the
+	// wrong message.
+	type DisplayMode = 'recalibration' | 'backnav' | 'archive-review' | 'queue';
+	const { displayedMessage, displayMode } = (() => {
+		if (recalibration?.item) {
+			return { displayedMessage: recalibration.item, displayMode: 'recalibration' as DisplayMode };
+		}
+		if (isBackNav) {
+			return { displayedMessage: navStack[navPos!], displayMode: 'backnav' as DisplayMode };
+		}
+		if (reviewTarget) {
+			return { displayedMessage: reviewTarget, displayMode: 'archive-review' as DisplayMode };
+		}
+		return { displayedMessage: currentMessage, displayMode: 'queue' as DisplayMode };
+	})();
+	const isReviewing = displayMode === 'archive-review';
 	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
 
 	const loadQueue = useCallback(async () => {
@@ -113,7 +129,9 @@ export function QueuePage() {
 	}, []);
 
 	useEffect(() => {
-		Promise.all([
+		// Use allSettled so a single failing endpoint (e.g., /candidates while
+		// concept-induction is unavailable) doesn't blank the whole queue.
+		Promise.allSettled([
 			api.startSession(),
 			api.getLabels(),
 			api.getQueue(20),
@@ -121,23 +139,29 @@ export function QueuePage() {
 			api.getQueuePosition(),
 			api.getRecentHistory(5),
 			api.getCandidates(),
-		])
-			.then(([sess, lbls, q, st, pos, hist, cands]) => {
-				setSession(sess);
-				setLabels(lbls);
-				setQueue(q);
-				setStats(st);
-				setSkippedCount(st.skipped_count);
-				setRemaining(pos.total_remaining);
-				setHistory(hist);
-				setCandidates(cands);
-				setLoading(false);
-				api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
-			})
-			.catch((err) => {
-				console.error("Failed to load queue data:", err);
-				setLoading(false);
-			});
+		]).then(([sess, lbls, q, st, pos, hist, cands]) => {
+			if (sess.status === "fulfilled") setSession(sess.value);
+			if (lbls.status === "fulfilled") setLabels(lbls.value);
+			if (q.status === "fulfilled") setQueue(q.value);
+			if (st.status === "fulfilled") {
+				setStats(st.value);
+				setSkippedCount(st.value.skipped_count);
+			}
+			if (pos.status === "fulfilled") setRemaining(pos.value.total_remaining);
+			if (hist.status === "fulfilled") setHistory(hist.value);
+			if (cands.status === "fulfilled") setCandidates(cands.value);
+
+			const failures = [
+				["session", sess], ["labels", lbls], ["queue", q], ["stats", st],
+				["position", pos], ["history", hist], ["candidates", cands],
+			].filter(([, r]) => (r as PromiseSettledResult<unknown>).status === "rejected");
+			if (failures.length > 0) {
+				console.error("Queue load partial failure:",
+					failures.map(([k, r]) => [k, (r as PromiseRejectedResult).reason]));
+			}
+			setLoading(false);
+			api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+		});
 	}, []);
 
 	useEffect(() => {
@@ -665,8 +689,17 @@ export function QueuePage() {
 
 	const handleArchiveAnyway = useCallback(async () => {
 		if (!archiveConfirm) return;
-		await api.archiveLabel(archiveConfirm.labelId);
+		const archivedId = archiveConfirm.labelId;
+		await api.archiveLabel(archivedId);
 		setArchiveConfirm(null);
+		// Drop the archived label from any in-memory toggle state so a subsequent
+		// re-application doesn't target a now-archived label id.
+		setAppliedLabelIds((prev) => {
+			if (!prev.has(archivedId)) return prev;
+			const next = new Set(prev);
+			next.delete(archivedId);
+			return next;
+		});
 		const [lbls, q, st] = await Promise.all([
 			api.getLabels(),
 			api.getQueue(20),
