@@ -2771,6 +2771,7 @@ def get_assist(
 def post_decide(
     label_id: int,
     req: DecideRequest,
+    assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
     label = db.get(LabelDefinition, label_id)
@@ -2785,7 +2786,7 @@ def post_decide(
         message_index=req.message_index,
         value=req.value,
     )
-    payload = queue_service.next_message_for_label(db, label_id)
+    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
     if not payload:
         return None
     return FocusedMessageResponse(**payload)

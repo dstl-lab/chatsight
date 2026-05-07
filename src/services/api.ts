@@ -286,10 +286,14 @@ export const api = {
 
   decide: (
     id: number,
-    body: { chatlog_id: number; message_index: number; value: DecisionValue }
+    body: { chatlog_id: number; message_index: number; value: DecisionValue },
+    assignmentId?: number,
   ): Promise<FocusedMessage | null> =>
     USE_MOCK ? Promise.resolve(mockFocusedMessage)
-             : req(`/api/single-labels/${id}/decide`, { method: 'POST', ...json(body) }),
+             : req(
+                 `/api/single-labels/${id}/decide${assignmentId ? `?assignment_id=${assignmentId}` : ''}`,
+                 { method: 'POST', ...json(body) }
+               ),
 
   undoLastDecision: (id: number): Promise<FocusedMessage | null> =>
     USE_MOCK ? Promise.resolve(mockFocusedMessage)
