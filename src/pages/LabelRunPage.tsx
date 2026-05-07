@@ -42,6 +42,17 @@ export function LabelRunPage() {
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
 
+  const syncActiveLabelCounts = useCallback((state: ReadinessState) => {
+    setActiveLabel((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        yes_count: state.yes_count,
+        no_count: state.no_count,
+      }
+    })
+  }, [])
+
   // Auto-clear the inline confirmation in the dock after a few seconds.
   useEffect(() => {
     if (!recent) return
@@ -118,22 +129,21 @@ export function LabelRunPage() {
       setBusy(true)
       const decided = focused
       try {
-        await api.decide(activeLabel.id, {
+        const next = await api.decide(activeLabel.id, {
           chatlog_id: decided.chatlog_id,
           message_index: decided.message_index,
           value,
-        })
-        // Re-fetch the next message respecting the current assignment filter.
-        const next = await api.getNextFocused(activeLabel.id, selectedAssignmentId ?? undefined)
+        }, selectedAssignmentId ?? undefined)
         setFocused(next)
         const ready = await api.getReadiness(activeLabel.id)
         setReadiness(ready)
+        syncActiveLabelCounts(ready)
         setRecent({ value, label: `#${decided.chatlog_id}.${decided.message_index}` })
       } finally {
         setBusy(false)
       }
     },
-    [activeLabel, focused, busy, selectedAssignmentId]
+    [activeLabel, focused, busy, selectedAssignmentId, syncActiveLabelCounts]
   )
 
   const handleUndo = useCallback(async () => {
@@ -145,11 +155,12 @@ export function LabelRunPage() {
       setFocused(next)
       const ready = await api.getReadiness(activeLabel.id)
       setReadiness(ready)
+      syncActiveLabelCounts(ready)
       setRecent(null)
     } finally {
       setBusy(false)
     }
-  }, [activeLabel, busy, selectedAssignmentId])
+  }, [activeLabel, busy, selectedAssignmentId, syncActiveLabelCounts])
 
   const handleSkipConversation = useCallback(async () => {
     if (!activeLabel || !focused || busy) return
@@ -160,11 +171,12 @@ export function LabelRunPage() {
       setFocused(next)
       const ready = await api.getReadiness(activeLabel.id)
       setReadiness(ready)
+      syncActiveLabelCounts(ready)
       setRecent({ value: 'skip', label: `every remaining message in #${skippedCid}` })
     } finally {
       setBusy(false)
     }
-  }, [activeLabel, focused, busy])
+  }, [activeLabel, focused, busy, syncActiveLabelCounts])
 
   const handleHandoff = useCallback(async () => {
     if (!activeLabel || handoffPending) return
@@ -451,6 +463,7 @@ export function LabelRunPage() {
         onHandoff={handleHandoff}
         onSkipConversation={handleSkipConversation}
         disabled={busy}
+        loading={busy}
         recent={recent}
       />
 

@@ -6,6 +6,7 @@ interface DecisionDockProps {
   onHandoff: () => void
   onSkipConversation: () => void
   disabled?: boolean
+  loading?: boolean
   /** When non-null, replaces the keyboard hints with a transient confirmation. */
   recent?: { value: DecisionValue; label: string } | null
 }
@@ -16,6 +17,7 @@ export function DecisionDock({
   onHandoff,
   onSkipConversation,
   disabled,
+  loading,
   recent,
 }: DecisionDockProps) {
   return (
@@ -44,7 +46,11 @@ export function DecisionDock({
             disabled={disabled}
           />
         </div>
-        {recent ? (
+        {loading ? (
+          <div className="font-mono text-[10px] tracking-[0.08em] text-ochre animate-pulse">
+            Saving decision and loading next message…
+          </div>
+        ) : recent ? (
           <RecentLine recent={recent} onUndo={onUndo} />
         ) : (
           <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint">
