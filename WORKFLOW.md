@@ -1,80 +1,104 @@
-# Chatsight Workflow Needs
+# Chatsight workflow
 
-## Research Context
+This file is the canonical "what is chatsight, what's built, what's open" pointer for collaborators. CLAUDE.md is for code orientation; this is for *research* orientation. When the two disagree, the more recently edited file wins — please flag the conflict.
 
-Chatsight originated as an investigation into student-AI tutoring interactions in an undergraduate data science course. The AI tutor is fine-tuned to reference course material (homeworks, labs, projects) during student conversations.
-
-### Research Evolution
-
-1. **Initial goal**: Analyze transcript data to understand how students interact with AI tutors. Available methods (sentiment analysis, summary statistics, AI-generated summaries) were insufficient for rich qualitative insights.
-
-2. **Second pivot**: Quantify "how well students use AI" via a theoretical scoring equation applied to categorized student messages. This required labeled data.
-
-3. **Manual labeling attempt**: The research group manually labeled chatlog data to build a training set. Key problems surfaced:
-   - Rubrics defined upfront became too broad or too narrow mid-process, requiring full relabeling
-   - Team members had different threshold interpretations of rubric criteria, causing inconsistency
-   - Wasted effort and high anxiety when label schemas needed revision after significant work
-
-4. **Current focus** (HCI + CS Ed research): Build an interface that makes chatlog labeling *efficient and consistent* for instructors. The scoring equation is deprioritized — the labeling tool itself is the research contribution.
+Last rewritten: 2026-05-07. Supersedes the 2026-03-28 version (which described the multi-label queue era, before the single-label binary pivot).
 
 ---
 
-## Current Goal
+## Research context
 
-Help instructors label student-AI chatlog data with minimal friction:
-- Sessions of approximately 30 minutes to 1 hour
-- Labels emerge bottom-up from reading data (no fixed rubric required upfront)
-- AI assists in suggesting and validating labels
-- After instructor labels a sufficient sample, AI auto-labels the rest
+Chatsight is HCI + CS-Education research on student–AI tutoring interactions in an undergraduate data-science course. The AI tutor under study is fine-tuned to reference course material (homeworks, labs, projects) when answering student questions.
+
+The research contribution is **the labeling tool itself** — an interface that makes hybrid AI-assisted chatlog labeling efficient and consistent for instructors. An earlier "scoring equation" framing was deprioritized; what remains valuable is the workflow innovation, not the downstream metric.
 
 ---
 
-## Workflow Needs
+## Current state (post single-label pivot)
 
-### 1. Instructor-First Labeling
-- Instructors read through messages (or a sample) and create label categories as they go
-- Labels emerge from the data rather than being predefined
-- Instructors apply labels to individual student messages within transcripts
-- Interface should support creating a new label on the fly while reading
+The primary flow is a **per-label binary classification run**: the instructor selects one label at a time and decides yes / no / skip on each student message in a queue. After enough decisions, the run can be handed off so a Gemini classifier labels the rest, and the instructor reviews ambiguous cases.
 
-### 2. AI-Assisted Label Suggestion
-- After instructors establish some initial labels, AI (Gemini) suggests labels for unlabeled messages
-- AI may also propose new candidate label categories it detects in the data
-- Instructor reviews and accepts/rejects AI suggestions
-- Inspired by **LLOOM** (concept-based LLM analysis) and **DocWrangler** (interactive LLM-assisted document labeling)
+The older multi-label queue (apply N labels per message in one pass) still works and has its own page, but is dormant for new feature work.
 
-### 3. Label Management & Refinement
-- View all messages grouped by label to assess category consistency
-- **Split**: identify a label that is too broad and divide it into subcategories
-- **Merge**: identify two labels that mean the same thing and combine them
-- **Rename/redefine**: clarify what a label means after seeing real examples
-- This view is critical for maintaining labeling consistency across team members
+What's in place today (as of 2026-05-07):
 
-### 4. Sampling Strategy (Open Question)
-Two directions under consideration:
-- **Random sampling**: select a random subset of messages/conversations to label
-- **Diverse/robust sampling**: use some method (e.g., embedding-based diversity, stratified by notebook/topic) to ensure the sample is representative
+- **Single-label run** (`src/pages/LabelRunPage.tsx`, `server/python/decision_service.py`, `queue_service.py`). One label, one focused message, three keys: yes / no / skip.
+- **Assist flank**: a per-message panel showing the three nearest cosine-NN neighbors among the instructor's prior decisions, as a calibration anchor (`assist_service.py`, `MessageEmbedding` table). Now scoped by `assignment_id` (PR #41).
+- **Assignment mappings**: regex-named groups (e.g. `^lab0?3` → "Lab 3") so a run can be filtered to one lab or project (`AssignmentMapping`, `AssignmentsPage.tsx`).
+- **Handoff + sample handoff**: classify all (or `?sample_size=N`) remaining messages with Gemini once the human run is done; instructor reviews low-confidence cases before merge.
+- **Label management**: create / merge / split / archive labels; archived labels orphan their applications, which can be returned to the queue or auto-classified into new labels.
+- **Concept induction** (`concept_service.py`): cluster unlabeled messages via embedding + KMeans, ask Gemini to name each cluster, surface as candidate labels. Implemented but **lightly used** — not currently part of the primary onboarding flow.
+- **Recalibration design** at `docs/superpowers/specs/2026-04-11-recalibration-design.md`: blind re-labeling at adaptive intervals to detect drift. Designed, scaffolding tests exist, **not implemented end-to-end**.
+- **Analysis page** (`AnalysisPage.tsx`): coverage table, position distribution, temporal usage, label/notebook heatmap. Reasonably full but not yet research-grade.
+- **Bug-audit pass** landed 2026-05-07 (PR #41) hardened assist scope, race guards in the run flow, and a deferred-deletion split-label flow.
 
-Goal: ensure a short labeling session yields a training set that generalizes to the full dataset.
-
-### 5. AI Auto-Labeling the Rest
-- Once instructors have labeled a sufficient sample, AI labels remaining messages
-- Preferred: interpretable and transparent rather than a black box
-- Open question: few-shot prompting with Gemini, fine-tuned model, or traditional classifier trained on embeddings
+> **TODO (user)**: anything in the above list that's wrong, missing, or oversold — please call out before this doc is referenced from collaborator briefs.
 
 ---
 
-## Open Design Questions
+## Primary flows
 
-1. **Labeling unit**: Individual messages? Message pairs (student + AI response)? Conversation-level?
-2. **Sampling**: Random vs. representative — how do we know when we have "enough" labeled data?
-3. **Multi-instructor**: How do we handle disagreements when two instructors label the same message differently?
-4. **Label schema versioning**: When labels are merged or split, how do we handle previously labeled data?
-5. **Session scope**: Do instructors label within one conversation at a time, or across many conversations looking for patterns?
+| Flow | Page | Status |
+|------|------|--------|
+| Single-label run (yes / no / skip per message, one label at a time) | `LabelRunPage.tsx` (`/run`) | **Active** — primary flow |
+| Multi-label queue (apply N labels per message) | `QueuePage.tsx` (`/queue`) | Legacy; no new feature work |
+| Label management (create / merge / split / archive) | `LabelsPage.tsx` (`/labels`) | Active |
+| Assignment mappings (regex → assignment name) | `AssignmentsPage.tsx` (`/assignments`) | Active |
+| Handoff summaries (post-run AI classification status) | `SummariesPage.tsx` (`/summaries`) | Active |
+| Analysis | `AnalysisPage.tsx` (`/analysis`) | Active, sparse on research-grade views |
+| History | `HistoryPage.tsx` (`/history`) | Active, minimal |
+
+---
+
+## AI integration points
+
+| Surface | Service | What it does |
+|---------|---------|---------------|
+| Assist flank | `assist_service.py` (cosine-NN over `MessageEmbedding`) | Surfaces 3 most-similar prior decisions to anchor calibration |
+| Handoff classifier | `binary_autolabel_service.py` (Gemini function-calling) | Classifies remaining messages yes / no for one label |
+| Multi-label batch (legacy) | `autolabel_service.py` | Classifies messages into N existing label categories |
+| Label description from examples | `definition_service.py` | One-sentence Gemini-written label definitions |
+| Concept candidates | `concept_service.py` (embedding + KMeans + Gemini naming) | Bottom-up label suggestions from unlabeled clusters |
+| Concise summary | `autolabel_service.summarize_message` | Shortens long student messages for display |
+
+---
+
+## What's mature vs WIP
+
+**Mature**: single-label run, assist flank, label management (create / archive / merge / split-with-handoff), assignment mappings, basic analysis coverage.
+
+**WIP / sparse**:
+- Recalibration / drift detection (designed, not implemented).
+- Multi-rater support (data model still flat per message).
+- Classifier evaluation (no systematic measurement of Gemini's quality).
+- Classifier prompt / few-shot strategy (uses a fixed prompt, naive examples).
+- Concept induction integration (the service exists; the UX flow does not surface it well).
+- Analysis page as a research-grade dashboard.
+
+**Dormant**: multi-label queue page (intentional — kept working but not prioritized).
+
+---
+
+## Open questions
+
+These supersede the 2026-03 list (which was tied to the older multi-label flow). Five of these are being assigned to research collaborators as week-of-part-time-work briefs (see `docs/handoffs/`):
+
+1. **Smart picker** — what should the queue show next? Current ordering is conversation-aware but not signal-driven. Active-learning literature offers several routes (uncertainty sampling, diversity, calibration-anchored selection).
+2. **Drift** — how do we detect and surface labeler inconsistency within a session? The recalibration design is one answer; others exist.
+3. **Multi-rater** — how do we model and resolve disagreement when more than one instructor labels the same data?
+4. **Classifier quality** — how good is the Gemini handoff classifier today, and what prompt / few-shot strategy actually moves the needle? Build the eval harness first, then run experiments on top of it.
+5. **Onboarding / first-30-minutes UX** — what does a new instructor see on first open? The current flow assumes they already know what "single-label binary" means. Design the first-session experience: tutorial, defaults, what to label first, when to hand off.
+
+Independent (not currently assigned to collaborators):
+
+- **Schema versioning across runs** — when labels are merged or split mid-project, what happens to the analytical history? Today the archive flow handles orphans at the application level; project-wide schema evolution is unclear.
+- **Concept induction in the user flow** — the LLOOM-inspired concept service exists but doesn't integrate cleanly with the single-label flow. Where should bottom-up candidates surface?
 
 ---
 
 ## Inspirations
 
-- **LLOOM** (Lam et al.): LLM-driven concept extraction and iterative refinement over text corpora
-- **DocWrangler** (Jiang et al.): Interactive interface for LLM-assisted document labeling with merge/split/refine operations
+- **LLOOM** (Lam et al.) — LLM-driven concept extraction and iterative refinement over text corpora. Conceptual ancestor of `concept_service.py`.
+- **DocWrangler** (Jiang et al.) — Interactive LLM-assisted document labeling with merge / split / refine. Conceptual ancestor of the label-management flow.
+
+Neither is a direct technical dependency; the influence is on workflow design (bottom-up labels, iterative refinement, AI-as-suggestion-not-arbiter).

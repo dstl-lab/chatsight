@@ -1,0 +1,78 @@
+---
+title: "First thirty minutes — onboarding UX for a new instructor"
+subtitle: "Chatsight handoff brief · theme 5 of 5"
+author: "Recipient: ____________"
+date: today
+format:
+  pdf:
+    toc: false
+    geometry:
+      - margin=1in
+expected_effort: "≈1 week, part-time"
+---
+
+{{< include 00-shared-background.qmd >}}
+
+## The theme
+
+A new instructor opens chatsight for the first time. **What do they see, and what does the tool ask them to do?**
+
+Today, the answer is roughly: a navigation bar to four pages, a queue mode that assumes you understand "single-label binary," a `LabelsPage` that assumes you already have labels in mind, an `AssignmentsPage` that assumes you know what an assignment regex should match, and an `AnalysisPage` that's empty until labels exist. The tool is opinionated for someone who already knows the workflow. **For someone who doesn't, it's intimidating.**
+
+The theme is to design and prototype the first-30-minutes experience. Some directions, none mandatory:
+
+- **A guided first-run tutorial** — interactive walkthrough that creates a label, applies it to two messages, hands off, and explains what happened.
+- **Sensible defaults that the empty state explains** — pre-suggested first labels (from `concept_service.py`?), an "I'm not sure where to start" affordance.
+- **A coaching layer** — inline tooltips, progressive disclosure, "what does this number mean" hovers on the readiness chip.
+- **Reordering of the navigation** — `Assignments` may belong before `Run` in the tab order for a new user.
+- **A demo mode** — pre-seeded fake data so the new user can try the workflow before pointing it at real chatlogs.
+
+The recipient picks one or two directions, prototypes them, and writes a short rationale.
+
+## Why it matters
+
+The lab will hand chatsight to other research collaborators (and maybe undergrads or pilot instructors) over the next quarter. Every one of them currently has to be onboarded by a human. If the tool can onboard itself, the labor savings are direct, and the artifact's research credibility goes up — a tool that requires a co-author to operate is less generalizable than one that doesn't.
+
+This is also the brief most disconnected from "deeper algorithmic work" — useful if the recipient's strength is product / interaction design rather than ML.
+
+## Pointers
+
+- **Code surface (frontend)**:
+  - `src/App.tsx` — top-level routing, mode switch.
+  - `src/components/Navigation.tsx` — the nav bar, the first thing a user sees.
+  - `src/pages/LabelRunPage.tsx` — the empty state when no active label exists.
+  - `src/pages/LabelsPage.tsx` — the empty state when no labels exist.
+  - `src/pages/AssignmentsPage.tsx` — empty state and the regex input experience.
+  - `src/components/run/ReadinessChip.tsx` — assumes you know what readiness tiers mean.
+- **`server/python/concept_service.py`** — already proposes label candidates from unlabeled clusters. Could power "suggested first labels" in the empty state.
+- **`VITE_USE_MOCK=true` mode** — exists already. Could be repurposed as a demo mode.
+- **Literature**: Nielsen on first-use UX; "minimal manual" (Carroll 1990) on learning by doing; Don Norman's affordances chapter; the onboarding patterns in tools like Linear, Notion, Vercel as references.
+
+What *not* to assume:
+
+- Don't assume the lab wants a flashy in-app tutorial. Honest, unintrusive coaching often wins. Optimize for the user who *does* want help finding it; don't trap the one who doesn't.
+- Don't redesign things outside the first 30 minutes. The brief is bounded.
+- Don't gate the onboarding on a backend change unless it's a small one. Most onboarding work should be frontend-only.
+
+## Constraints
+
+- Branch: **`handoff/onboarding-ux`**.
+- Deliverable: a PR that ships a meaningful onboarding intervention. Could be one strong piece (a tutorial) or a coordinated set of smaller pieces (defaults + tooltips + nav reorder).
+- Existing user flows must remain reachable; the onboarding shouldn't trap an experienced user in a tutorial they can't dismiss.
+- Tests: any new component should have at least a render/interaction test in `src/__tests__/` following the existing `vitest` patterns.
+- Code-review checkpoint at ~day 4 — share screenshots or a video of the prototype, not just code.
+
+## Evaluation (self-check)
+
+You can confidently say "done" when:
+
+- A new user can land on `/` (or whatever the first page is), get to a successful first-label decision, and understand what they did, without a teammate present.
+- The intervention you built is dismissible / opt-out — experienced users can skip.
+- The PR body has a short rationale: who you imagined the new user to be, what choices you made, what you cut, what's next.
+- Screenshots / a screen-recorded gif are in the PR description.
+
+## Stretch
+
+- Run the prototype with one or two real first-time users (lab teammates, classmates, anyone who hasn't seen chatsight). Watch them. Capture two or three concrete failure points and either fix them or note them.
+- Think about *re-onboarding*: someone who used chatsight a month ago and forgot the workflow. Different from first-time UX; equally underserved.
+- Pair with the `Multi-rater` brief: onboarding for the *second* rater on a project that already has labels is its own mini-flow.

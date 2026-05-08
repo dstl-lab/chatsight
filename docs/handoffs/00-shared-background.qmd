@@ -1,0 +1,51 @@
+## Background — what chatsight is, before you start
+
+Chatsight is HCI + CS-Education research on student–AI tutoring conversations from an undergraduate data-science course. The AI tutor under study is fine-tuned to reference course material when answering students. The research artifact is **the labeling tool itself** — an interface that helps instructors label these conversations efficiently and consistently.
+
+The tool is currently mid-pivot. The primary flow is a **per-label binary classification run**: the instructor picks one label, then for each message in a queue presses yes / no / skip. After enough decisions, a Gemini classifier labels the rest, and the instructor reviews ambiguous cases. An older multi-label queue still works but is dormant for new feature work.
+
+### Read these before you start
+
+- `WORKFLOW.md` — the canonical "what's built, what's open" doc. Recently rewritten; trust it over the older specs.
+- `CLAUDE.md` — code orientation: where things live, how to run dev, env vars, two-DB setup.
+- `docs/superpowers/specs/2026-04-27-single-label-pivot-design.md` — the canonical design of the current flow.
+- The latest 5–10 `git log --oneline` entries on `main`. Recent commits document recent fixes and new features faster than any spec.
+- `.agents/research/2026-05-07-bug-audit-main.md` if it's still around — fragile areas to be careful around (it's gitignored, so ask).
+
+### Setting up dev
+
+Two terminals, in this order:
+
+```bash
+# Terminal A — backend
+cd server/python
+uv run uvicorn main:app --reload    # :8000
+
+# Terminal B — frontend
+npm run dev                          # :5173
+```
+
+You will need `GEMINI_API_KEY` and a `kubectl port-forward` to the external Postgres on `localhost:5432` for chatlog reads. If you only need the labeling UI without real chatlogs, set `VITE_USE_MOCK=true`.
+
+Tests:
+
+```bash
+cd server/python && uv run pytest    # backend
+npm test -- --run                     # frontend
+npx tsc --noEmit                      # type-check
+```
+
+### Conventions
+
+- Branch off `main`. Branch name: `handoff/<theme-slug>` (e.g. `handoff/smart-picker`).
+- Open a draft PR early, even at sketch stage. We'd rather see direction at day 2 than a finished thing on day 7.
+- Mid-week (≈ day 4) is a natural code-review checkpoint. Tag the maintainers on the PR or DM them.
+- The single-label run flow (`/run`) is in active production-ish use by the lab; do not break it. Behind-feature-flag is fine.
+- Comments only when WHY is non-obvious. Names should explain WHAT.
+- No drive-by refactors of unrelated code in your PR — keep the diff scoped.
+
+### Effort and shape
+
+Roughly **one week of part-time work**. The deliverable is a PR, not a paper. The thinking is yours; we'll meet you wherever the design lands so long as it's defensible and the code is shippable.
+
+If you finish "early," the **Stretch** section in your brief lists directions to push further. If you fall behind, the **Evaluation** section describes the minimum we'd merge.

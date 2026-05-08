@@ -1,0 +1,17 @@
+project:
+  type: default
+  output-dir: _output
+  render:
+    - "01-smart-picker.qmd"
+    - "02-drift.qmd"
+    - "03-multi-rater.qmd"
+    - "04-classifier-quality.qmd"
+    - "05-onboarding-ux.qmd"
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    geometry:
+      - margin=1in
+    fontsize: 11pt
+    colorlinks: true

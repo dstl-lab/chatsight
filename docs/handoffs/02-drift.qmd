@@ -1,0 +1,72 @@
+---
+title: "Drift — detecting and correcting label inconsistency in a session"
+subtitle: "Chatsight handoff brief · theme 2 of 5"
+author: "Recipient: ____________"
+date: today
+format:
+  pdf:
+    toc: false
+    geometry:
+      - margin=1in
+expected_effort: "≈1 week, part-time"
+---
+
+{{< include 00-shared-background.qmd >}}
+
+## The theme
+
+Instructors drift. Halfway through a 30-minute single-label run, the bar for "yes" shifts subtly — the same kind of message that was a clean YES at message 5 is now a NO at message 60, or vice versa. This is observable in the existing data; it is not solved.
+
+A 2026-04 design (`docs/superpowers/specs/2026-04-11-recalibration-design.md`) proposes blind re-labeling at adaptive intervals, with a sparkline-based consistency trend and a reconciliation UI when the instructor disagrees with their past self. The design has scaffolding tests but is **not implemented** end-to-end.
+
+The open question is upstream of that design: **what is "drift" in this domain, and how should we surface it?** Some defensible interpretations:
+
+- **Self-disagreement on blind re-labels** — what the recalibration spec measures.
+- **Shifting label distribution** — is the YES rate trending up or down within a session in a way that doesn't track the underlying data?
+- **Increasing skip rate** — proxy for fatigue or confusion.
+- **Decision-time creep** — labels coming faster (cursoriness) or slower (uncertainty).
+- **Disagreement with neighbors in the assist flank** — the instructor labels something differently from three nearest prior decisions.
+
+The recipient picks one or two definitions, prototypes detection plus a UI surface, and evaluates on either real session data or a synthetic-drift fixture.
+
+## Why it matters
+
+Drift is a quality-of-labels problem. If we don't catch it, the resulting human-labeled set is internally inconsistent and the downstream Gemini classifier learns a smeared decision boundary. If we catch it but nag the instructor too much, the tool becomes annoying and gets put down. The brief is to find the line.
+
+## Pointers
+
+- **`docs/superpowers/specs/2026-04-11-recalibration-design.md`** — read it. The recipient is **free to depart from it**: keep what's right, discard what isn't, justify in the PR.
+- **`server/python/models.py`** — `RecalibrationEvent` is already in the schema. So is the adaptive-interval scaffolding.
+- **`server/python/tests/test_recalibration.py`** — the adaptive-interval tests assume the spec's framing. Update or delete as your design dictates.
+- **`server/python/decision_service.py`** — `record_decision()` is where you'd hook drift signals (e.g., flag a decision that disagrees with assist-flank neighbors).
+- **`src/components/queue/RecalibrationOverlay.tsx`** — a drafted UI surface for the spec's flow. Could be reused or replaced.
+- **Literature**: concept-drift detection (DDM, Page-Hinkley, ADWIN); inter-rater agreement over time; "calibration drift" in clinical scoring.
+
+What *not* to assume:
+
+- Don't assume the existing recalibration design is the right answer. The spec was written before the assist flank existed and may be over-engineered now that the instructor has live calibration anchors.
+- Don't ship a UI that interrupts the instructor's flow on every drift signal. False positives are toxic here.
+
+## Constraints
+
+- Branch: **`handoff/drift`**.
+- Deliverable: a PR that lands at least one drift signal (computed) and one UI surface (either an in-flow indicator like a sparkline, or an opt-in "review my recent decisions" affordance). Behind a feature flag if you're nervous.
+- The single-label run flow must still work for users who haven't opted into drift detection.
+- Tests: drift signal computation should have unit tests using fixture decision sequences.
+- Code-review checkpoint at ~day 4.
+
+## Evaluation (self-check)
+
+You can confidently say "done" when:
+
+- The PR defines drift in one or two specific ways and explains the choice.
+- At least one signal is computed end-to-end (decision row → drift score) with tests.
+- At least one UI surface exists (need not be polished; ASCII-grade is fine for the prototype).
+- A short evaluation — synthetic drift injected into a fixture, signal triggers as expected; or real session data with drift visibly identified.
+- The PR body has a "what I'd do next" paragraph; future iterations build on it.
+
+## Stretch
+
+- Compare two drift definitions head-to-head on the same session data; recommend one for v2.
+- Extend the signal to **between-session** drift (instructor's calibration shifts across days, not just within an hour).
+- Wire drift into the `Smart picker` brief's pluggable picker — drift could downweight messages that are too close to ones already labeled with shifting bars.

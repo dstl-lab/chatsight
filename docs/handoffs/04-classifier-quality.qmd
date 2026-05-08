@@ -1,0 +1,72 @@
+---
+title: "How good is the AI? — classifier quality, end-to-end"
+subtitle: "Chatsight handoff brief · theme 4 of 5"
+author: "Recipient: ____________"
+date: today
+format:
+  pdf:
+    toc: false
+    geometry:
+      - margin=1in
+expected_effort: "≈1 week, part-time (slightly meatier than the others)"
+---
+
+{{< include 00-shared-background.qmd >}}
+
+## The theme
+
+After enough human decisions, chatsight hands off to a Gemini-based binary classifier (`server/python/binary_autolabel_service.py`) that labels the rest of the messages yes / no for that label. **We have no systematic measurement of how good that classifier is, and no record of which prompt / few-shot strategy works.**
+
+This brief is two related deliverables in one:
+
+1. **An evaluation harness**: a re-runnable measurement of classifier quality (per-label P/R/F1, calibration, confusion, hard-case mining) against a held-out subset of human-labeled data.
+2. **A prompt / few-shot improvement experiment**: using that harness as a benchmark, run at least two prompt variants (e.g. CoT vs none, definition emphasis, negative examples) and at least two few-shot example-selection strategies (random vs nearest-neighbor vs stratified-by-label), pick the best, land it.
+
+The harness is the foundation; the experiment is where the design judgment lives.
+
+## Why it matters
+
+We are about to lean harder on the auto-handoff (sample handoff just shipped, full handoff is next). If the classifier is silently wrong or wrong in patterned ways, the resulting "AI-labeled" data corrupts both the research dataset and the analysis dashboards. Measuring it is overdue.
+
+Once we can measure, prompt and few-shot decisions become evidence-driven instead of vibes-based. That's a meaningful step up from where we are.
+
+## Pointers
+
+- **`server/python/binary_autolabel_service.py`** — the current classifier. Read `classify_binary` and `summarize_batch` carefully.
+- **`server/python/assist_service.py`** — already does cosine NN over `MessageEmbedding`. Reuse this for nearest-neighbor few-shot selection.
+- **`server/python/tests/test_handoff_flow.py`** — fixture pattern for stubbed Gemini calls. Your harness should follow the same pattern (real Gemini in a CLI, stubs in tests).
+- **`server/python/models.py`** — `LabelApplication.applied_by` distinguishes `"human"` vs `"ai"`. The harness's holdout split lives over `applied_by == "human"`.
+- **`docs/handoffs/`** — your harness's *output* probably wants to be a Quarto report rendered to PDF, alongside the briefs. That's the deliverable shape we expect.
+- **Literature**: prompt engineering for classification (Brown 2020, Min et al. 2022 on few-shot in-context learning), calibration (Guo 2017 on temperature scaling), confidence estimation in LLM-as-classifier setups.
+
+What *not* to assume:
+
+- Don't assume the classifier has been measured in *any* defensible way before. A 1-page baseline report is already net new.
+- Don't blow your week on the harness. Plan: harness in 3 days, experiments in 4. If the harness takes longer, scope the experiment narrower.
+- Don't run experiments against the production Gemini key in a tight loop without thinking about cost. Cache responses; use small holdout sets initially.
+
+## Constraints
+
+- Branch: **`handoff/classifier-quality`**.
+- Deliverable: a PR that lands (a) the eval harness as a CLI + a Quarto report, (b) a prompt or few-shot change with measured improvement, and (c) the report PDF committed under `docs/classifier-eval/` so the lab can read it without setup.
+- Re-runnability is non-negotiable: someone running `uv run python -m eval.run` (or whatever you call it) should reproduce the report.
+- Hold the prompt variants and few-shot strategies behind an env-var or CLI flag so we can A/B them in production without redeploying.
+- Tests: cached / stubbed Gemini runs with deterministic outputs, asserting metrics computation.
+- Code-review checkpoint at ~day 4 — bring the harness output early so we can sanity-check the metrics before you commit to an experimental direction.
+
+## Evaluation (self-check)
+
+You can confidently say "done" when:
+
+- A holdout-based eval harness exists, callable, and produces per-label P/R/F1 + a calibration plot + a confusion matrix.
+- The harness runs against real Gemini *and* against stubs (for CI).
+- At least one prompt change *and* one few-shot change have been measured against the baseline.
+- The "winner" is documented (with metrics) in the PR and committed to the codebase.
+- The Quarto report renders cleanly and is committed.
+
+## Stretch
+
+- Hard-case mining: surface the messages the classifier gets wrong with high confidence; turn those into a "human review queue" that loops back into the run.
+- Per-assignment quality breakdown — does the classifier do worse on Lab 3 than Lab 4? That's an actionable signal for the Smart Picker brief.
+- Calibration via temperature scaling on the Gemini-returned confidences; measure if it changes the review-threshold UX downstream.
+- Compare cost-quality tradeoffs across `gemini-2.0-flash`, `gemini-2.5-pro`, etc.

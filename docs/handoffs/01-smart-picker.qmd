@@ -1,0 +1,73 @@
+---
+title: "Smart picker — what should the queue show next?"
+subtitle: "Chatsight handoff brief · theme 1 of 5"
+author: "Recipient: ____________"
+date: today
+format:
+  pdf:
+    toc: false
+    geometry:
+      - margin=1in
+expected_effort: "≈1 week, part-time"
+---
+
+{{< include 00-shared-background.qmd >}}
+
+## The theme
+
+When an instructor begins a single-label run, the queue walks messages in a conversation-aware fixed order: one conversation at a time, in order of `chatlog_id` (which derives from `MIN(events.id)` per conversation). That ordering is fine but it doesn't *use* anything we know about the messages or the run so far. **Should it?**
+
+Active-learning literature has been arguing for thirty years that picking what to label next is a leverage point. The question for chatsight: which signal — and what kind of pluggable picker — actually moves the needle for an instructor labeling for ~30 minutes? Some directions you might consider, none of which are right or wrong:
+
+- **Uncertainty sampling** — pick the message a calibrated classifier is least sure about.
+- **Diversity sampling** — pick messages that maximize coverage of the embedding space.
+- **Calibration anchors** — pick messages that *resemble* recent decisions, so the assist flank stays informative.
+- **Hybrid** — uncertainty for the first half, diversity for the second.
+- **Conversation-coherent** — keep grouping by conversation but choose which conversation next using a signal.
+
+The recipient picks one (or composes their own), prototypes it as a pluggable picker behind a feature flag, and evaluates against existing labeled data.
+
+## Why it matters
+
+If a smarter picker shaves the labels-needed-before-handoff number from, say, 80 to 50, that is a 35% reduction in instructor labor for the same downstream classifier quality. It is also genuinely interesting research territory — the assist flank already does cosine NN, so embedding-based pickers compose naturally.
+
+## Pointers
+
+- **`server/python/queue_service.py`** — `next_message_for_label()` is where the current ordering lives. Make this pluggable.
+- **`server/python/assist_service.py`** — already builds an in-memory cosine-NN matrix over `MessageEmbedding`. Reuse this; do not build a second embedding cache.
+- **`server/python/decision_service.py`** — `compute_readiness()` shows the existing readiness tiers. A new picker could use yes/no/skip counts as input.
+- **`ConversationCursor` model** — tracks `last_message_index_decided` per `(label, chatlog)`. Smart pickers may want to extend this or replace it.
+- **PR #41 (bug audit)** introduced `assignment_id` scoping for the assist flank. Whatever picker you write should also respect `assignment_id`.
+- **Active-learning literature**: Settles 2009 survey is the canonical entry. BALD (Houlsby 2011) for uncertainty in deep models. LLOOM (Lam et al.) and DocWrangler (Jiang et al.) for adjacent HCI takes.
+
+What *not* to assume:
+
+- Don't assume a single "correct" picker exists for this domain. The point of the brief is to compare your choice against a baseline.
+- Don't assume the existing `MessageEmbedding` cache covers every message. Some messages may not be embedded yet — handle gracefully.
+
+## Constraints
+
+- Branch: **`handoff/smart-picker`**.
+- Deliverable: a PR that lands a pluggable picker interface plus at least one non-trivial implementation, gated by a feature flag (env var or column on `LabelDefinition`). The default behavior should be unchanged for everyone not on the flag.
+- Do not modify the user-facing `/run` UI shape. The smart picker is a backend swap.
+- Tests: at least one test in `server/python/tests/` exercising the new picker against fixture data; the existing `test_queue_actions.py` and `test_decision_service.py` patterns are good models.
+- Code-review checkpoint at ~day 4: open a draft PR with the interface and a stub implementation by then.
+
+## Evaluation (self-check)
+
+You can confidently say "done" when:
+
+- A `Picker` interface (or equivalent abstraction) exists in `server/python/`, with at least one concrete implementation beyond the current ordering.
+- The default is unchanged when the flag is off; the new picker is reachable when the flag is on.
+- A small offline benchmark — even a single notebook in `docs/handoffs/01-smart-picker-results/` — compares your picker against the current ordering on existing human-labeled data, on at least one defensible metric (calls to handoff, classifier P/R/F1 after handoff, label-balance variance, etc.).
+- A short rationale in the PR body explaining the picker you chose and what you'd try next.
+
+We'd merge that, even if the picker doesn't win the benchmark. The point is that the door is open.
+
+## Stretch
+
+If you finish early:
+
+- Explore the picker as an *online* algorithm that reacts within a session (Thompson sampling, ε-greedy across multiple pickers).
+- Wire the picker's "expected information gain" into the `ProgressSidebar` so the instructor sees *why* a message was chosen.
+- Add a second concrete picker so the comparison is three-way (current vs picker-A vs picker-B).

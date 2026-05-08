@@ -1,0 +1,72 @@
+---
+title: "Two instructors, one dataset — multi-rater support"
+subtitle: "Chatsight handoff brief · theme 3 of 5"
+author: "Recipient: ____________"
+date: today
+format:
+  pdf:
+    toc: false
+    geometry:
+      - margin=1in
+expected_effort: "≈1 week, part-time"
+---
+
+{{< include 00-shared-background.qmd >}}
+
+## The theme
+
+Today, exactly one human can label any given `(label, chatlog_id, message_index)`. The `LabelApplication` row is unique on that triple. If two instructors looked at the same data, the second would silently overwrite the first.
+
+Real labeling-research practice cares about inter-rater reliability. **How should chatsight model and support more than one human labeling the same messages?**
+
+Three intertwined design questions, each with several defensible answers:
+
+- **Data model**: a `rater_id` column? A new `LabelDecision` table that's many-to-one to `LabelApplication`? A separate "consensus" application that's the function of N raters?
+- **Agreement metric**: Cohen's κ for two raters? Fleiss' κ for ≥3? Krippendorff's α (handles ordinal labels and missing data)? Or just F1 between rater pairs?
+- **Disagreement-resolution UI**: side-by-side viewer? Third-rater tiebreak? Discussion thread? Auto-promote when `n` raters agree?
+
+Recipient designs the data model, computes at least one metric, and prototypes a disagreement-resolution surface.
+
+## Why it matters
+
+This unlocks the next layer of research credibility. Without IRR, every claim about "instructors labeled X" is single-source. With it, we can talk about how *replicable* a labeling decision is — and use that to weight what the AI classifier should learn from.
+
+It's also an interesting cross-cut into the existing flow: the assist flank, drift detection (theme 2), and the auto-handoff classifier all behave differently when the ground-truth is a *distribution* over raters rather than a single label.
+
+## Pointers
+
+- **`server/python/models.py`** — `LabelApplication` is the row to think about extending or layering.
+- **`server/python/decision_service.py`** — `record_decision()` is the single chokepoint for human writes. Multi-rater changes route through here.
+- **`server/python/main.py`** — many endpoints assume a single human, including `/queue/history`, `/analysis/summary`, and the readiness math. Inventory which need multi-rater awareness.
+- **`src/pages/AnalysisPage.tsx`** — the natural surface for an IRR/agreement view. Currently sparse on research-grade metrics.
+- **Literature**: Cohen 1960 (κ); Fleiss 1971 (multi-rater κ); Krippendorff (α); Hallin & Mancini for political science methodology of comparable scope; Artstein & Poesio 2008 for an NLP-flavored survey of inter-annotator agreement.
+
+What *not* to assume:
+
+- Don't assume "user accounts" exist in chatsight today. They don't — the tool is single-tenant. A `rater_id` could come from a cookie, an env var, or a CLI flag at session start, depending on your taste. Pick one and justify.
+- Don't try to retrofit existing `LabelApplication` rows under a new schema unless you really want to. A clean cutover is acceptable: pre-multi-rater rows are "rater_id = legacy" or similar.
+- Don't ship a feature that requires real-time collaboration. Asynchronous multi-rater is the bar.
+
+## Constraints
+
+- Branch: **`handoff/multi-rater`**.
+- Deliverable: a PR that lands a data model accommodating multiple raters, at least one IRR metric computed and surfaced (anywhere defensible — the Analysis page is the obvious target), and a minimum-viable disagreement-resolution UI.
+- The single-rater happy path must continue to work without changes for someone who hasn't onboarded a second rater.
+- Tests: schema migration, decision recording with multiple raters, metric computation against a fixture.
+- Code-review checkpoint at ~day 4 — bring the schema decision early, that's the highest-leverage choice.
+
+## Evaluation (self-check)
+
+You can confidently say "done" when:
+
+- Schema accommodates ≥2 raters per message.
+- At least one IRR metric is computed and displayed somewhere.
+- A disagreement view shows side-by-side what two raters chose.
+- The single-rater flow is uncriticically supported (existing pre-multi-rater data still rendered correctly).
+- The PR body explains schema choice + metric choice + the call you made on resolution UX.
+
+## Stretch
+
+- Implement a third-rater tiebreak flow.
+- Use rater agreement as a *signal into the auto-handoff classifier*: train the Gemini handoff prompt only on messages where ≥2 raters agreed.
+- Extend the `Smart picker` brief's picker with an "uncertain disagreement" mode that prioritizes what raters disagree on.
