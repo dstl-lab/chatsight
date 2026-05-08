@@ -1,11 +1,35 @@
 import os
+import shutil
+from pathlib import Path
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy import create_engine as sa_create_engine, event
 
 load_dotenv()
 
-DATABASE_URL = "sqlite:///./chatsight.db"
+# Resolve to repo-root /database/chatsight.db regardless of cwd. Override with
+# DATABASE_URL env var (e.g. for tests, alternate environments, or Docker).
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_DB_PATH = _REPO_ROOT / "database" / "chatsight.db"
+_DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _migrate_legacy_db_location():
+    """One-time relocation: pre-2026-05 the SQLite DB lived at
+    server/python/chatsight.db. If a collaborator pulls this commit with their
+    old DB still in the legacy spot and the new spot is empty, move it so they
+    don't see an apparently-empty UI."""
+    legacy = _REPO_ROOT / "server" / "python" / "chatsight.db"
+    if legacy.exists() and not _DEFAULT_DB_PATH.exists():
+        for suffix in ("", "-shm", "-wal"):
+            src = legacy.with_name(legacy.name + suffix)
+            if src.exists():
+                shutil.move(str(src), str(_DEFAULT_DB_PATH.with_name(_DEFAULT_DB_PATH.name + suffix)))
+        print(f"[chatsight] migrated legacy DB: {legacy} -> {_DEFAULT_DB_PATH}")
+
+
+_migrate_legacy_db_location()
+DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
 engine = create_engine(
     DATABASE_URL,
     echo=False,
