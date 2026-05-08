@@ -1,11 +1,9 @@
 // src/services/api.ts
 import type {
-  LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
+  LabelDefinition, LabelHealth, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse,
-  ConceptCandidate, EmbedStatus, ConversationMessage,
   HistoryItem, OrphanedMessagesResponse, ArchiveResponse, RecalibrationItem,
-  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis,
+  ConceptCandidate, EmbedStatus, AnalysisSummary, TemporalAnalysis, ConversationMessage,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse
 } from '../types'
 import { mockApi } from '../mocks'
@@ -27,6 +25,10 @@ export const api = {
   getLabels: (): Promise<LabelDefinition[]> =>
     USE_MOCK ? Promise.resolve(mockApi.labels)
              : req('/api/labels'),
+
+  getLabelHealth: (): Promise<LabelHealth[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/labels/health'),
 
   createLabel: (body: CreateLabelRequest): Promise<LabelDefinition> =>
     USE_MOCK ? Promise.resolve({ ...body, id: Math.random(), created_at: new Date().toISOString(), count: 0, description: body.description ?? null })

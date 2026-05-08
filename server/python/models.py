@@ -70,6 +70,15 @@ class ConceptCandidate(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LabelHealthCache(SQLModel, table=True):
+    label_id: int = Field(primary_key=True)
+    tightness: Optional[float] = None
+    ai_confidence: Optional[float] = None
+    human_ai_ratio: Optional[float] = None
+    sample_size: int = 0
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class SuggestionCache(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     chatlog_id: int

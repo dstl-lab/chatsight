@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../services/api'
-import type { LabelDefinition, LabelExample, SuggestResponse } from '../types'
+import type { LabelDefinition, LabelHealth, LabelExample, SuggestResponse } from '../types'
 
 // ── Components ───────────────────────────────────────────────────────────────
 
@@ -406,6 +406,73 @@ function QuickRefineModal({
 /**
  * DeleteConfirmModal
  */
+function LabelMessagesModal({ label, health, onClose }: {
+  label: LabelDefinition
+  health: LabelHealth | null
+  onClose: () => void
+}) {
+  const [examples, setExamples] = useState<LabelExample[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.getLabelExamples(label.id, 100)
+      .then(setExamples)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [label.id])
+
+  const score = health?.score ?? null
+  const dotColor = score === null ? 'text-neutral-600'
+    : score >= 75 ? 'text-emerald-400'
+    : score >= 55 ? 'text-yellow-400'
+    : 'text-red-400'
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={onClose}>
+      <div className="bg-neutral-900 border border-neutral-800 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-start justify-between p-6 border-b border-neutral-800">
+          <div>
+            <h2 className="text-base font-bold text-neutral-100">{label.name}</h2>
+            {label.description && <p className="text-xs text-neutral-500 mt-1 italic">{label.description}</p>}
+          </div>
+          <div className="flex items-center gap-3">
+            {health && (
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] ${dotColor}`}>●</span>
+                <span className="text-[10px] text-neutral-400 font-mono">{score !== null ? `${score}%` : '—'}</span>
+                {health.tightness !== null && <span className="text-[10px] text-neutral-600">align {Math.round(health.tightness * 100)}%</span>}
+                {health.ai_confidence !== null && <span className="text-[10px] text-neutral-600">conf {Math.round(health.ai_confidence * 100)}%</span>}
+              </div>
+            )}
+            <button onClick={onClose} className="text-neutral-600 hover:text-neutral-300 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Message list */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {loading && <p className="text-xs text-neutral-500 text-center py-8 animate-pulse">Loading messages…</p>}
+          {!loading && examples.length === 0 && <p className="text-xs text-neutral-500 text-center py-8">No messages labeled yet.</p>}
+          {examples.map((ex, i) => (
+            <div key={i} className="bg-neutral-950 border border-neutral-800 rounded-lg p-3">
+              <p className="text-xs text-neutral-300 leading-relaxed">{ex.message_text}</p>
+              <span className={`mt-2 inline-block text-[9px] uppercase tracking-wider font-bold ${ex.applied_by === 'human' ? 'text-blue-500' : 'text-purple-500'}`}>
+                {ex.applied_by}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-6 py-3 border-t border-neutral-800 text-[10px] text-neutral-600">
+          {label.count} message{label.count !== 1 ? 's' : ''} total
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DeleteConfirmModal({ label, onClose, onConfirm }: { label: LabelDefinition, onClose: () => void, onConfirm: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
@@ -948,6 +1015,8 @@ function MergePreviewModal({
 
 export function LabelsPage() {
   const [labels, setLabels] = useState<LabelDefinition[]>([])
+  const [healthMap, setHealthMap] = useState<Map<number, LabelHealth>>(new Map())
+  const [healthLoading, setHealthLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [filterLabelId, setFilterLabelId] = useState<number | null>(null)
   
@@ -956,6 +1025,7 @@ export function LabelsPage() {
   const [splittingLabel, setSplittingLabel] = useState<LabelDefinition | null>(null)
   const [mergeState, setMergeState] = useState<{ source: LabelDefinition, target: LabelDefinition } | null>(null)
   const [deletingLabel, setDeletingLabel] = useState<LabelDefinition | null>(null)
+  const [viewingLabel, setViewingLabel] = useState<LabelDefinition | null>(null)
   
   const [draggedId, setDraggedId] = useState<number | null>(null)
 
@@ -968,7 +1038,13 @@ export function LabelsPage() {
     }
   }
 
-  useEffect(() => { fetchLabels() }, [])
+  useEffect(() => {
+    fetchLabels()
+    api.getLabelHealth()
+      .then(data => setHealthMap(new Map(data.map(h => [h.label_id, h]))))
+      .catch(() => {})
+      .finally(() => setHealthLoading(false))
+  }, [])
 
   const handleMerge = async () => {
     if (!mergeState) return
@@ -1086,9 +1162,10 @@ export function LabelsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 max-w-6xl mx-auto pb-20">
           {filteredLabels.map(label => (
-            <div 
+            <div
               key={label.id}
               draggable
+              onClick={() => setViewingLabel(label)}
               onDragStart={() => setDraggedId(label.id)}
               onDragEnd={() => setDraggedId(null)}
               onDragOver={e => e.preventDefault()}
@@ -1123,7 +1200,45 @@ export function LabelsPage() {
                 {label.description || 'No description provided.'}
               </p>
 
-              <div className="mt-8 flex gap-3 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
+              {(() => {
+                const h = healthMap.get(label.id)
+                if (healthLoading) return (
+                  <div className="mt-3 flex items-center gap-1.5 animate-pulse">
+                    <span className="text-[10px] text-neutral-700">●</span>
+                    <span className="text-[10px] text-neutral-700 font-mono">—%</span>
+                    <span className="text-[10px] text-neutral-700 uppercase tracking-wider">health</span>
+                  </div>
+                )
+                if (!h) return null
+                const score = h.score
+                const dotColor = score === null
+                  ? 'text-neutral-600'
+                  : score >= 75 ? 'text-emerald-400'
+                  : score >= 55 ? 'text-yellow-400'
+                  : 'text-red-400'
+                const pct = score !== null ? `${score}%` : '—'
+                const rows: { label: string; value: string }[] = []
+                if (h.tightness !== null) rows.push({ label: 'Alignment', value: `${Math.round(h.tightness * 100)}%` })
+                if (h.ai_confidence !== null) rows.push({ label: 'AI Confidence', value: `${Math.round(h.ai_confidence * 100)}%` })
+                return (
+                  <div className="relative group/health mt-3 inline-flex items-center gap-1.5 cursor-default">
+                    <span className={`text-[10px] ${dotColor}`}>●</span>
+                    <span className="text-[10px] text-neutral-400 font-mono">{pct}</span>
+                    <span className="text-[10px] text-neutral-600 uppercase tracking-wider">health</span>
+                    <div className="absolute bottom-full left-0 mb-2 z-10 min-w-[160px] bg-neutral-900 border border-neutral-700 rounded-lg p-3 shadow-2xl shadow-black/60 opacity-0 group-hover/health:opacity-100 pointer-events-none transition-opacity">
+                      <p className="text-[9px] text-neutral-500 uppercase tracking-widest font-bold mb-2">Health Breakdown</p>
+                      {rows.map(r => (
+                        <div key={r.label} className="flex justify-between items-center gap-4 py-0.5">
+                          <span className="text-[10px] text-neutral-400">{r.label}</span>
+                          <span className="text-[10px] text-neutral-200 font-mono">{r.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="mt-4 flex gap-3 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
                 <button 
                   onClick={() => setRefiningLabel(label)}
                   className="flex-1 py-1.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20"
@@ -1182,6 +1297,14 @@ export function LabelsPage() {
           label={deletingLabel}
           onClose={() => setDeletingLabel(null)}
           onConfirm={handleDelete}
+        />
+      )}
+
+      {viewingLabel && (
+        <LabelMessagesModal
+          label={viewingLabel}
+          health={healthMap.get(viewingLabel.id) ?? null}
+          onClose={() => setViewingLabel(null)}
         />
       )}
 

@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache
+from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, MessageEmbedding, LabelHealthCache
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -28,6 +28,7 @@ from schemas import (
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
     RecalibrationResponse,
+    LabelHealthResponse,
 )
 from sqlmodel import Session, select
 
@@ -277,6 +278,159 @@ def get_labels(include_archived: bool = False, db: Session = Depends(get_session
             )
         )
     return result
+
+
+@app.get("/api/labels/health", response_model=List[LabelHealthResponse])
+def get_labels_health(db: Session = Depends(get_session)):
+    import numpy as np
+    from concept_service import client as embed_client, EMBED_MODEL
+
+    # How much self-alignment must exceed cross-label alignment to score 100%.
+    # A difference of 0.10 is a strong signal; tune upward if scores feel too high.
+    ALIGNMENT_CEILING = 0.10
+    CACHE_TTL_SECONDS = 300  # 5 minutes
+
+    labels = db.exec(
+        select(LabelDefinition).where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all()
+    if not labels:
+        return []
+
+    now = datetime.utcnow()
+
+    # Split labels into fresh (within TTL) vs stale/missing
+    fresh, stale = [], []
+    for label in labels:
+        cached = db.get(LabelHealthCache, label.id)
+        age = (now - cached.computed_at).total_seconds() if cached else None
+        if cached and age is not None and age < CACHE_TTL_SECONDS:
+            fresh.append((label, cached))
+        else:
+            stale.append((label, cached))
+
+    # If anything is stale, embed ALL labels in one batch.
+    # We need every label vector to compute cross-label alignment.
+    all_label_vecs: np.ndarray | None = None
+    if stale:
+        texts = [
+            f"{l.name}: {l.description}" if l.description else l.name
+            for l in labels
+        ]
+        emb_result = embed_client.models.embed_content(model=EMBED_MODEL, contents=texts)
+        vecs = np.array([e.values for e in emb_result.embeddings], dtype=np.float32)
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9
+        all_label_vecs = vecs / norms  # (n_labels, d)
+
+    label_idx = {label.id: i for i, label in enumerate(labels)}
+
+    # Compute stale entries
+    stale_computed: dict[int, tuple] = {}  # label_id -> (raw_diff, ai_confidence, sample_size)
+    for label, cached in stale:
+        idx = label_idx[label.id]
+        self_vec = all_label_vecs[idx]
+        other_vecs = np.delete(all_label_vecs, idx, axis=0)  # (n_labels-1, d)
+
+        apps = db.exec(
+            select(LabelApplication)
+            .where(LabelApplication.label_id == label.id)
+            .order_by(LabelApplication.id)
+            .limit(30)
+        ).all()
+
+        msg_vecs = []
+        for app in apps:
+            emb_row = db.exec(
+                select(MessageEmbedding).where(
+                    MessageEmbedding.chatlog_id == app.chatlog_id,
+                    MessageEmbedding.message_index == app.message_index,
+                )
+            ).first()
+            if emb_row:
+                v = np.frombuffer(emb_row.embedding, dtype=np.float32)
+                msg_vecs.append(v / (np.linalg.norm(v) + 1e-9))
+
+        sample_size = len(msg_vecs)
+        if sample_size >= 1 and len(labels) >= 2:
+            msg_mat = np.stack(msg_vecs)          # (n_msgs, d)
+            self_sim = float(np.mean(msg_mat @ self_vec))
+            cross_sim = float(np.mean(msg_mat @ other_vecs.T))
+            label_diff = self_sim - cross_sim
+
+            # Inter-message similarity: how much do messages resemble each other
+            # vs the cross-label baseline. Catches tight clusters like identical-style
+            # messages even when they don't match the label's wording.
+            if sample_size >= 2:
+                sim_matrix = msg_mat @ msg_mat.T
+                n = sim_matrix.shape[0]
+                within_sim = float(np.mean(sim_matrix[np.triu_indices(n, k=1)]))
+                inter_diff = within_sim - cross_sim
+            else:
+                inter_diff = label_diff
+
+            raw_diff = max(label_diff, inter_diff)
+        else:
+            raw_diff = None
+
+        ai_conf_result = db.exec(
+            select(func.avg(LabelApplication.confidence)).where(
+                LabelApplication.label_id == label.id,
+                LabelApplication.applied_by == "ai",
+                LabelApplication.confidence != None,  # noqa: E711
+            )
+        ).one()
+        ai_confidence = float(ai_conf_result) if ai_conf_result is not None else None
+
+        if cached:
+            cached.tightness = raw_diff
+            cached.ai_confidence = ai_confidence
+            cached.sample_size = sample_size
+            cached.computed_at = now
+            db.add(cached)
+        else:
+            db.add(LabelHealthCache(
+                label_id=label.id,
+                tightness=raw_diff,
+                ai_confidence=ai_confidence,
+                sample_size=sample_size,
+                computed_at=now,
+            ))
+        stale_computed[label.id] = (raw_diff, ai_confidence, sample_size)
+
+    db.commit()
+
+    # Build results
+    results = []
+    for label in labels:
+        if label.id in stale_computed:
+            raw_diff, ai_confidence, sample_size = stale_computed[label.id]
+        else:
+            c = db.get(LabelHealthCache, label.id)
+            raw_diff = c.tightness if c else None
+            ai_confidence = c.ai_confidence if c else None
+            sample_size = c.sample_size if c else 0
+
+        # Normalize raw diff: 0 or below → 0%, ALIGNMENT_CEILING or above → 100%
+        alignment = float(np.clip(raw_diff / ALIGNMENT_CEILING, 0.0, 1.0)) if raw_diff is not None else None
+
+        weights = {"alignment": 0.60, "ai_confidence": 0.40}
+        values = {"alignment": alignment, "ai_confidence": ai_confidence}
+        available = {k: v for k, v in values.items() if v is not None}
+        if available:
+            total_w = sum(weights[k] for k in available)
+            score_pct = round(sum(v * weights[k] / total_w for k, v in available.items()) * 100)
+        else:
+            score_pct = None
+
+        results.append(LabelHealthResponse(
+            label_id=label.id,
+            score=score_pct,
+            tightness=alignment,
+            ai_confidence=ai_confidence,
+            human_ai_ratio=None,
+            sample_size=sample_size,
+        ))
+
+    return results
 
 
 @app.put("/api/labels/reorder")

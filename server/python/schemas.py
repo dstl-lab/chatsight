@@ -94,6 +94,15 @@ class LabelDefinitionResponse(BaseModel):
     count: int
 
 
+class LabelHealthResponse(BaseModel):
+    label_id: int
+    score: Optional[int]             # 0–100 composite percentage, null if no data
+    tightness: Optional[float]       # mean pairwise cosine sim, null if < 3 embeddings
+    ai_confidence: Optional[float]   # avg AI confidence, null if no AI apps
+    human_ai_ratio: Optional[float]  # human_count / total_count, null if count = 0
+    sample_size: int                 # number of embeddings found
+
+
 class QueueItemResponse(BaseModel):
     chatlog_id: int
     message_index: int

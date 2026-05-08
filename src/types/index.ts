@@ -182,6 +182,15 @@ export interface ConversationMessageLabel {
   applied_by: string
 }
 
+export interface LabelHealth {
+  label_id: number
+  score: number | null        // 0–100 percentage
+  tightness: number | null    // mean pairwise cosine sim, null if < 3 embeddings
+  ai_confidence: number | null
+  human_ai_ratio: number | null
+  sample_size: number
+}
+
 export interface ConversationMessage {
   role: "student" | "assistant"
   text: string

@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom'
 export function Navigation() {
   return (
     <nav className="flex items-center gap-6 px-6 py-3 border-b border-neutral-800 bg-neutral-950 shrink-0">
-      <span className="text-sm font-semibold text-white tracking-wide">Chatsight</span>
+      <NavLink to="/queue" className="text-sm font-semibold text-white tracking-wide hover:text-neutral-300 transition-colors">Chatsight</NavLink>
       <div className="flex gap-5 ml-4">
         {[
           { to: '/queue', label: 'Queue' },
