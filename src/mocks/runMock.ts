@@ -133,6 +133,14 @@ export const mockFocusedMessage: FocusedMessage = {
   conversation_turn_count: fullThread.length,
   thread: fullThread,
   focus_index: 10,  // position of the focused turn in the full thread
+  sampling_pick: 'explore',
+  conversation_student_messages: 7,
+  pending_student_message_number: 6,
+  neighbor_scores_available: true,
+  neighbor_uncertainty_pct: 72,
+  neighbor_novelty_pct: 41,
+  sampling_hint:
+    'Explore: chosen because neighbors disagree more or look less like prior labels.',
 }
 
 export const mockReadiness: ReadinessState = {

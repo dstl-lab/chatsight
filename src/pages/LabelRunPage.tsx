@@ -454,6 +454,13 @@ export function LabelRunPage() {
         chatlogId={focused.chatlog_id}
         notebook={focused.notebook}
         turnCount={focused.conversation_turn_count}
+        samplingPick={focused.sampling_pick}
+        conversationStudentMessages={focused.conversation_student_messages}
+        pendingStudentMessageNumber={focused.pending_student_message_number}
+        neighborScoresAvailable={focused.neighbor_scores_available}
+        neighborUncertaintyPct={focused.neighbor_uncertainty_pct}
+        neighborNoveltyPct={focused.neighbor_novelty_pct}
+        samplingHint={focused.sampling_hint}
       />
       <div className="grid grid-cols-[1fr_320px] min-h-0 overflow-hidden">
         <ThreadView thread={focused.thread} focusIndex={focused.focus_index} />

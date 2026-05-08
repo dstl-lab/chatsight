@@ -6,7 +6,7 @@ import logging
 import os
 import random
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 from sqlalchemy import text as sql_text
 from sqlmodel import Session, select
@@ -15,6 +15,100 @@ from database import ext_engine
 from models import LabelApplication, LabelPrediction, MessageCache
 
 logger = logging.getLogger(__name__)
+
+
+def neighbor_uncertainty_novelty(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+) -> Optional[Tuple[float, float]]:
+    """From cached k-NN neighbors (LabelPrediction), return (uncertainty, novelty) in [0,1].
+
+    Uncertainty: normalized binary entropy of similarity-weighted yes vs no vote.
+    Novelty: 1 - max cosine similarity to labeled neighbors (higher = farther from past labels).
+    """
+    row = session.exec(
+        select(LabelPrediction).where(
+            LabelPrediction.label_id == label_id,
+            LabelPrediction.chatlog_id == chatlog_id,
+            LabelPrediction.message_index == message_index,
+        )
+    ).first()
+    if not row or not row.nearest_neighbors:
+        return None
+    try:
+        neighbors = json.loads(row.nearest_neighbors)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(neighbors, list) or not neighbors:
+        return None
+
+    yes_sum = 0.0
+    no_sum = 0.0
+    max_sim = None
+    for n in neighbors:
+        sim = float(n.get("similarity", 0.0))
+        max_sim = sim if max_sim is None else max(max_sim, sim)
+        v = n.get("value")
+        if v == "yes":
+            yes_sum += max(sim, 0.0)
+        elif v == "no":
+            no_sum += max(sim, 0.0)
+
+    denom = yes_sum + no_sum
+    if denom <= 0.0:
+        return None
+
+    p_yes = yes_sum / denom
+    eps = 1e-12
+    p_yes = max(eps, min(1.0 - eps, p_yes))
+    entropy = -p_yes * math.log(p_yes) - (1.0 - p_yes) * math.log(1.0 - p_yes)
+    uncertainty = entropy / math.log(2.0)
+
+    max_sim = float(max_sim if max_sim is not None else 0.0)
+    max_sim = max(0.0, min(1.0, max_sim))
+    novelty = 1.0 - max_sim
+    return uncertainty, novelty
+
+
+def build_sampling_meta(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    conversation_student_messages: int,
+    sampling_pick: str,
+) -> dict:
+    """Human-readable sampling diagnostics for the RUN UI."""
+    unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
+    meta = {
+        "sampling_pick": sampling_pick,
+        "conversation_student_messages": conversation_student_messages,
+        "pending_student_message_number": message_index + 1,
+        "neighbor_scores_available": unc_nov is not None,
+        "neighbor_uncertainty_pct": None,
+        "neighbor_novelty_pct": None,
+        "sampling_hint": "",
+    }
+    if unc_nov:
+        u, n = unc_nov
+        meta["neighbor_uncertainty_pct"] = int(round(u * 100))
+        meta["neighbor_novelty_pct"] = int(round(n * 100))
+        if sampling_pick == "explore":
+            meta["sampling_hint"] = (
+                "Explore: chosen because neighbors disagree more or look less like prior labels."
+            )
+        else:
+            meta["sampling_hint"] = (
+                "Round-robin: next conversation in fixed order (assignment, then shuffle)."
+            )
+    else:
+        meta["sampling_hint"] = (
+            "Neighbor scores not ready — need more yes/no labels for k-NN cache. "
+            "Explore falls back to longer chats until then."
+        )
+    return meta
 
 
 def default_hybrid_explore_fraction() -> float:
@@ -59,25 +153,27 @@ def _select_next_chatlog_id(
     in_progress: list[int],
     not_started: list[int],
     explore_fraction: float,
-) -> Optional[int]:
-    """Hybrid conversation choice: baseline (deterministic) vs explore (richer chats)."""
+) -> Tuple[Optional[int], Optional[str]]:
+    """Hybrid conversation choice: baseline (deterministic) vs explore (scored).
+
+    Returns (chatlog_id_or_none, "baseline"|"explore"|None).
+    """
     ip_pending = [c for c in in_progress if _first_pending_turn(c, conv[c], decided)]
     ns_pending = [c for c in not_started if _first_pending_turn(c, conv[c], decided)]
     if not ip_pending and not ns_pending:
-        return None
+        return None, None
 
     pool = ip_pending if ip_pending else ns_pending
     in_prog_bucket = bool(ip_pending)
 
     if len(pool) == 1:
-        return pool[0]
+        return pool[0], "baseline"
 
     explore = random.random() < explore_fraction
     if not explore:
         if in_prog_bucket:
             pool_sorted = sorted(pool, key=lambda c: _shuffle_key(label_id, c))
-            return pool_sorted[0]
-        # Deterministic spread across assignment buckets (then per-label shuffle key).
+            return pool_sorted[0], "baseline"
         pool_sorted = sorted(
             pool,
             key=lambda c: (
@@ -86,10 +182,8 @@ def _select_next_chatlog_id(
                 _shuffle_key(label_id, c),
             ),
         )
-        return pool_sorted[0]
+        return pool_sorted[0], "baseline"
 
-    # Explore branch: prefer conversations whose *first pending message* has
-    # high uncertainty and low novelty according to the cached neighbor data.
     explore_candidates = sorted(pool, key=lambda c: (-len(conv[c]), c))[
         : max(1, (len(pool) + 3) // 4)
     ]
@@ -99,66 +193,13 @@ def _select_next_chatlog_id(
     unc_w = max(0.0, min(1.0, unc_w))
     nov_w = max(0.0, min(1.0, nov_w))
 
-    def _first_pending_message_for(cid: int) -> Optional[tuple[int, str, Optional[str]]]:
-        return _first_pending_turn(cid, conv[cid], decided)
-
-    def _uncertainty_novelty_for_message(cid: int, midx: int) -> tuple[float, float] | None:
-        row = session.exec(
-            select(LabelPrediction).where(
-                LabelPrediction.label_id == label_id,
-                LabelPrediction.chatlog_id == cid,
-                LabelPrediction.message_index == midx,
-            )
-        ).first()
-        if not row or not row.nearest_neighbors:
-            return None
-        try:
-            neighbors = json.loads(row.nearest_neighbors)
-        except (TypeError, ValueError):
-            return None
-        if not isinstance(neighbors, list) or not neighbors:
-            return None
-
-        # Similarity-weighted vote between "yes" and "no".
-        yes_sum = 0.0
-        no_sum = 0.0
-        max_sim = None
-        for n in neighbors:
-            sim = float(n.get("similarity", 0.0))
-            max_sim = sim if max_sim is None else max(max_sim, sim)
-            v = n.get("value")
-            if v == "yes":
-                yes_sum += max(sim, 0.0)
-            elif v == "no":
-                no_sum += max(sim, 0.0)
-
-        denom = yes_sum + no_sum
-        if denom <= 0.0:
-            return None
-
-        p_yes = yes_sum / denom
-        # Binary entropy normalized to [0,1].
-        # entropy(p) = -p log p - (1-p) log(1-p), divided by log(2)
-        eps = 1e-12
-        p_yes = max(eps, min(1.0 - eps, p_yes))
-        entropy = -p_yes * math.log(p_yes) - (1.0 - p_yes) * math.log(1.0 - p_yes)
-        uncertainty = entropy / math.log(2.0)
-
-        # If the nearest labeled neighbors are very similar, the item is less novel.
-        max_sim = float(max_sim if max_sim is not None else 0.0)
-        max_sim = max(0.0, min(1.0, max_sim))
-        novelty = 1.0 - max_sim
-        return uncertainty, novelty
-
     def _conversation_utility(cid: int) -> float:
-        pending = _first_pending_message_for(cid)
+        pending = _first_pending_turn(cid, conv[cid], decided)
         if not pending:
             return 0.0
         midx, _text, _notebook = pending
-        result = _uncertainty_novelty_for_message(cid, midx)
+        result = neighbor_uncertainty_novelty(session, label_id, cid, midx)
         if not result:
-            # Fallback: if we don't have prediction-cache, prefer longer convos
-            # (previous v1 behavior).
             return float(len(conv[cid]))
         uncertainty, novelty = result
         return unc_w * uncertainty + nov_w * novelty
@@ -170,7 +211,7 @@ def _select_next_chatlog_id(
     top_k = max(1, (len(scored) + 3) // 4)
     explore_choices = [c for c in scored[:top_k]]
 
-    return random.choice(explore_choices)
+    return random.choice(explore_choices), "explore"
 
 
 def next_message_for_label(
@@ -183,11 +224,12 @@ def next_message_for_label(
 
     **Hybrid queue (conversation sampling):**
     • In-progress conversations are always prioritized over brand-new ones.
-    • Within the active pool, each pick flips ``explore_fraction`` toward an
-      **explore** branch that favors chats with **more student messages** (top
-      quartile among eligible), else **baseline**: deterministic shuffle for
-      in-progress, or assignment-bucket ordering then shuffle key for not-started.
-    Within a conversation, message_index always advances ascending.
+    • Each pick flips ``explore_fraction`` toward **explore**: among longer chats
+      (top quartile by student-message count), prefer those whose **first pending**
+      message has high neighbor-based **uncertainty** and **novelty** (from
+      ``LabelPrediction`` k-NN). Otherwise **baseline**: deterministic order
+      (shuffle key in-progress; assignment bucket + shuffle for not-started).
+    Within a conversation, ``message_index`` advances in ascending order.
 
     `assignment_id`: when provided, only conversations whose rows match.
 
@@ -238,7 +280,7 @@ def next_message_for_label(
     in_progress.sort(key=lambda c: _shuffle_key(label_id, c))
     not_started.sort(key=lambda c: _shuffle_key(label_id, c))
 
-    cid_pick = _select_next_chatlog_id(
+    cid_pick, pick_mode = _select_next_chatlog_id(
         session,
         label_id,
         conv,
@@ -248,14 +290,24 @@ def next_message_for_label(
         not_started,
         eff_explore,
     )
-    if cid_pick is None:
+    if cid_pick is None or pick_mode is None:
         return None
 
     tup = _first_pending_turn(cid_pick, conv[cid_pick], decided)
     if not tup:
         return None
     midx, text, notebook = tup
-    return _build_focus_payload(session, label_id, cid_pick, midx, text, notebook)
+    sampling_meta = build_sampling_meta(
+        session,
+        label_id,
+        cid_pick,
+        midx,
+        len(conv[cid_pick]),
+        pick_mode,
+    )
+    return _build_focus_payload(
+        session, label_id, cid_pick, midx, text, notebook, sampling_meta=sampling_meta
+    )
 
 
 def _thread_from_message_cache(session: Session, chatlog_id: int) -> list[dict]:
@@ -337,6 +389,7 @@ def _build_focus_payload(
     message_index: int,
     text: str,
     notebook: Optional[str],
+    sampling_meta: Optional[dict] = None,
 ) -> dict:
     thread_pg = _fetch_full_thread(chatlog_id)
     focus_pg = _student_focus_index(thread_pg, message_index)
@@ -367,7 +420,7 @@ def _build_focus_payload(
             {"message_index": 0, "role": "student", "text": text, "student_index": message_index}
         ]
         focus_index = 0
-    return {
+    out = {
         "chatlog_id": chatlog_id,
         "message_index": message_index,
         "text": text,
@@ -376,7 +429,17 @@ def _build_focus_payload(
         "thread": [{"message_index": t["message_index"], "role": t["role"], "text": t["text"]}
                    for t in thread],
         "focus_index": focus_index,
+        "sampling_pick": None,
+        "conversation_student_messages": None,
+        "pending_student_message_number": None,
+        "neighbor_scores_available": False,
+        "neighbor_uncertainty_pct": None,
+        "neighbor_novelty_pct": None,
+        "sampling_hint": None,
     }
+    if sampling_meta:
+        out.update(sampling_meta)
+    return out
 
 
 def _fetch_full_thread(chatlog_id: int) -> list[dict]:

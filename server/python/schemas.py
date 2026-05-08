@@ -291,6 +291,14 @@ class FocusedMessageResponse(BaseModel):
     conversation_turn_count: int
     thread: List[TurnResponse]
     focus_index: int
+    # Single-label sampling diagnostics (professor-facing)
+    sampling_pick: Optional[str] = None  # "baseline" | "explore"
+    conversation_student_messages: Optional[int] = None
+    pending_student_message_number: Optional[int] = None  # 1-based among cached student rows
+    neighbor_scores_available: bool = False
+    neighbor_uncertainty_pct: Optional[int] = Field(None, ge=0, le=100)
+    neighbor_novelty_pct: Optional[int] = Field(None, ge=0, le=100)
+    sampling_hint: Optional[str] = None
 
 
 class ReadinessResponse(BaseModel):

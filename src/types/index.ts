@@ -245,6 +245,8 @@ export interface ConversationTurn {
   text: string
 }
 
+export type SamplingPick = 'baseline' | 'explore'
+
 export interface FocusedMessage {
   chatlog_id: number
   message_index: number
@@ -253,6 +255,17 @@ export interface FocusedMessage {
   conversation_turn_count: number
   thread: ConversationTurn[]
   focus_index: number
+  /** How this conversation was chosen for the queue */
+  sampling_pick: SamplingPick | null
+  conversation_student_messages: number | null
+  /** 1-based index of this student message within cached rows for the chat */
+  pending_student_message_number: number | null
+  neighbor_scores_available: boolean
+  /** 0–100: neighbor vote is split (50 ≈ maximally ambiguous yes/no) */
+  neighbor_uncertainty_pct: number | null
+  /** 0–100: higher = embedding farther from nearest labeled neighbor */
+  neighbor_novelty_pct: number | null
+  sampling_hint: string | null
 }
 
 export type ReadinessTier = 'gray' | 'amber' | 'green'
