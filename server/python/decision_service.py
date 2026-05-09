@@ -29,6 +29,13 @@ def record_decision(
     if value not in VALID_DECISIONS:
         raise ValueError(f"Invalid decision value: {value!r}")
 
+    label = session.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise ValueError(
+            f"Refusing to record decision: label {label_id} mode="
+            f"{getattr(label, 'mode', None)!r}, expected 'single'"
+        )
+
     existing = session.exec(
         select(LabelApplication).where(
             LabelApplication.label_id == label_id,
@@ -161,6 +168,12 @@ def skip_conversation(session: Session, label_id: int, chatlog_id: int) -> int:
     """Skip every still-undecided student message in `chatlog_id` for this label by
     writing `LabelApplication(applied_by="human", value="skip")` rows. Returns the
     count of newly-written skip rows. Already-decided messages are left alone."""
+    label = session.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise ValueError(
+            f"Refusing to skip-conversation: label {label_id} mode="
+            f"{getattr(label, 'mode', None)!r}, expected 'single'"
+        )
     cache_rows = session.exec(
         select(MessageCache.message_index).where(MessageCache.chatlog_id == chatlog_id)
     ).all()

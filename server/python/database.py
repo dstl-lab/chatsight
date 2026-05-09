@@ -94,6 +94,23 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN assignment_id INTEGER"))
 
 
+def _cleanup_polluted_multi_label_rows(conn, text):
+    """Pre-2026-05 an AI batch path wrote single-style decisions
+    (value='yes'|'no'|'skip') against multi-mode labels. Those rows poison
+    every multi-label count, exclusion, and aggregation. Idempotent: a clean
+    DB is a no-op. Logs the row count it removed."""
+    deleted = conn.execute(
+        text(
+            "DELETE FROM labelapplication "
+            "WHERE value IS NOT NULL "
+            "  AND label_id IN (SELECT id FROM labeldefinition WHERE mode = 'multi')"
+        )
+    )
+    n = deleted.rowcount if deleted is not None else 0
+    if n:
+        print(f"[chatsight] cleanup: removed {n} stale value-bearing rows from multi-mode labels")
+
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     with engine.connect() as conn:
@@ -102,6 +119,7 @@ def create_db_and_tables():
         _migrate_label_application(conn, inspect, text)
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
+        _cleanup_polluted_multi_label_rows(conn, text)
         # Indexes
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_labelapp_chatlog_msg "

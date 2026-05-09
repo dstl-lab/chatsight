@@ -185,6 +185,46 @@ def get_ext_conn():
         yield conn
 
 
+# ── Multi/single-mode invariants ─────────────────────────────────────────────
+# A LabelApplication row represents a real multi-label application iff
+# value IS NULL. Single-label /run decisions (yes/no/skip) share the same
+# table but must be excluded from every multi-label aggregation, count, and
+# queue exclusion. Use these helpers consistently — never inline the check.
+
+def _is_multi_application():
+    return LabelApplication.value.is_(None)
+
+
+def _assert_multi_write(db: Session, label_id: int) -> LabelDefinition:
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
+    if label.mode != "multi":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Refusing to write multi-label application: "
+                f"label {label_id} ({label.name!r}) mode={label.mode!r}, expected 'multi'"
+            ),
+        )
+    return label
+
+
+def _assert_single_write(db: Session, label_id: int) -> LabelDefinition:
+    label = db.get(LabelDefinition, label_id)
+    if not label:
+        raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
+    if label.mode != "single":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Refusing to write single-label decision: "
+                f"label {label_id} ({label.name!r}) mode={label.mode!r}, expected 'single'"
+            ),
+        )
+    return label
+
+
 def _fetch_conversation_events(conn: Connection, chatlog_id: int):
     """Return all tutor events for the conversation whose first event has the given id."""
     rows = (
@@ -346,7 +386,8 @@ def get_labels(include_archived: bool = False, db: Session = Depends(get_session
     for label in labels:
         count = db.exec(
             select(func.count(LabelApplication.id)).where(
-                LabelApplication.label_id == label.id
+                LabelApplication.label_id == label.id,
+                _is_multi_application(),
             )
         ).one()
         result.append(
@@ -412,7 +453,10 @@ def update_label(
     db.commit()
     db.refresh(label)
     count = db.exec(
-        select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == label.id,
+            _is_multi_application(),
+        )
     ).one()
     return LabelDefinitionResponse(
         id=label.id, name=label.name, description=label.description,
@@ -469,7 +513,10 @@ def generate_label_description(label_id: int, db: Session = Depends(get_session)
     db.refresh(label)
 
     count = db.exec(
-        select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == label.id,
+            _is_multi_application(),
+        )
     ).one()
     return LabelDefinitionResponse(
         id=label.id, name=label.name, description=label.description,
@@ -484,10 +531,11 @@ def get_orphaned_messages(label_id: int, db: Session = Depends(get_session)):
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
 
-    # Get all (chatlog_id, message_index) pairs with this label
+    # Get all (chatlog_id, message_index) pairs where this multi-mode label applies.
     target_pairs = db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index)
         .where(LabelApplication.label_id == label_id)
+        .where(_is_multi_application())
     ).all()
 
     orphaned = []
@@ -500,6 +548,7 @@ def get_orphaned_messages(label_id: int, db: Session = Depends(get_session)):
                 LabelApplication.message_index == message_index,
                 LabelApplication.label_id != label_id,
                 LabelDefinition.archived_at == None,  # noqa: E711
+                _is_multi_application(),
             )
         ).one()
         if other_active == 0:
@@ -530,6 +579,7 @@ def archive_label(label_id: int, db: Session = Depends(get_session)):
     target_pairs = db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index)
         .where(LabelApplication.label_id == label_id)
+        .where(_is_multi_application())
     ).all()
 
     orphan_count = 0
@@ -542,6 +592,7 @@ def archive_label(label_id: int, db: Session = Depends(get_session)):
                 LabelApplication.message_index == message_index,
                 LabelApplication.label_id != label_id,
                 LabelDefinition.archived_at == None,  # noqa: E711
+                _is_multi_application(),
             )
         ).one()
         if other_active == 0:
@@ -595,9 +646,7 @@ def get_session_state(db: Session = Depends(get_session)):
 
 @app.post("/api/queue/apply")
 def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
-    label = db.get(LabelDefinition, req.label_id)
-    if not label:
-        raise HTTPException(status_code=404, detail="Label not found")
+    _assert_multi_write(db, req.label_id)
 
     # Idempotent: don't create duplicate
     existing = db.exec(
@@ -605,6 +654,7 @@ def apply_label(req: ApplyLabelRequest, db: Session = Depends(get_session)):
             LabelApplication.label_id == req.label_id,
             LabelApplication.chatlog_id == req.chatlog_id,
             LabelApplication.message_index == req.message_index,
+            _is_multi_application(),
         )
     ).first()
     if existing:
@@ -657,6 +707,11 @@ def get_applied_labels(
 
 @app.post("/api/queue/apply-batch")
 def apply_batch(req: ApplyBatchRequest, db: Session = Depends(get_session)):
+    # Guard once per distinct label_id so a single mode-mismatch fails the batch
+    # before we write anything.
+    for label_id in {lid for lid in req.assignments.values()}:
+        _assert_multi_write(db, label_id)
+
     for key, label_id in req.assignments.items():
         cid_str, midx_str = key.split(":")
         cid, midx = int(cid_str), int(midx_str)
@@ -667,6 +722,7 @@ def apply_batch(req: ApplyBatchRequest, db: Session = Depends(get_session)):
                 LabelApplication.label_id == label_id,
                 LabelApplication.chatlog_id == cid,
                 LabelApplication.message_index == midx,
+                _is_multi_application(),
             )
         ).first()
         if not existing:
@@ -749,7 +805,9 @@ def get_label_messages(label_id: int, db: Session = Depends(get_session)):
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
     rows = db.exec(
-        select(LabelApplication).where(LabelApplication.label_id == label_id)
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(_is_multi_application())
     ).all()
     return [
         LabelApplicationResponse(
@@ -780,6 +838,7 @@ def get_label_examples(label_id: int, limit: int = 50, db: Session = Depends(get
             (LabelApplication.message_index == MessageCache.message_index)
         )
         .where(LabelApplication.label_id == label_id)
+        .where(_is_multi_application())
         .order_by(func.random())
         .limit(limit)
     ).all()
@@ -851,11 +910,14 @@ def get_skipped_queue(db: Session = Depends(get_session)):
 
 @app.get("/api/queue", response_model=List[QueueItemResponse])
 def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends(get_session)):
-    # Only count applications of active (non-archived) labels
+    # Only exclude messages that have a real multi-label application on a non-archived
+    # label. Single-label /run decisions (value="yes"/"no"/"skip") share the table but
+    # must NOT remove a message from the multi-label discovery queue.
     labeled_pairs = db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index)
         .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
         .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(_is_multi_application())
         .distinct()
     ).all()
     skipped_pairs = db.exec(
@@ -900,6 +962,7 @@ def get_queue_stats(db: Session = Depends(get_session)):
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
             .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
             .where(LabelDefinition.archived_at == None)  # noqa: E711
+            .where(_is_multi_application())
             .distinct()
             .subquery()
         )
@@ -920,6 +983,7 @@ def get_queue_position(db: Session = Depends(get_session)):
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
             .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
             .where(LabelDefinition.archived_at == None)  # noqa: E711
+            .where(_is_multi_application())
             .distinct()
             .subquery()
         )
@@ -1137,6 +1201,10 @@ def _run_split_autolabel(
             continue
 
         with Session(engine) as db:
+            # Guard once per distinct label_id; AI batch path must not write
+            # multi-label applications to single-mode labels.
+            for lid in set(label_map.values()):
+                _assert_multi_write(db, lid)
             for r in results:
                 idx = r.get("index")
                 label_name = r.get("label")
@@ -1181,8 +1249,11 @@ def _run_autolabel():
 
     try:
         with Session(engine) as db:
-            # Get label definitions
-            labels = db.exec(select(LabelDefinition)).all()
+            # Multi-label flow: only consider mode='multi' labels here so the
+            # AI batch never writes value-bearing rows to single-mode labels.
+            labels = db.exec(
+                select(LabelDefinition).where(LabelDefinition.mode == "multi")
+            ).all()
             if not labels:
                 _autolabel_status = {
                     "running": False,
@@ -1204,6 +1275,7 @@ def _run_autolabel():
                     select(LabelApplication).where(
                         LabelApplication.label_id == label.id,
                         LabelApplication.applied_by == "human",
+                        _is_multi_application(),
                     )
                 ).all()
                 # We need message text — fetch from external DB
@@ -1233,10 +1305,12 @@ def _run_autolabel():
                                     row[0]
                                 )
 
-            # Get unlabeled messages
+            # Get unlabeled messages (multi-label scope — single-label /run
+            # decisions on the same message must not exclude it from the
+            # multi-label autolabel candidate set).
             labeled_set = {
                 (r.chatlog_id, r.message_index)
-                for r in db.exec(select(LabelApplication)).all()
+                for r in db.exec(select(LabelApplication).where(_is_multi_application())).all()
             }
             skipped_set = {
                 (r.chatlog_id, r.message_index)
@@ -1295,6 +1369,10 @@ def _run_autolabel():
                 continue
 
             with Session(engine) as db:
+                # Guard once per distinct label_id; if anything is non-multi
+                # we want to fail loudly before writing.
+                for lid in set(label_map.values()):
+                    _assert_multi_write(db, lid)
                 for r in results:
                     idx = r.get("index")
                     label_name = r.get("label")
@@ -1307,6 +1385,7 @@ def _run_autolabel():
                             LabelApplication.label_id == label_map[label_name],
                             LabelApplication.chatlog_id == msg["chatlog_id"],
                             LabelApplication.message_index == msg["message_index"],
+                            _is_multi_application(),
                         )
                     ).first()
                     if not existing:
@@ -1357,7 +1436,9 @@ def get_autolabel_status():
 @app.post("/api/queue/suggest")
 def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     labels = db.exec(
-        select(LabelDefinition).where(LabelDefinition.archived_at == None)  # noqa: E711
+        select(LabelDefinition)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(LabelDefinition.mode == "multi")
     ).all()
     if not labels:
         return {"label_name": "", "evidence": "", "rationale": "No labels defined yet."}
@@ -1365,6 +1446,7 @@ def suggest_label(req: SuggestRequest, db: Session = Depends(get_session)):
     counts = dict(db.exec(
         select(LabelApplication.label_id, func.count(LabelApplication.id))
         .where(LabelApplication.applied_by == "human")
+        .where(_is_multi_application())
         .group_by(LabelApplication.label_id)
     ).all())
 
@@ -1540,7 +1622,8 @@ def merge_labels(req: MergeLabelRequest, db: Session = Depends(get_session)):
 
     count = db.exec(
         select(func.count(LabelApplication.id)).where(
-            LabelApplication.label_id == target_label.id
+            LabelApplication.label_id == target_label.id,
+            _is_multi_application(),
         )
     ).one()
 
@@ -1598,6 +1681,7 @@ def split_label_autolabel(
             target_id = target_label.id
 
             # Save human application
+            _assert_multi_write(db, target_id)
             db.add(
                 LabelApplication(
                     label_id=target_id,
@@ -1702,14 +1786,14 @@ def split_label_autolabel(
             name=label_a.name,
             description=label_a.description,
             created_at=label_a.created_at,
-            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_a.id)).one(),
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_a.id, _is_multi_application())).one(),
         ),
         LabelDefinitionResponse(
             id=label_b.id,
             name=label_b.name,
             description=label_b.description,
             created_at=label_b.created_at,
-            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_b.id)).one(),
+            count=db.exec(select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label_b.id, _is_multi_application())).one(),
         ),
     ]
 
@@ -1875,7 +1959,10 @@ def resolve_candidate(candidate_id: int, req: ResolveCandidateRequest, db: Sessi
         db.refresh(label)
 
         count = db.exec(
-            select(func.count(LabelApplication.id)).where(LabelApplication.label_id == label.id)
+            select(func.count(LabelApplication.id)).where(
+                LabelApplication.label_id == label.id,
+                _is_multi_application(),
+            )
         ).one()
         return LabelDefinitionResponse(
             id=label.id, name=label.name, description=label.description,
@@ -1898,7 +1985,7 @@ def get_embed_status(db: Session = Depends(get_session)):
     cached = db.exec(select(func.count(MessageEmbedding.id))).one()
 
     labeled_keys = set()
-    for la in db.exec(select(LabelApplication)).all():
+    for la in db.exec(select(LabelApplication).where(_is_multi_application())).all():
         labeled_keys.add((la.chatlog_id, la.message_index))
     total_cached = db.exec(select(func.count(MessageCache.id))).one()
     total_unlabeled = total_cached - len(labeled_keys)
@@ -1914,16 +2001,18 @@ def get_embed_status(db: Session = Depends(get_session)):
 
 @app.get("/api/analysis/summary")
 def get_analysis_summary(db: Session = Depends(get_session)):
-    # Exclude single-mode "no" / "skip" decisions: they are explicit
-    # non-applications and shouldn't inflate label counts. Multi-mode
-    # rows have value=NULL and always mean "label applies".
-    applies = or_(LabelApplication.value.is_(None), LabelApplication.value == "yes")
+    # Phase 1: /analysis is the multi-label dashboard. Count only true multi-label
+    # applications (value IS NULL on a mode='multi' label). Single-label /run rows
+    # share the table but belong to the /run flow's own dashboard.
+    applies = _is_multi_application()
+    multi_only = LabelDefinition.mode == "multi"
 
     label_rows = db.exec(
         select(LabelDefinition.name, func.count(LabelApplication.id))
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(applies)
+        .where(multi_only)
         .group_by(LabelDefinition.name)
     ).all()
     label_counts = {name: int(cnt) for name, cnt in label_rows}
@@ -1934,6 +2023,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(LabelApplication.applied_by == "human")
         .where(applies)
+        .where(multi_only)
         .group_by(LabelDefinition.name)
     ).all()
     human_label_counts = {name: int(cnt) for name, cnt in human_rows}
@@ -1944,6 +2034,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(LabelApplication.applied_by == "ai")
         .where(applies)
+        .where(multi_only)
         .group_by(LabelDefinition.name)
     ).all()
     ai_label_counts = {name: int(cnt) for name, cnt in ai_rows}
@@ -1953,6 +2044,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
         .select_from(LabelApplication)
         .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(applies)
+        .where(multi_only)
     ).all()
     pos_acc: dict[str, dict[str, int]] = defaultdict(lambda: {"early": 0, "mid": 0, "late": 0})
     for msg_idx, lbl_name in pos_rows:
@@ -1968,7 +2060,10 @@ def get_analysis_summary(db: Session = Depends(get_session)):
     ai_pairs = set()
     for row in db.exec(
         select(LabelApplication.chatlog_id, LabelApplication.message_index, LabelApplication.applied_by)
+        .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
         .where(applies)
+        .where(multi_only)
     ).all():
         cid, mid, applied_by = row
         if applied_by == "human":
@@ -2007,6 +2102,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
                 .select_from(LabelApplication)
                 .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
                 .where(applies)
+                .where(multi_only)
             ).all():
                 nb_key = chatlog_notebook.get(int(chatlog_id), "unknown")
                 nb_counts[nb_key][lbl_name] += 1
@@ -2173,6 +2269,8 @@ def get_analysis_temporal(
                 select(LabelDefinition.name, LabelApplication.chatlog_id)
                 .select_from(LabelApplication)
                 .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+                .where(_is_multi_application())
+                .where(LabelDefinition.mode == "multi")
             ).all():
                 nb_key = chatlog_notebook.get(int(chatlog_id), "unknown")
                 pair_counts[nb_key][lbl_name] += 1
@@ -2202,6 +2300,9 @@ def get_analysis_temporal(
             func.count(LabelApplication.id),
         )
         .select_from(LabelApplication)
+        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+        .where(_is_multi_application())
+        .where(LabelDefinition.mode == "multi")
         .group_by(func.date(LabelApplication.created_at), LabelApplication.applied_by)
     ).all():
         d_raw, applied_by, cnt = row
@@ -2576,6 +2677,7 @@ def save_recalibration(req: SaveRecalibrationRequest, db: Session = Depends(get_
 
     # Add labels in final set but not currently applied
     for lid in final_set - current_label_ids:
+        _assert_multi_write(db, lid)
         db.add(LabelApplication(
             label_id=lid,
             chatlog_id=req.chatlog_id,
@@ -3222,6 +3324,14 @@ def _classify_in_background(label_id: int, sample_size: Optional[int] = None) ->
     with Session(engine) as db:
         label = db.get(LabelDefinition, label_id)
         if not label:
+            return
+        if label.mode != "single":
+            # Defensive: the route layer already mode-checks, but never let a
+            # background task write value-bearing rows to a multi-mode label.
+            logger.error(
+                "refusing to classify label %s (%r): mode=%r, expected 'single'",
+                label.id, label.name, label.mode,
+            )
             return
         try:
             _do_classification(db, label, sample_size=sample_size)
