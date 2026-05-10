@@ -373,3 +373,122 @@ export interface AssistNeighbor {
 export interface AssistResponse {
   neighbors: AssistNeighbor[]
 }
+
+// ─── Single-label analysis ───
+
+export type SingleLabelCohortRow = {
+  run_id: number
+  label_name: string
+  description: string | null
+  phase: 'queued' | 'labeling' | 'handed_off' | 'reviewing' | 'complete'
+  yes_count: number
+  no_count: number
+  /** 0–100; 0 if (yes + no) == 0 */
+  yes_pct: number
+  /** distinct (chatlog_id, message_index) pairs with a human decision */
+  walked: number
+  total_target: number | null
+  /** 0–100; null when overlap_count == 0 */
+  disagreement_pct: number | null
+  overlap_count: number
+  /** ISO 8601 timestamp of the most recent activity on this run */
+  updated_at: string
+  /** ≤ 8 weekly yes-rate values (0–100), oldest → newest, for the rail sparkline */
+  weekly_sparkline: number[]
+}
+
+export interface SingleLabelCohortResponse {
+  runs: SingleLabelCohortRow[]
+}
+
+export interface ConfidenceBin {
+  /** inclusive */
+  lo: number
+  /** exclusive (last bin includes 1.0) */
+  hi: number
+  count: number
+  yes: number
+  no: number
+}
+
+export interface AgreementBucket {
+  lo: number
+  hi: number
+  overlap_count: number
+  agree: number
+  /** 0–100, null when overlap_count == 0 */
+  agreement_rate: number | null
+}
+
+export interface ExampleMsg {
+  /** LabelApplication.id of the row this message was sampled for */
+  message_id: number
+  chatlog_id: number
+  message_index: number
+  text: string
+  ai_pred: 'yes' | 'no' | null
+  ai_confidence: number | null
+  human_decision: 'yes' | 'no' | null
+  assignment: string | null
+  position_bucket: 'early' | 'mid' | 'late' | null
+  created_at: string
+  flag: 'low_confidence' | 'human_overruled' | null
+}
+
+export interface SingleLabelRunDetail {
+  run: {
+    id: number
+    label_name: string
+    description: string | null
+    phase: 'queued' | 'labeling' | 'handed_off' | 'reviewing' | 'complete'
+    updated_at: string
+    walked: number
+    total_target: number | null
+    /** per-message yes-rate, 0–100 */
+    yes_pct: number
+    /** per-conversation yes-rate, 0–100 */
+    conv_yes_pct: number
+  }
+  confidence_histogram: {
+    bins: ConfidenceBin[]
+    coverage: { with_confidence: number; total_ai: number }
+  }
+  ai_coverage: {
+    /** distinct (chatlog_id, message_index) with AI rows for this label */
+    covered: number
+    /** total MessageCache entries (denominator universe) */
+    total: number
+    /** 0–100 */
+    pct: number
+  }
+  agreement_by_confidence: {
+    /** length 5, edges [0, .2, .4, .6, .8, 1.0] */
+    buckets: AgreementBucket[]
+  }
+  disagreement: {
+    overlap_count: number
+    agree: number
+    disagree: number
+    /** 0–100 or null */
+    rate: number | null
+    breakdown: {
+      ai_yes_human_no: number
+      ai_no_human_yes: number
+    }
+  }
+  by_assignment: { key: string; yes: number; no: number; yes_pct: number }[]
+  by_position: { bucket: 'early' | 'mid' | 'late'; yes: number; no: number; yes_pct: number }[]
+  weekly: { week_start: string; yes: number; no: number; yes_pct: number }[]
+  examples: {
+    yes: ExampleMsg[]
+    no: ExampleMsg[]
+    edge: ExampleMsg[]
+  }
+}
+
+export interface AssignmentMilestone {
+  name: string
+  /** YYYY-MM-DD */
+  date: string
+  kind: 'lab' | 'exam' | 'project' | 'other'
+}
