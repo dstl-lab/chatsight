@@ -1,11 +1,25 @@
 // src/types/index.ts
 
+export interface PairedLabelSummary {
+  label_id: number
+  name: string
+  /** queued | labeling | classifying | handed_off | failed | complete */
+  phase: string
+  yes_count: number
+  no_count: number
+  skip_count: number
+}
+
 export interface LabelDefinition {
   id: number
   name: string
   description: string | null
   created_at: string
+  /** Multi-label NULL applications only (the discovery count). Validation
+   * counts from the paired single live in `paired_summary`. */
   count: number
+  paired_label_id?: number | null
+  paired_summary?: PairedLabelSummary | null
 }
 
 export interface LabelExample {
@@ -56,6 +70,15 @@ export interface SuggestResponse {
   rationale: string
 }
 
+export interface PairedLabelCount {
+  paired_id: number
+  /** queued | labeling | classifying | handed_off | failed | complete */
+  phase: string
+  yes: number
+  no: number
+  skip: number
+}
+
 export interface AnalysisSummary {
   label_counts: Record<string, number>
   human_label_counts: Record<string, number>
@@ -68,6 +91,9 @@ export interface AnalysisSummary {
     total: number
   }
   position_distribution: Record<string, { early: number; mid: number; late: number }>
+  /** Keyed by parent multi-label name; present for any multi-label that has
+   * been promoted to /run via POST /api/labels/{id}/promote. */
+  paired_label_counts: Record<string, PairedLabelCount>
 }
 
 /** Weekday 0 = Sunday … 6 = Saturday in `display_timezone` (same convention as PostgreSQL DOW). */

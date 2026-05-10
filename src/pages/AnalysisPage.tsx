@@ -246,24 +246,28 @@ export function AnalysisPage() {
 
   if (!summary) return null
 
-  /** `label` = category (Y-axis). Avoid `name` on rows — it conflicts with Recharts `<Bar name="…">` for stacked series. */
-  let freqData: { label: string; count: number; human: number; ai: number }[]
+  /** `label` = category (Y-axis). Avoid `name` on rows — it conflicts with Recharts `<Bar name="…">` for stacked series.
+   * `validated` is the paired single-label /run "yes" count, surfaced separately so it's never silently summed
+   * with the discovery counts (multi NULL applications). */
+  const pairedCounts = summary.paired_label_counts ?? {}
+  let freqData: {
+    label: string; count: number; human: number; ai: number;
+    validated: number; validatedPhase?: string;
+  }[]
   if (labelFreqMode === 'human') {
     freqData = Object.entries(summary.human_label_counts)
       .map(([label, count]) => ({
-        label,
-        count: Number(count),
-        human: Number(count),
-        ai: 0,
+        label, count: Number(count), human: Number(count), ai: 0,
+        validated: pairedCounts[label]?.yes ?? 0,
+        validatedPhase: pairedCounts[label]?.phase,
       }))
       .sort((a, b) => b.count - a.count)
   } else if (labelFreqMode === 'ai') {
     freqData = Object.entries(summary.ai_label_counts)
       .map(([label, count]) => ({
-        label,
-        count: Number(count),
-        human: 0,
-        ai: Number(count),
+        label, count: Number(count), human: 0, ai: Number(count),
+        validated: pairedCounts[label]?.yes ?? 0,
+        validatedPhase: pairedCounts[label]?.phase,
       }))
       .sort((a, b) => b.count - a.count)
   } else {
@@ -277,12 +281,18 @@ export function AnalysisPage() {
         const human = Number(summary.human_label_counts[label] ?? 0)
         const ai = Number(summary.ai_label_counts[label] ?? 0)
         const count = human + ai
-        return { label, human, ai, count }
+        return {
+          label, human, ai, count,
+          validated: pairedCounts[label]?.yes ?? 0,
+          validatedPhase: pairedCounts[label]?.phase,
+        }
       })
       .sort((a, b) => b.count - a.count)
   }
 
-  const freqChartMax = freqData.length ? Math.max(1, ...freqData.map((d) => d.count)) : 1
+  const freqChartMax = freqData.length
+    ? Math.max(1, ...freqData.map((d) => Math.max(d.count, d.validated)))
+    : 1
 
   const covTotal = Math.max(1, summary.coverage.total)
   const covHuman = summary.coverage.human_labeled
@@ -454,42 +464,56 @@ export function AnalysisPage() {
                     const wHuman = (row.human / denom) * 100
                     const wAi = (row.ai / denom) * 100
                     const lenPct = row.count === 0 ? 0 : Math.max((row.count / freqChartMax) * 100, 1.2)
+                    const validatedPct = row.validated === 0
+                      ? 0
+                      : Math.max((row.validated / freqChartMax) * 100, 1.2)
                     return (
-                      <div key={row.label} className="flex items-center gap-2 text-xs min-h-[26px]">
+                      <div key={row.label} className="flex items-start gap-2 text-xs min-h-[26px]">
                         <div
-                          className="w-[130px] shrink-0 truncate text-tertiary text-right pr-1"
+                          className="w-[130px] shrink-0 truncate text-tertiary text-right pr-1 pt-1"
                           title={row.label}
                         >
                           {row.label}
                         </div>
-                        <div className="flex-1 min-w-0 h-6 rounded-md bg-elevated/60 border border-edge-subtle/80 relative">
-                          {row.count > 0 && (
-                            <div
-                              className="absolute left-0 top-0 bottom-0 flex rounded overflow-hidden border border-edge-subtle shadow-sm"
-                              style={{
-                                width: `${lenPct}%`,
-                                minWidth: row.count > 0 ? 3 : 0,
-                              }}
-                              title={`${row.label}: human ${row.human}, AI ${row.ai}, total ${row.count} (${lenPct.toFixed(0)}% of max label)`}
-                            >
-                              {row.human > 0 && (
-                                <div
-                                  className="h-full bg-emerald-500 min-w-0 shrink-0"
-                                  style={{ width: `${wHuman}%` }}
-                                  title={`Human: ${row.human}`}
-                                />
-                              )}
-                              {row.ai > 0 && (
-                                <div
-                                  className="h-full bg-indigo-500 min-w-0 shrink-0"
-                                  style={{ width: `${wAi}%` }}
-                                  title={`AI: ${row.ai}`}
-                                />
-                              )}
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          <div className="h-6 rounded-md bg-elevated/60 border border-edge-subtle/80 relative">
+                            {row.count > 0 && (
+                              <div
+                                className="absolute left-0 top-0 bottom-0 flex rounded overflow-hidden border border-edge-subtle shadow-sm"
+                                style={{
+                                  width: `${lenPct}%`,
+                                  minWidth: row.count > 0 ? 3 : 0,
+                                }}
+                                title={`${row.label}: human ${row.human}, AI ${row.ai}, total ${row.count} (discovery)`}
+                              >
+                                {row.human > 0 && (
+                                  <div
+                                    className="h-full bg-emerald-500 min-w-0 shrink-0"
+                                    style={{ width: `${wHuman}%` }}
+                                    title={`Human: ${row.human}`}
+                                  />
+                                )}
+                                {row.ai > 0 && (
+                                  <div
+                                    className="h-full bg-indigo-500 min-w-0 shrink-0"
+                                    style={{ width: `${wAi}%` }}
+                                    title={`AI: ${row.ai}`}
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {row.validated > 0 && (
+                            <div className="h-2 rounded bg-elevated/40 border border-amber-900/40 relative">
+                              <div
+                                className="absolute left-0 top-0 bottom-0 bg-amber-500 rounded"
+                                style={{ width: `${validatedPct}%` }}
+                                title={`Validated (paired /run): ${row.validated}${row.validatedPhase ? ` · ${row.validatedPhase.replace('_', ' ')}` : ''}`}
+                              />
                             </div>
                           )}
                         </div>
-                        <span className="w-10 shrink-0 text-right tabular-nums text-muted">
+                        <span className="w-10 shrink-0 text-right tabular-nums text-muted pt-1">
                           {row.count.toLocaleString()}
                         </span>
                       </div>
@@ -499,11 +523,15 @@ export function AnalysisPage() {
                 <div className="flex flex-wrap gap-4 pt-1 text-xs text-faint">
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 shrink-0 rounded-sm bg-emerald-500" />
-                    Human
+                    Human (discovery)
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 shrink-0 rounded-sm bg-indigo-500" />
-                    AI
+                    AI (discovery)
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-sm bg-amber-500" />
+                    Validated (paired /run "yes")
                   </span>
                 </div>
               </div>

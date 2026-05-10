@@ -86,12 +86,26 @@ class LabelExampleResponse(BaseModel):
 class ConciseResponse(BaseModel):
     concise_text: str
 
+class PairedLabelSummary(BaseModel):
+    """Stats for the mode='single' label that's been promoted from a multi-label.
+    `count` on the parent stays multi-only (Phase 1 semantics); this object
+    surfaces the validation-pass numbers separately so the UI can show both."""
+    label_id: int
+    name: str
+    phase: str  # queued | labeling | classifying | handed_off | failed | complete
+    yes_count: int
+    no_count: int
+    skip_count: int
+
+
 class LabelDefinitionResponse(BaseModel):
     id: int
     name: str
     description: Optional[str]
     created_at: datetime
     count: int
+    paired_label_id: Optional[int] = None
+    paired_summary: Optional[PairedLabelSummary] = None
 
 
 class QueueItemResponse(BaseModel):

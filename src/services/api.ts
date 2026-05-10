@@ -197,6 +197,10 @@ export const api = {
     USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
              : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
 
+  promoteLabel: (labelId: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabel)
+             : req(`/api/labels/${labelId}/promote`, { method: 'POST' }),
+
   suggestLabel: (chatlog_id: number, message_index: number): Promise<SuggestResponse> =>
     USE_MOCK ? Promise.resolve({ label_name: '', evidence: '', rationale: '' })
              : req('/api/queue/suggest', { method: 'POST', ...json({ chatlog_id, message_index }) }),
