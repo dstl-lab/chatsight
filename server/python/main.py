@@ -28,7 +28,7 @@ from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
     MergeLabelRequest, SplitLabelRequest, SplitAutoLabelRequest, ReorderLabelsRequest,
-    AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse,
+    AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse, PairedLabelSummary,
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
     ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
     DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
@@ -390,6 +390,22 @@ def get_labels(include_archived: bool = False, db: Session = Depends(get_session
                 _is_multi_application(),
             )
         ).one()
+        paired = db.exec(
+            select(LabelDefinition)
+            .where(LabelDefinition.paired_label_id == label.id)
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
+        ).first()
+        paired_summary = None
+        if paired:
+            yes, no, skip, _ = decision_service.label_counts(db, paired.id)
+            paired_summary = PairedLabelSummary(
+                label_id=paired.id,
+                name=paired.name,
+                phase=paired.phase,
+                yes_count=yes,
+                no_count=no,
+                skip_count=skip,
+            )
         result.append(
             LabelDefinitionResponse(
                 id=label.id,
@@ -397,6 +413,8 @@ def get_labels(include_archived: bool = False, db: Session = Depends(get_session
                 description=label.description,
                 created_at=label.created_at,
                 count=count,
+                paired_label_id=paired.id if paired else None,
+                paired_summary=paired_summary,
             )
         )
     return result
@@ -607,6 +625,54 @@ def archive_label(label_id: int, db: Session = Depends(get_session)):
         archived_at=label.archived_at,
         messages_returned_to_queue=orphan_count,
     )
+
+
+@app.post("/api/labels/{multi_id}/promote", response_model=SingleLabelResponse)
+def promote_label(multi_id: int, db: Session = Depends(get_session)):
+    """Promote a multi-label to /run by creating a paired single-mode label.
+    Pre-seeds the paired single with 'yes' decisions for every message currently
+    multi-labeled with the source. Idempotent: returns the existing paired
+    single if one already exists and is not archived."""
+    src = _assert_multi_write(db, multi_id)
+    if src.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Cannot promote an archived label")
+
+    existing = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.paired_label_id == multi_id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).first()
+    if existing:
+        return _label_to_response(db, existing)
+
+    max_pos = db.exec(
+        select(func.max(LabelDefinition.queue_position))
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+    ).one()
+    next_pos = (max_pos + 1) if max_pos is not None else 0
+    paired = LabelDefinition(
+        name=src.name,
+        description=src.description,
+        mode="single",
+        phase="queued",
+        is_active=False,
+        queue_position=next_pos,
+        paired_label_id=multi_id,
+    )
+    db.add(paired)
+    db.commit()
+    db.refresh(paired)
+
+    multi_apps = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(LabelApplication.label_id == multi_id)
+        .where(_is_multi_application())
+    ).all()
+    for cid, midx in multi_apps:
+        decision_service.record_decision(db, paired.id, cid, midx, "yes")
+
+    return _label_to_response(db, paired)
 
 
 # ── Session routes ────────────────────────────────────────────────────────────
@@ -2113,6 +2179,28 @@ def get_analysis_summary(db: Session = Depends(get_session)):
 
     unlabeled = max(0, total - labeled_any)
 
+    # Composed view: for each multi-label that has been promoted to /run, surface
+    # the paired single's yes/no/skip counts under the parent's name. Keyed by
+    # parent name to align with `label_counts` / `human_label_counts` so the
+    # frontend can show "discovery vs validated" side-by-side.
+    paired_label_counts: dict = {}
+    for paired in db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.paired_label_id.is_not(None))
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+    ).all():
+        parent = db.get(LabelDefinition, paired.paired_label_id)
+        if not parent:
+            continue
+        yes, no, skip, _ = decision_service.label_counts(db, paired.id)
+        paired_label_counts[parent.name] = {
+            "paired_id": paired.id,
+            "phase": paired.phase,
+            "yes": yes,
+            "no": no,
+            "skip": skip,
+        }
+
     return {
         "label_counts": label_counts,
         "human_label_counts": human_label_counts,
@@ -2125,6 +2213,7 @@ def get_analysis_summary(db: Session = Depends(get_session)):
             "total": total,
         },
         "position_distribution": position_distribution,
+        "paired_label_counts": paired_label_counts,
     }
 
 

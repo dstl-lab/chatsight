@@ -66,6 +66,15 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN classified_count INTEGER"))
     if "classification_total" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN classification_total INTEGER"))
+    if "paired_label_id" not in cols:
+        conn.execute(text(
+            "ALTER TABLE labeldefinition ADD COLUMN paired_label_id INTEGER "
+            "REFERENCES labeldefinition(id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_labeldef_paired "
+            "ON labeldefinition(paired_label_id)"
+        ))
 
 
 def _migrate_label_application(conn, inspect, text):

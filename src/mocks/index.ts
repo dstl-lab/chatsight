@@ -1,7 +1,7 @@
 // src/mocks/index.ts
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse, HistoryItem, AnalysisSummary,
-  TemporalAnalysis, RecalibrationItem, RecalibrationStats,
+  TemporalAnalysis, RecalibrationItem, RecalibrationStats, SingleLabel,
 } from '../types'
 
 export const mockApi = {
@@ -23,10 +23,27 @@ export const mockApi = {
   ] satisfies QueueItem[],
 
   labels: [
-    { id: 1, name: "Concept Question", description: "Student asks for an explanation of a new concept", created_at: "2026-03-28T00:00:00", count: 5 },
+    {
+      id: 1, name: "Concept Question",
+      description: "Student asks for an explanation of a new concept",
+      created_at: "2026-03-28T00:00:00", count: 5,
+      paired_label_id: 101,
+      paired_summary: {
+        label_id: 101, name: "Concept Question", phase: "handed_off",
+        yes_count: 87, no_count: 31, skip_count: 4,
+      },
+    },
     { id: 2, name: "Clarification", description: null, created_at: "2026-03-28T00:00:00", count: 3 },
     { id: 3, name: "Debug Help", description: "Student needs help fixing an error", created_at: "2026-03-28T00:00:00", count: 2 },
   ] satisfies LabelDefinition[],
+
+  singleLabel: {
+    id: 101, name: "Concept Question",
+    description: "Student asks for an explanation of a new concept",
+    mode: "single", phase: "queued", is_active: false, queue_position: 0,
+    yes_count: 5, no_count: 0, skip_count: 0,
+    conversations_walked: 1, total_conversations: 12,
+  } satisfies SingleLabel,
 
   session: {
     id: 1,
@@ -78,6 +95,9 @@ export const mockApi = {
       Clarification: { early: 10, mid: 12, late: 6 },
       'Debug Help': { early: 6, mid: 9, late: 7 },
       'Syntax / API': { early: 8, mid: 3, late: 1 },
+    },
+    paired_label_counts: {
+      'Concept Question': { paired_id: 101, phase: 'handed_off', yes: 87, no: 31, skip: 4 },
     },
   } satisfies AnalysisSummary,
 
