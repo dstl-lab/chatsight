@@ -225,6 +225,39 @@
   mix-blend-mode: soft-light;
 }
 
+/* ─── Single-label /analysis ─── */
+.chart-card {
+  background: var(--app-canvas);
+  border: 1px solid var(--app-edge-warm);
+  border-radius: 2px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+}
+@keyframes chartBarIn {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+@keyframes chartBarFill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes railRowIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes analysisProgress {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-card *,
+  [class*="rail-"] {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}
+
 /* ─── Register tokens with Tailwind v4 ─── */
 @theme inline {
   /* Backgrounds */
