@@ -21,6 +21,38 @@ export function YesRateOverTimeChart({ weeks }: Props) {
     return <p className="italic text-stone text-[12px]">— not enough history yet.</p>
   }
 
+  // A polyline needs ≥ 2 points. If every decision in this run lands in a single
+  // ISO week (common for runs done in one session), surface the value as a stat
+  // with a note rather than an invisible dot.
+  if (weeks.length === 1) {
+    const wk = weeks[0]
+    const n = wk.yes + wk.no
+    return (
+      <div className="flex items-baseline gap-4 w-full">
+        <div className="flex items-baseline gap-2">
+          <span
+            className="font-serif font-medium text-[28px] text-paper leading-none tracking-[-0.018em]"
+            style={{ fontVariantNumeric: 'tabular-nums' }}
+          >
+            {wk.yes_pct}
+            <span className="text-[14px] text-muted">%</span>
+          </span>
+          <span className="text-ochre-dim text-[12px]">·</span>
+          <span
+            className="text-[11px] text-muted tracking-[0.06em]"
+            style={{ fontFeatureSettings: '"smcp", "tnum"' }}
+          >
+            {weekLabel(wk.week_start)} · N {n}
+          </span>
+        </div>
+        <p className="italic text-[11.5px] text-muted leading-snug max-w-[28ch]">
+          All decisions land in a single week so far — a trend line appears once another week's
+          data is in.
+        </p>
+      </div>
+    )
+  }
+
   const innerW = W - PAD_LEFT - PAD_RIGHT
   const xs = weeks.map((_, i) => PAD_LEFT + (i / Math.max(weeks.length - 1, 1)) * innerW)
   const ysYes = weeks.map((wk) => H - 15 - (wk.yes_pct / 100) * (H - 30))
