@@ -484,7 +484,15 @@ export interface SingleLabelRunDetail {
   }
   by_assignment: { key: string; yes: number; no: number; yes_pct: number }[]
   by_position: { bucket: 'early' | 'mid' | 'late'; yes: number; no: number; yes_pct: number }[]
-  weekly: { week_start: string; yes: number; no: number; yes_pct: number }[]
+  /** 24 buckets, one per hour-of-day (0–23), in the analysis timezone. */
+  by_hour_of_day: { hour: number; yes: number; no: number; yes_pct: number }[]
+  /** Three buckets by total conversation length: short (≤5), mid (6–15), long (16+). */
+  by_conversation_depth: {
+    bucket: 'short' | 'mid' | 'long'
+    yes: number
+    no: number
+    yes_pct: number
+  }[]
   examples: {
     yes: ExampleMsg[]
     no: ExampleMsg[]

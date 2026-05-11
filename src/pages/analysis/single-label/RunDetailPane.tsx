@@ -7,7 +7,8 @@ import { AgreementByConfidence } from './AgreementByConfidence'
 import { DisagreementCallout } from './DisagreementCallout'
 import { YesRateByAssignmentChart } from './YesRateByAssignmentChart'
 import { YesRateByPositionChart } from './YesRateByPositionChart'
-import { YesRateOverTimeChart } from './YesRateOverTimeChart'
+import { YesRateByHourOfDayChart } from './YesRateByHourOfDayChart'
+import { YesRateByConversationDepthChart } from './YesRateByConversationDepthChart'
 import { ExamplesDrawer } from './ExamplesDrawer'
 
 type Subtab = 'health' | 'findings'
@@ -233,21 +234,27 @@ function FindingsSubtab({
           <YesRateByAssignmentChart rows={detail.by_assignment} />
         </div>
       </div>
-      <div style={{ gridColumn: 2, gridRow: 1 }} className="flex flex-col gap-3.5 min-h-0">
+      <div style={{ gridColumn: 2, gridRow: 1 }} className="flex flex-col gap-3 min-h-0 overflow-y-auto">
         <div className="chart-card">
-          <div className="text-sm font-serif font-medium text-paper mb-2">
-            By conversation position
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="text-sm font-serif font-medium text-paper">By conversation position</div>
+            <span className="text-[11px] text-muted italic">depth within a chat</span>
           </div>
           <YesRateByPositionChart rows={detail.by_position} />
         </div>
-        <div className="chart-card flex-1 min-h-0 flex flex-col">
+        <div className="chart-card">
           <div className="flex items-baseline justify-between mb-2">
-            <div className="text-sm font-serif font-medium text-paper">Yes-rate over time</div>
-            <span className="text-[11px] text-muted italic">weekly</span>
+            <div className="text-sm font-serif font-medium text-paper">By hour of day</div>
+            <span className="text-[11px] text-muted italic">when students ask</span>
           </div>
-          <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center">
-            <YesRateOverTimeChart weeks={detail.weekly} />
+          <YesRateByHourOfDayChart rows={detail.by_hour_of_day} />
+        </div>
+        <div className="chart-card">
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="text-sm font-serif font-medium text-paper">By conversation depth</div>
+            <span className="text-[11px] text-muted italic">total chat length</span>
           </div>
+          <YesRateByConversationDepthChart rows={detail.by_conversation_depth} />
         </div>
       </div>
 
