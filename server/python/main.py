@@ -183,6 +183,21 @@ from analysis_single_label import router as single_label_analysis_router
 app.include_router(single_label_analysis_router)
 
 
+from pathlib import Path
+
+MILESTONES_DIR = Path(__file__).parent / "data" / "milestones"
+DEFAULT_MILESTONE_COURSE = "dsc10_wi26"
+
+
+@app.get("/api/analysis/milestones")
+def get_milestones(course: str = DEFAULT_MILESTONE_COURSE):
+    """Serve assignment milestones for a course from a JSON file. 404 if missing."""
+    path = MILESTONES_DIR / f"{course}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"course '{course}' not found")
+    return json_mod.loads(path.read_text())
+
+
 def get_ext_conn():
     with ext_engine.connect() as conn:
         yield conn
@@ -2336,6 +2351,7 @@ def get_analysis_temporal(
     raw_matrix: list[list[int]] = []
     row_norm: list[list[float]] = []
     col_norm: list[list[float]] = []
+    heatmap_error: Optional[str] = None
 
     try:
         with ext_engine.connect() as conn:
@@ -2377,47 +2393,55 @@ def get_analysis_temporal(
             raw_float = [[float(x) for x in row] for row in raw_matrix]
             row_norm = _normalize_heatmap_rows(raw_float)
             col_norm = _normalize_heatmap_columns(raw_float)
-    except Exception:
+    except Exception as e:
+        logger.warning("notebook_label_heatmap aggregates skipped: %s", e)
         labels_list = []
         notebooks_list = []
         raw_matrix = []
         row_norm = []
         col_norm = []
-
-    daily: dict = defaultdict(lambda: {"human": 0, "ai": 0})
-    for row in db.exec(
-        select(
-            func.date(LabelApplication.created_at),
-            LabelApplication.applied_by,
-            func.count(LabelApplication.id),
-        )
-        .select_from(LabelApplication)
-        .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
-        .where(_is_multi_application())
-        .where(LabelDefinition.mode == "multi")
-        .group_by(func.date(LabelApplication.created_at), LabelApplication.applied_by)
-    ).all():
-        d_raw, applied_by, cnt = row
-        if d_raw is None:
-            continue
-        ds = d_raw.isoformat() if hasattr(d_raw, "isoformat") else str(d_raw)
-        if applied_by == "human":
-            daily[ds]["human"] += int(cnt)
-        elif applied_by == "ai":
-            daily[ds]["ai"] += int(cnt)
+        heatmap_error = str(e)[:300]
 
     labeling_throughput: list = []
-    if daily:
-        dates_sorted = sorted(daily.keys())
-        d0 = date.fromisoformat(dates_sorted[0])
-        d1 = date.fromisoformat(dates_sorted[-1])
-        cur = d0
-        while cur <= d1:
-            ds = cur.isoformat()
-            h = daily[ds]["human"]
-            a = daily[ds]["ai"]
-            labeling_throughput.append({"date": ds, "human": h, "ai": a, "total": h + a})
-            cur += timedelta(days=1)
+    throughput_error: Optional[str] = None
+    try:
+        daily: dict = defaultdict(lambda: {"human": 0, "ai": 0})
+        for row in db.exec(
+            select(
+                func.date(LabelApplication.created_at),
+                LabelApplication.applied_by,
+                func.count(LabelApplication.id),
+            )
+            .select_from(LabelApplication)
+            .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
+            .where(_is_multi_application())
+            .where(LabelDefinition.mode == "multi")
+            .group_by(func.date(LabelApplication.created_at), LabelApplication.applied_by)
+        ).all():
+            d_raw, applied_by, cnt = row
+            if d_raw is None:
+                continue
+            ds = d_raw.isoformat() if hasattr(d_raw, "isoformat") else str(d_raw)
+            if applied_by == "human":
+                daily[ds]["human"] += int(cnt)
+            elif applied_by == "ai":
+                daily[ds]["ai"] += int(cnt)
+
+        if daily:
+            dates_sorted = sorted(daily.keys())
+            d0 = date.fromisoformat(dates_sorted[0])
+            d1 = date.fromisoformat(dates_sorted[-1])
+            cur = d0
+            while cur <= d1:
+                ds = cur.isoformat()
+                h = daily[ds]["human"]
+                a = daily[ds]["ai"]
+                labeling_throughput.append({"date": ds, "human": h, "ai": a, "total": h + a})
+                cur += timedelta(days=1)
+    except Exception as e:
+        logger.warning("labeling_throughput aggregates skipped: %s", e)
+        labeling_throughput = []
+        throughput_error = str(e)[:300]
 
     return {
         "tutor_usage": {
@@ -2434,8 +2458,12 @@ def get_analysis_temporal(
             "raw_counts": raw_matrix,
             "row_normalized": row_norm,
             "column_normalized": col_norm,
+            "error": heatmap_error,
         },
-        "labeling_throughput": labeling_throughput,
+        "labeling_throughput": {
+            "data": labeling_throughput,
+            "error": throughput_error,
+        },
     }
 
 

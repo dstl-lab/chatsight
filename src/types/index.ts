@@ -115,13 +115,19 @@ export interface TemporalAnalysis {
     raw_counts: number[][]
     row_normalized: number[][]
     column_normalized: number[][]
+    /** Set when this sub-block failed; sibling blocks may still have data. */
+    error?: string | null
   }
-  labeling_throughput: Array<{
-    date: string
-    human: number
-    ai: number
-    total: number
-  }>
+  /** Per-card failure isolation: if `error` is set, `data` is empty. */
+  labeling_throughput: {
+    data: Array<{
+      date: string
+      human: number
+      ai: number
+      total: number
+    }>
+    error?: string | null
+  }
 }
 
 export interface QueueStats {
@@ -487,8 +493,9 @@ export interface SingleLabelRunDetail {
 }
 
 export interface AssignmentMilestone {
-  name: string
+  title: string
   /** YYYY-MM-DD */
   date: string
-  kind: 'lab' | 'exam' | 'project' | 'other'
+  kind: 'due' | 'late' | 'release'
+  note?: string
 }
