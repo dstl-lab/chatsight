@@ -179,6 +179,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from analysis_single_label import router as single_label_analysis_router
+app.include_router(single_label_analysis_router)
+
 
 def get_ext_conn():
     with ext_engine.connect() as conn:
