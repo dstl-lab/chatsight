@@ -224,11 +224,11 @@ function FindingsSubtab({
   return (
     <div className="flex-1 min-h-0 px-6 py-4 grid gap-3.5 overflow-hidden" style={{ gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr auto' }}>
       <div style={{ gridColumn: 1, gridRow: 1 }} className="chart-card min-h-0 flex flex-col">
-        <div className="flex items-baseline justify-between mb-2.5">
+        <div className="flex items-baseline justify-between mb-3.5">
           <div className="text-sm font-serif font-medium text-paper">
             Yes-rate by assignment
           </div>
-          <span className="text-[11px] text-muted italic">sorted desc · n superscript</span>
+          <span className="text-[11.5px] text-muted italic">sorted desc · n inline</span>
         </div>
         <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
           <YesRateByAssignmentChart rows={detail.by_assignment} />
@@ -236,21 +236,21 @@ function FindingsSubtab({
       </div>
       <div style={{ gridColumn: 2, gridRow: 1 }} className="flex flex-col gap-3 min-h-0 overflow-y-auto">
         <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-2">
+          <div className="flex items-baseline justify-between mb-3.5">
             <div className="text-sm font-serif font-medium text-paper">By conversation position</div>
             <span className="text-[11px] text-muted italic">depth within a chat</span>
           </div>
           <YesRateByPositionChart rows={detail.by_position} />
         </div>
         <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-2">
+          <div className="flex items-baseline justify-between mb-3.5">
             <div className="text-sm font-serif font-medium text-paper">By hour of day</div>
             <span className="text-[11px] text-muted italic">when students ask</span>
           </div>
           <YesRateByHourOfDayChart rows={detail.by_hour_of_day} />
         </div>
         <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-2">
+          <div className="flex items-baseline justify-between mb-3.5">
             <div className="text-sm font-serif font-medium text-paper">By conversation depth</div>
             <span className="text-[11px] text-muted italic">total chat length</span>
           </div>
