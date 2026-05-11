@@ -104,6 +104,9 @@ class MessageCache(SQLModel, table=True):
     chatlog_id: int
     message_index: int
     message_text: str
+    # When the student sent the message (sourced from external events.created_at).
+    # Used by single-label /analysis to bucket decisions by hour-of-day.
+    created_at: Optional[datetime] = Field(default=None)
     context_before: Optional[str] = None
     context_after: Optional[str] = None
     # Single-label pivot: assignment metadata derived from external events.payload->notebook

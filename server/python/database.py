@@ -105,6 +105,8 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN notebook VARCHAR"))
     if "assignment_id" not in cols:
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN assignment_id INTEGER"))
+    if "created_at" not in cols:
+        conn.execute(text("ALTER TABLE messagecache ADD COLUMN created_at DATETIME"))
 
 
 def _cleanup_polluted_multi_label_rows(conn, text):

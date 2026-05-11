@@ -61,6 +61,7 @@ def populate_message_cache():
         existing = db.exec(select(func.count(MessageCache.id))).one()
         if existing > 0:
             backfill_notebooks_if_missing(db)
+            backfill_created_at_if_missing(db)
             return  # Cache already populated
 
     try:
@@ -68,6 +69,7 @@ def populate_message_cache():
             rows = conn.execute(text("""
                 WITH student AS (
                     SELECT id,
+                           created_at,
                            payload->>'conversation_id' AS conv_id,
                            payload->>'question' AS message_text,
                            (ROW_NUMBER() OVER (
@@ -84,7 +86,7 @@ def populate_message_cache():
                     WHERE event_type IN ('tutor_query', 'tutor_response')
                     GROUP BY payload->>'conversation_id'
                 )
-                SELECT s.message_text, s.message_index, ci.chatlog_id, ci.notebook,
+                SELECT s.message_text, s.message_index, ci.chatlog_id, ci.notebook, s.created_at,
                     (SELECT e2.payload->>'response' FROM events e2
                      WHERE e2.payload->>'conversation_id' = s.conv_id
                        AND e2.event_type = 'tutor_response' AND e2.id < s.id
@@ -104,12 +106,77 @@ def populate_message_cache():
                     message_index=r["message_index"],
                     message_text=r["message_text"],
                     notebook=r["notebook"],
+                    created_at=r["created_at"],
                     context_before=r["context_before"],
                     context_after=r["context_after"],
                 ))
             db.commit()
     except Exception as e:
         print(f"Warning: could not populate message cache: {e}")
+
+
+def backfill_created_at_if_missing(db: Session):
+    """If the cache exists but `created_at` is NULL (older cache), pull the
+    event timestamp by (chatlog_id, message_index) lookup. Read-only on the
+    external DB; commits in batches. Skips silently if Postgres unreachable."""
+    missing_count = db.exec(
+        select(func.count(MessageCache.id)).where(MessageCache.created_at == None)  # noqa: E711
+    ).one()
+    if missing_count == 0:
+        return
+
+    missing_pairs = db.exec(
+        select(MessageCache.chatlog_id, MessageCache.message_index)
+        .where(MessageCache.created_at == None)  # noqa: E711
+    ).all()
+    if not missing_pairs:
+        return
+
+    try:
+        with ext_engine.connect() as conn:
+            rows = conn.execute(text("""
+                WITH student AS (
+                    SELECT id,
+                           created_at,
+                           payload->>'conversation_id' AS conv_id,
+                           (ROW_NUMBER() OVER (
+                               PARTITION BY payload->>'conversation_id'
+                               ORDER BY id
+                           )) - 1 AS message_index
+                    FROM events WHERE event_type = 'tutor_query'
+                ),
+                chatlog_ids AS (
+                    SELECT payload->>'conversation_id' AS conv_id,
+                           MIN(id) AS chatlog_id
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                    GROUP BY payload->>'conversation_id'
+                )
+                SELECT ci.chatlog_id, s.message_index, s.created_at
+                FROM student s
+                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
+            """)).mappings().all()
+    except Exception as e:
+        print(f"Warning: created_at backfill skipped — external DB unreachable: {e}")
+        return
+
+    created_by_key = {(int(r["chatlog_id"]), int(r["message_index"])): r["created_at"] for r in rows}
+    if not created_by_key:
+        return
+
+    rows_to_fill = db.exec(
+        select(MessageCache).where(MessageCache.created_at == None)  # noqa: E711
+    ).all()
+    updated = 0
+    for mc in rows_to_fill:
+        ts = created_by_key.get((mc.chatlog_id, mc.message_index))
+        if ts is not None:
+            mc.created_at = ts
+            db.add(mc)
+            updated += 1
+    if updated:
+        db.commit()
+        print(f"Backfilled created_at for {updated} cache rows.")
 
 
 def backfill_notebooks_if_missing(db: Session):
