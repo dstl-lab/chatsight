@@ -11,24 +11,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { AnalysisSummary, TemporalAnalysis } from '../../types'
+import { useSearchParams } from 'react-router-dom'
+import type { AnalysisSummary, AssignmentMilestone, TemporalAnalysis } from '../../types'
 import { api } from '../../services/api'
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MILESTONE_COURSE = 'dsc10_wi26'
 
 type HeatmapMode = 'raw' | 'row' | 'column'
-type AssignmentKind = 'due' | 'late' | 'release'
 type LabelFreqMode = 'combined' | 'human' | 'ai'
 
-interface AssignmentMilestone {
-  title: string
-  date: string // YYYY-MM-DD
-  kind: AssignmentKind
-  note?: string
-}
-
-/** DSC10 WI26 — due / late / quiz dates from Gradescope (PDT). */
-const ASSIGNMENT_MILESTONES: AssignmentMilestone[] = [
+/** Pre-2026-05 fallback. The same data is now served from
+ *  GET /api/analysis/milestones?course=dsc10_wi26 — kept inline only as the
+ *  default when the endpoint is unreachable so the calendar still renders. */
+const FALLBACK_MILESTONES: AssignmentMilestone[] = [
   { title: 'Lab 0', date: '2026-01-12', kind: 'due', note: 'Due 11:59 PM' },
   { title: 'Pretest', date: '2026-01-12', kind: 'due', note: 'Due 11:59 PM' },
   { title: 'Grade Report', date: '2026-01-13', kind: 'due', note: 'Due 3:09 PM' },
@@ -88,6 +84,14 @@ function addCalendarMonth(d: Date, delta: number): Date {
 }
 
 export function MultiLabelAnalysis() {
+  const [params, setParams] = useSearchParams()
+  const selectedLabel = params.get('label')
+  const setSelectedLabel = (next: string | null) => {
+    const update = new URLSearchParams(params)
+    if (next) update.set('label', next)
+    else update.delete('label')
+    setParams(update, { replace: false })
+  }
   const [summary, setSummary] = useState<AnalysisSummary | null>(null)
   const [temporal, setTemporal] = useState<TemporalAnalysis | null>(null)
   const [temporalError, setTemporalError] = useState<string | null>(null)
@@ -96,10 +100,26 @@ export function MultiLabelAnalysis() {
   const [error, setError] = useState<string | null>(null)
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('row')
   const [labelFreqMode, setLabelFreqMode] = useState<LabelFreqMode>('combined')
+  const [milestones, setMilestones] = useState<AssignmentMilestone[]>(FALLBACK_MILESTONES)
   const [calMonth, setCalMonth] = useState(() => {
     const n = new Date()
     return new Date(n.getFullYear(), n.getMonth(), 1)
   })
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getMilestones(MILESTONE_COURSE)
+      .then((m) => {
+        if (!cancelled && m.length > 0) setMilestones(m)
+      })
+      .catch(() => {
+        // keep fallback
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -158,13 +178,13 @@ export function MultiLabelAnalysis() {
 
   const assignmentByDay = useMemo(() => {
     const m = new Map<string, AssignmentMilestone[]>()
-    for (const item of ASSIGNMENT_MILESTONES) {
+    for (const item of milestones) {
       const arr = m.get(item.date) ?? []
       arr.push(item)
       m.set(item.date, arr)
     }
     return m
-  }, [])
+  }, [milestones])
 
   const calendarCells = useMemo(() => {
     const y = calMonth.getFullYear()
@@ -328,7 +348,7 @@ export function MultiLabelAnalysis() {
     return { human: fmt(tenths[0]), ai: fmt(tenths[1]), unlabeled: fmt(tenths[2]) }
   })()
 
-  const posData = Object.entries(summary.position_distribution)
+  const posDataAll = Object.entries(summary.position_distribution)
     .map(([label, buckets]) => ({
       label,
       early: buckets.early,
@@ -336,6 +356,9 @@ export function MultiLabelAnalysis() {
       late: buckets.late,
     }))
     .sort((a, b) => b.early + b.mid + b.late - (a.early + a.mid + a.late))
+  const posData = selectedLabel
+    ? posDataAll.filter((d) => d.label === selectedLabel)
+    : posDataAll
   const posMax = posData.length
     ? Math.max(...posData.flatMap((d) => [d.early, d.mid, d.late]))
     : 1
@@ -358,7 +381,9 @@ export function MultiLabelAnalysis() {
   const tutorWeekdayMax = weekdayChartData.length ? Math.max(...weekdayChartData.map((d) => d.count)) : 0
   const tutorUsageEmpty = !tutorUsageErr && tutorHourMax === 0 && tutorWeekdayMax === 0
 
-  const throughputData = temporal?.labeling_throughput ?? []
+  const throughputData = temporal?.labeling_throughput?.data ?? []
+  const throughputErr = temporal?.labeling_throughput?.error ?? null
+  const heatmapErr = temporal?.notebook_label_heatmap?.error ?? null
 
   const hm = temporal?.notebook_label_heatmap
   let heatmapDisplay: number[][] = []
@@ -388,6 +413,23 @@ export function MultiLabelAnalysis() {
   return (
     <div className="flex-1 overflow-auto p-6 bg-canvas text-on-canvas min-h-0">
       <div className="max-w-7xl mx-auto space-y-8">
+        {selectedLabel && (
+          <div className="sticky top-0 z-10 -mt-2 -mx-2 px-2 py-2 backdrop-blur-sm bg-canvas/85">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-accent-surface border border-accent-border text-sm text-accent-on-surface">
+              <span>
+                Filtered: <strong>{selectedLabel}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedLabel(null)}
+                className="appearance-none bg-transparent border-0 text-accent-on-surface hover:text-on-canvas text-xs cursor-pointer leading-none"
+                aria-label="clear filter"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold text-on-canvas">Analysis</h1>
@@ -467,8 +509,25 @@ export function MultiLabelAnalysis() {
                     const validatedPct = row.validated === 0
                       ? 0
                       : Math.max((row.validated / freqChartMax) * 100, 1.2)
+                    const isSelected = selectedLabel === row.label
                     return (
-                      <div key={row.label} className="flex items-start gap-2 text-xs min-h-[26px]">
+                      <div
+                        key={row.label}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedLabel(isSelected ? null : row.label)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedLabel(isSelected ? null : row.label)
+                          }
+                        }}
+                        className={`flex items-start gap-2 text-xs min-h-[26px] cursor-pointer rounded-sm transition-colors px-1 -mx-1 ${
+                          isSelected
+                            ? 'bg-accent-surface/30 outline outline-1 outline-accent-border'
+                            : 'hover:bg-elevated/50'
+                        }`}
+                      >
                         <div
                           className="w-[130px] shrink-0 truncate text-tertiary text-right pr-1 pt-1"
                           title={row.label}
@@ -948,7 +1007,9 @@ export function MultiLabelAnalysis() {
                     ))}
                   </div>
                 </div>
-                {!hm || hm.notebooks.length === 0 || hm.labels.length === 0 ? (
+                {heatmapErr ? (
+                  <p className="text-sm text-danger">Heatmap unavailable: {heatmapErr}</p>
+                ) : !hm || hm.notebooks.length === 0 || hm.labels.length === 0 ? (
                   <p className="text-sm text-faint">
                     No notebook × label matrix yet (needs Postgres + labeled applications).
                   </p>
@@ -960,7 +1021,7 @@ export function MultiLabelAnalysis() {
                           <th className="border border-edge bg-elevated/80 px-2 py-1.5 text-left text-muted font-medium">
                             Notebook
                           </th>
-                          {hm.labels.map((lbl) => (
+                          {(selectedLabel ? hm.labels.filter((l) => l === selectedLabel) : hm.labels).map((lbl) => (
                             <th
                               key={lbl}
                               className="border border-edge bg-elevated/80 px-2 py-1.5 text-tertiary font-medium max-w-[140px]"
@@ -976,7 +1037,8 @@ export function MultiLabelAnalysis() {
                             <td className="border border-edge bg-elevated/40 px-2 py-1.5 text-tertiary whitespace-nowrap">
                               {nb}
                             </td>
-                            {hm.labels.map((lbl, ci) => {
+                            {(selectedLabel ? hm.labels.filter((l) => l === selectedLabel) : hm.labels).map((lbl) => {
+                              const ci = hm.labels.indexOf(lbl)
                               const rawVal = hm.raw_counts[ri]?.[ci] ?? 0
                               const disp = heatmapDisplay[ri]?.[ci] ?? 0
                               const title =
@@ -1008,7 +1070,9 @@ export function MultiLabelAnalysis() {
                   SQLite <code className="text-muted">LabelApplication.created_at</code> by day —
                   human vs AI pipeline volume.
                 </p>
-                {throughputData.length === 0 ? (
+                {throughputErr ? (
+                  <p className="text-sm text-danger">Throughput unavailable: {throughputErr}</p>
+                ) : throughputData.length === 0 ? (
                   <p className="text-sm text-faint">No labels with timestamps yet.</p>
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
