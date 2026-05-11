@@ -22,7 +22,7 @@ export function YesRateByAssignmentChart({ rows }: Props) {
   return (
     <div
       className="grid gap-x-2.5 gap-y-1.5 items-center text-[12px] w-full"
-      style={{ gridTemplateColumns: 'minmax(0, 140px) minmax(0, 1fr) 56px' }}
+      style={{ gridTemplateColumns: 'minmax(0, 140px) minmax(0, 1fr) 72px' }}
     >
       {sorted.map((r, i) => (
         <div className="contents" key={r.key}>
@@ -39,16 +39,12 @@ export function YesRateByAssignmentChart({ rows }: Props) {
             />
           </div>
           <div
-            className="text-right text-[12.5px] text-paper whitespace-nowrap"
+            className="text-right whitespace-nowrap leading-none"
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
-            {r.yes_pct}%
-            <sup
-              className="ml-1 text-[9px] text-muted tracking-[0.04em]"
-              style={{ fontFeatureSettings: '"smcp", "tnum"' }}
-            >
-              {r.yes + r.no}
-            </sup>
+            <span className="text-[12.5px] text-paper">{r.yes_pct}%</span>
+            <span className="text-ochre-dim mx-1" aria-hidden="true">·</span>
+            <span className="text-[10.5px] text-muted">{r.yes + r.no}</span>
           </div>
         </div>
       ))}
