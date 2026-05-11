@@ -45,6 +45,13 @@ def record_decision(
     ).first()
 
     if existing:
+        # Snapshot the AI prediction before we overwrite it, so analysis can
+        # compute human-AI agreement/disagreement on reviewed messages.
+        # Idempotent: only capture on the FIRST human review of an AI row;
+        # subsequent flips between yes/no by the human leave the snapshot intact.
+        if existing.applied_by == "ai" and existing.ai_value_at_review is None:
+            existing.ai_value_at_review = existing.value
+            existing.ai_confidence_at_review = existing.confidence
         existing.value = value
         existing.applied_by = "human"
         existing.confidence = 1.0

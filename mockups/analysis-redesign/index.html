@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>/analysis mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,ital,wght@8..60,0,400;8..60,0,500;8..60,1,400&display=swap" rel="stylesheet" />
+<style>
+  :root { --paper:#1a1408; --ochre:#b87a0e; --ochre-dim:#8c6d1f; --moss:#6b8456; --brick:#a14c34; --stone:#6b6457; --bg-warm:#f6efdb; --edge-warm:#e7dfc7; --edge-strong:#cdc09b; --surface:#f0e8cf; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  html,body{background:var(--bg-warm);color:var(--paper);}
+  body{font-family:'Source Serif 4',Georgia,serif;font-size:15px;line-height:1.5;min-height:100vh;}
+  .page{max-width:760px;margin:0 auto;padding:64px 40px 100px;}
+  .meta{display:flex;align-items:baseline;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid var(--edge-warm);color:var(--stone);font-size:11.5px;letter-spacing:0.08em;font-feature-settings:"smcp","tnum";}
+  h1{font-weight:500;font-size:36px;letter-spacing:-0.02em;margin-top:28px;color:var(--paper);}
+  h1 em{color:var(--ochre);font-style:italic;font-weight:400;}
+  .lede{margin-top:12px;font-style:italic;font-size:16px;color:var(--stone);max-width:560px;}
+  .section-title{margin-top:48px;font-size:11px;color:var(--ochre);letter-spacing:0.14em;font-feature-settings:"smcp","tnum";padding-bottom:8px;border-bottom:1px solid var(--edge-strong);}
+  .variant-list{display:flex;flex-direction:column;}
+  .variant{display:grid;grid-template-columns:42px 1fr auto;column-gap:20px;align-items:baseline;padding:20px 0;border-bottom:1px solid var(--edge-warm);text-decoration:none;color:inherit;transition:background 160ms ease;}
+  .variant:hover{background:rgba(231,223,199,0.4);}
+  .variant .marker{font-size:14px;color:var(--ochre);font-feature-settings:"smcp","tnum";letter-spacing:0.08em;font-style:italic;}
+  .variant .name{font-size:20px;letter-spacing:-0.01em;color:var(--paper);font-weight:500;}
+  .variant .name .tag{display:inline-block;margin-left:10px;font-size:10px;padding:2px 8px;background:var(--ochre);color:var(--bg-warm);border-radius:2px;letter-spacing:0.1em;font-weight:400;vertical-align:2px;font-feature-settings:"smcp","tnum";}
+  .variant .blurb{margin-top:5px;font-style:italic;font-size:13.5px;color:var(--stone);max-width:54ch;}
+  .variant .fonts{margin-top:6px;font-size:10.5px;color:var(--stone);letter-spacing:0.06em;font-feature-settings:"smcp","tnum";}
+  .variant .fonts strong{color:var(--paper);font-weight:500;}
+  .variant .arrow{font-size:16px;color:var(--ochre-dim);transition:transform 160ms ease,color 160ms ease;align-self:center;}
+  .variant:hover .arrow{transform:translateX(3px);color:var(--ochre);}
+  .archive{opacity:0.72;}
+  .archive .name{font-size:17px;}
+  .footnote{margin-top:48px;font-style:italic;font-size:13px;color:var(--stone);max-width:540px;}
+  .footnote .arr{color:var(--ochre);margin-right:6px;}
+</style>
+</head>
+<body>
+  <main class="page">
+    <div class="meta">
+      <span>CHATSIGHT &middot; FINDINGS &middot; MOCKUP INDEX</span>
+      <span style="font-style:italic;">2026-05-10</span>
+    </div>
+    <h1>Mockups for <em>/analysis</em></h1>
+    <p class="lede">
+      One viewport, app-native, mode-aware. Split pane (cohort left, run detail right) with a
+      Health / Findings sub-tab strip and a slide-up examples drawer.
+    </p>
+
+    <div class="section-title">CURRENT DIRECTION</div>
+    <div class="variant-list">
+      <a class="variant" href="./app-native/">
+        <div class="marker">v0</div>
+        <div>
+          <div class="name">App-native dashboard <span class="tag">CURRENT</span></div>
+          <div class="blurb">
+            Fits in one viewport (1440×900 typical). Uses Chatsight's actual tokens, chrome,
+            and density — feels like a route inside the tool, not a printed artifact. Split
+            pane with persistent cohort rail (~304px), Health view by default, Findings
+            behind a sub-tab, examples in a slide-up drawer. Mode toggle in the top bar
+            previews the multi-label dark palette.
+          </div>
+          <div class="fonts">FONT <strong>Source Serif 4</strong> &middot; PALETTE same as <code>LabelRunPage.tsx</code></div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+    </div>
+
+    <div class="section-title">EARLIER EXPLORATIONS · paper / editorial direction</div>
+    <p style="margin-top:14px;font-style:italic;font-size:13px;color:var(--stone);max-width:540px;">
+      Set aside per feedback: too "printed artifact," not enough "app route." Kept on disk
+      for reference in case any single element (a section mark, the disagreement callout
+      composition, etc.) is worth pulling forward.
+    </p>
+    <div class="variant-list">
+      <a class="variant archive" href="./v1-working-paper/">
+        <div class="marker">v1</div>
+        <div>
+          <div class="name">The Working Paper</div>
+          <div class="blurb">Restrained, JSTOR-adjacent. Single column, hairline rules, section marks (§ I). Scrolling page.</div>
+          <div class="fonts">FONT <strong>Source Serif 4</strong></div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <a class="variant archive" href="./v2-letterpress-almanac/">
+        <div class="marker">v2</div>
+        <div>
+          <div class="name">The Letterpress Almanac</div>
+          <div class="blurb">Drop caps, asterism dividers, double-rule sections. Ornamental almanac feel. Scrolling page.</div>
+          <div class="fonts">FONTS <strong>Fraunces</strong> &middot; Source Serif 4</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+      <a class="variant archive" href="./v3-specimen-sheet/">
+        <div class="marker">v3</div>
+        <div>
+          <div class="name">The Specimen Sheet</div>
+          <div class="blurb">Hero numerals at 200pt, asymmetric grids, dark inverted tabs. Type-specimen aesthetic. Scrolling page.</div>
+          <div class="fonts">FONTS <strong>Newsreader</strong> &middot; Source Serif 4</div>
+        </div>
+        <div class="arrow">→</div>
+      </a>
+    </div>
+
+    <p class="footnote">
+      <span class="arr">→</span> If v0 holds up, the implementation plan at
+      <code>docs/superpowers/plans/2026-05-10-analysis-single-label-view.md</code>
+      needs its layout section rewritten (the current draft is structured around a scrolling
+      page). The data model, backend endpoints, and component split stay as-is.
+    </p>
+  </main>
+</body>
+</html>

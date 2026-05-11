@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Findings · v1 The Working Paper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,ital,wght@8..60,0,400;8..60,0,500;8..60,0,600;8..60,1,400;8..60,1,500&display=swap" rel="stylesheet" />
+<style>
+  /* ──────── V1: The Working Paper ────────
+     Restrained scholarly direction. Source Serif 4 only. Single 920px column.
+     Hairlines, section marks, tabular small-caps. JSTOR / printed working paper. */
+
+  :root {
+    --paper:        #1a1408;
+    --paper-soft:   #2a2415;
+    --ochre:        #b87a0e;
+    --ochre-dim:    #8c6d1f;
+    --moss:         #6b8456;
+    --moss-dim:     #4d5c3f;
+    --brick:        #a14c34;
+    --brick-dim:    #7a3a26;
+    --stone:        #6b6457;
+    --bg-warm:      #f6efdb;
+    --bg-warm-soft: #f0e8cf;
+    --edge-warm:    #e7dfc7;
+    --edge-strong:  #cdc09b;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg-warm); color: var(--paper);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  body { min-height: 100vh; overflow-x: hidden; }
+  ::selection { background: rgba(184, 122, 14, 0.20); }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .smcp { font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em; }
+
+  .progress-strip {
+    position: fixed; top: 0; left: 0; right: 0; height: 2px; background: var(--ochre);
+    transform-origin: left; animation: progress 900ms cubic-bezier(0.2,0.8,0.2,1) forwards; z-index: 100;
+  }
+  @keyframes progress { from {transform: scaleX(0);} to {transform: scaleX(1); opacity: 0;} }
+
+  .page { max-width: 920px; margin: 0 auto; padding: 72px 56px 120px; }
+
+  .masthead {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 14px; border-bottom: 1px solid var(--edge-warm);
+    color: var(--stone); font-size: 12px;
+  }
+  .masthead .left { display: flex; align-items: baseline; gap: 14px; }
+  .masthead .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--ochre); transform: translateY(-2px); }
+
+  .title-block { padding: 36px 0 18px; }
+  h1.title { font-weight: 500; font-size: 56px; line-height: 1.02; letter-spacing: -0.022em; color: var(--paper); }
+  h1.title .amp { color: var(--ochre); font-style: italic; font-weight: 400; }
+  .subtitle { margin-top: 10px; font-style: italic; font-size: 17px; color: var(--paper-soft); max-width: 560px; }
+
+  .tabs { display: flex; gap: 32px; padding-top: 28px; border-bottom: 1px solid var(--edge-warm); }
+  .tab {
+    appearance: none; background: none; border: none; padding: 0 0 14px; margin-bottom: -1px;
+    font-family: inherit; font-size: 15px; color: var(--stone); cursor: pointer;
+    transition: color 180ms ease;
+  }
+  .tab:hover { color: var(--paper); }
+  .tab[aria-selected="true"] { color: var(--paper); border-bottom: 1.5px solid var(--ochre); }
+  .tab .glyph { font-style: italic; font-size: 12px; color: var(--ochre-dim); margin-right: 6px; }
+  .tab .count { font-size: 11px; color: var(--stone); margin-left: 6px; }
+
+  .panel { display: none; padding-top: 44px; }
+  .panel[aria-hidden="false"] { display: block; animation: fadeUp 320ms cubic-bezier(0.2,0.8,0.2,1); }
+  @keyframes fadeUp { from {opacity: 0; transform: translateY(8px);} to {opacity:1; transform:translateY(0);} }
+
+  /* Cohort */
+  .cohort-intro { color: var(--paper-soft); font-style: italic; font-size: 15px; margin-bottom: 28px; max-width: 560px; }
+  .ledger { width: 100%; border-collapse: collapse; }
+  .ledger thead th { text-align: left; font-weight: 400; font-style: italic; font-size: 12px; color: var(--stone);
+    padding: 0 0 12px; border-bottom: 1px solid var(--edge-strong); letter-spacing: 0.02em; }
+  .ledger thead th.right { text-align: right; }
+  .ledger tbody tr {
+    border-bottom: 1px solid var(--edge-warm); cursor: pointer; position: relative;
+    transition: background 160ms ease;
+    animation: rowIn 360ms ease backwards;
+  }
+  .ledger tbody tr:hover { background: rgba(231, 223, 199, 0.45); }
+  .ledger tbody tr::after {
+    content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: 0; background: var(--moss);
+    transition: width 220ms cubic-bezier(0.2,0.8,0.2,1);
+  }
+  .ledger tbody tr:hover::after { width: 100%; }
+  .ledger tbody tr:nth-child(1){animation-delay:40ms} .ledger tbody tr:nth-child(2){animation-delay:80ms}
+  .ledger tbody tr:nth-child(3){animation-delay:120ms} .ledger tbody tr:nth-child(4){animation-delay:160ms}
+  .ledger tbody tr:nth-child(5){animation-delay:200ms}
+  @keyframes rowIn { from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:translateY(0);} }
+  .ledger td { padding: 22px 16px 22px 0; vertical-align: baseline; }
+  .ledger td.right { text-align: right; }
+  .ledger .name { font-size: 22px; letter-spacing: -0.012em; color: var(--paper); }
+  .ledger .name small { display:block; margin-top: 2px; font-size: 11.5px; font-style: italic; color: var(--stone); }
+  .ledger .metric { font-size: 17px; font-variant-numeric: tabular-nums; font-feature-settings: "tnum","smcp"; color: var(--paper); }
+  .ledger .metric .unit { font-size: 11px; color: var(--stone); margin-left: 2px; vertical-align: 1px; }
+  .ledger .metric.warn { border-bottom: 1px solid var(--brick); padding-bottom: 1px; }
+  .status-rule { display: inline-block; width: 56px; height: 1px; vertical-align: 4px; margin-right: 10px; }
+  .status-rule.labeling { background: var(--ochre); }
+  .status-rule.complete { background: var(--moss); }
+  .status-rule.reviewing { border-top: 1px dotted var(--ochre); height: 0; }
+  .status-text { font-size: 11.5px; font-style: italic; color: var(--stone); }
+  .ledger-footnote { margin-top: 22px; font-style: italic; font-size: 13px; color: var(--stone); }
+
+  /* Run detail */
+  .dateline { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--edge-warm); }
+  .dateline .lhs { display: flex; align-items: baseline; gap: 18px; }
+  .dateline .smcp-eyebrow { font-size: 11px; color: var(--ochre); font-style: italic; }
+  .dateline .run-name { font-size: 28px; letter-spacing: -0.014em; color: var(--paper); }
+  .dateline .run-picker { appearance: none; border: none; background: transparent; font-family: inherit; font-size: 12px; font-style: italic; color: var(--stone); cursor: pointer; padding: 4px 0; }
+  .readout { margin-top: 10px; font-style: italic; font-size: 14px; color: var(--paper-soft); }
+  .readout .num { font-style: normal; color: var(--paper); }
+  .readout .sep { color: var(--ochre-dim); margin: 0 6px; }
+
+  section.cluster { margin-top: 56px; }
+  .section-mark { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; }
+  .section-mark .glyph { font-size: 13px; color: var(--ochre); font-style: italic; letter-spacing: 0.02em; }
+  .section-mark h2 { font-size: 26px; font-weight: 500; letter-spacing: -0.012em; color: var(--paper); }
+  .section-mark .rule { flex: 1; height: 1px; background: var(--edge-strong); transform: translateY(-6px); }
+
+  /* Histogram */
+  .histogram { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; align-items: end; height: 180px; margin-top: 8px; }
+  .hist-stack { display: flex; flex-direction: column; transform-origin: bottom; animation: barIn 600ms cubic-bezier(0.2,0.8,0.2,1) backwards; }
+  .hist-bin:nth-child(1) .hist-stack {animation-delay:0ms}
+  .hist-bin:nth-child(2) .hist-stack {animation-delay:30ms}
+  .hist-bin:nth-child(3) .hist-stack {animation-delay:60ms}
+  .hist-bin:nth-child(4) .hist-stack {animation-delay:90ms}
+  .hist-bin:nth-child(5) .hist-stack {animation-delay:120ms}
+  .hist-bin:nth-child(6) .hist-stack {animation-delay:150ms}
+  .hist-bin:nth-child(7) .hist-stack {animation-delay:180ms}
+  .hist-bin:nth-child(8) .hist-stack {animation-delay:210ms}
+  .hist-bin:nth-child(9) .hist-stack {animation-delay:240ms}
+  .hist-bin:nth-child(10) .hist-stack {animation-delay:270ms}
+  @keyframes barIn { from {transform: scaleY(0); opacity: 0;} to {transform: scaleY(1); opacity: 1;} }
+  .hist-no  { background: var(--brick); }
+  .hist-yes { background: var(--moss); }
+  .hist-axis { margin-top: 10px; display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; border-top: 1px solid var(--edge-warm); padding-top: 8px; }
+  .hist-axis span { font-size: 10px; color: var(--stone); text-align: center; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+  .hist-caption { margin-top: 14px; font-style: italic; font-size: 13px; color: var(--paper-soft); display: flex; gap: 18px; align-items: baseline; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; font-style: normal; font-size: 11px; color: var(--stone); letter-spacing: 0.04em; }
+  .swatch { display: inline-block; width: 10px; height: 10px; }
+  .swatch.moss  { background: var(--moss); }
+  .swatch.brick { background: var(--brick); }
+
+  /* Disagreement */
+  .disagreement { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr 1fr; border-top: 1px solid var(--edge-warm); border-bottom: 1px solid var(--edge-warm); }
+  .disagreement .cell { padding: 22px 24px 22px 0; border-right: 1px solid var(--edge-warm); }
+  .disagreement .cell:last-child { border-right: none; }
+  .disagreement .label { font-size: 11px; color: var(--ochre); font-style: italic; letter-spacing: 0.04em; }
+  .disagreement .big { margin-top: 6px; font-size: 36px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--paper); }
+  .disagreement .big .frac { font-size: 14px; color: var(--stone); font-style: italic; margin-left: 6px; vertical-align: 6px; }
+  .disagreement .breakdown { margin-top: 6px; font-style: italic; font-size: 13px; color: var(--paper-soft); }
+  .disagreement .breakdown .num { font-style: normal; color: var(--paper); }
+
+  /* Bars */
+  .bars { display: grid; grid-template-columns: 220px 1fr 56px; column-gap: 18px; row-gap: 12px; align-items: center; }
+  .bars .row-name { font-size: 15px; color: var(--paper); }
+  .bars .row-name em { color: var(--stone); font-size: 12px; margin-left: 4px; }
+  .bars .row-bar { position: relative; height: 16px; background: var(--bg-warm-soft); }
+  .bars .row-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .bars .row-bar .fill.moss-dim { background: var(--moss-dim); }
+  .bars .row-bar .fill.moss-soft { background: rgba(107,132,86,0.55); }
+  @keyframes barFill { from {transform: scaleX(0);} to {transform: scaleX(1);} }
+  .bars .row-pct { font-variant-numeric: tabular-nums; font-feature-settings: "tnum","smcp"; font-size: 14px; color: var(--paper); text-align: right; }
+  .bars .row-pct sup { margin-left: 4px; font-size: 9px; color: var(--stone); letter-spacing: 0.04em; }
+
+  /* Position trio */
+  .position-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 8px; }
+  .pt-card { border-top: 1px solid var(--edge-warm); padding-top: 16px; }
+  .pt-card .pt-label { font-size: 11px; color: var(--ochre); font-style: italic; letter-spacing: 0.04em; }
+  .pt-card .pt-pct { margin-top: 6px; font-size: 32px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--paper); }
+  .pt-card .pt-bar { margin-top: 10px; height: 4px; background: var(--bg-warm-soft); position: relative; }
+  .pt-card .pt-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .pt-card .pt-foot { margin-top: 8px; font-style: italic; font-size: 12px; color: var(--stone); }
+
+  /* Weekly */
+  .weekly { margin-top: 8px; border-top: 1px solid var(--edge-warm); border-bottom: 1px solid var(--edge-warm); padding: 24px 0 14px; }
+  .weekly svg { display: block; width: 100%; height: 160px; }
+  .weekly-axis { margin-top: 8px; display: grid; grid-template-columns: repeat(8, 1fr); font-size: 10px; color: var(--stone); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-align: center; }
+  .weekly-caption { margin-top: 14px; font-style: italic; font-size: 13px; color: var(--paper-soft); display: flex; gap: 22px; }
+  .legend-line { display: inline-block; width: 18px; height: 1.5px; background: var(--moss); }
+  .legend-line.dotted { background: none; border-top: 1.5px dotted var(--ochre-dim); }
+
+  /* Examples */
+  .examples { display: flex; flex-direction: column; gap: 28px; }
+  .example-group .group-label { font-size: 11px; color: var(--ochre); font-style: italic; letter-spacing: 0.04em; border-bottom: 1px solid var(--edge-warm); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .example-group .group-label .n { color: var(--stone); font-feature-settings: "smcp","tnum"; letter-spacing: 0.08em; }
+  .example-group blockquote { display: grid; grid-template-columns: 1fr 200px; column-gap: 32px; padding: 18px 0 18px 28px; border-bottom: 1px solid var(--edge-warm); position: relative; }
+  .example-group blockquote::before { content: "\201C"; position: absolute; left: 0; top: 14px; font-size: 28px; line-height: 1; color: var(--ochre); }
+  .example-group blockquote p { font-size: 16px; line-height: 1.5; color: var(--paper); }
+  .example-group blockquote aside { font-style: italic; font-size: 12px; color: var(--stone); text-align: right; border-left: 1px solid var(--edge-warm); padding-left: 18px; align-self: center; }
+  .example-group blockquote aside .num { font-style: normal; color: var(--paper); }
+  .example-group blockquote aside.flag { color: var(--brick); }
+  .example-group.edge blockquote::before { color: var(--brick); }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; } }
+  @media (max-width: 760px) { .page {padding: 48px 24px 80px;} h1.title{font-size:40px;} .bars{grid-template-columns:1fr;gap:4px;} .bars .row-pct{text-align:left;} .example-group blockquote{grid-template-columns:1fr;} .example-group blockquote aside{border-left:none;padding-left:0;text-align:left;margin-top:8px;} }
+</style>
+</head>
+<body>
+  <div class="progress-strip" aria-hidden="true"></div>
+  <main class="page">
+    <header class="masthead">
+      <div class="left">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="smcp">CHATSIGHT &middot; FINDINGS</span>
+        <span style="font-style:italic;">Vol. I &middot; single-label runs</span>
+      </div>
+      <div style="font-style:italic;">compiled <span class="num smcp">MAY &middot; 10 &middot; 2026</span></div>
+    </header>
+
+    <div class="title-block">
+      <h1 class="title">Findings <span class="amp">&amp;</span> label health</h1>
+      <p class="subtitle">A reading view for single-label runs &mdash; how decisively the model marks a concept, where it disagrees with you, and what the data says when looked at sideways.</p>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="cohort"><span class="glyph">§ I</span>Cohort overview<span class="count">5 runs</span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="run"><span class="glyph">§ II</span>Run detail<span class="count">help-seeking</span></button>
+    </nav>
+
+    <section id="panel-cohort" class="panel" role="tabpanel" aria-hidden="false">
+      <p class="cohort-intro">Five runs across the term. <em>Yes&nbsp;%</em> is the rate among messages the instructor has decided. <em>Disagree&nbsp;%</em> is on the overlap where both a human decision and an AI prediction exist.</p>
+      <table class="ledger">
+        <thead><tr><th>Label</th><th class="right">Yes&thinsp;%</th><th class="right">Disagree</th><th class="right">Walked</th><th class="right">Status</th></tr></thead>
+        <tbody>
+          <tr><td class="name">help-seeking<small>asking the tutor for an explanation, not just an answer</small></td><td class="right metric">62<span class="unit">%</span></td><td class="right metric">8<span class="unit">%</span></td><td class="right metric">240<span class="unit">/600</span></td><td class="right"><span class="status-rule reviewing"></span><span class="status-text">reviewing</span></td></tr>
+          <tr><td class="name">confusion<small>student signals they are stuck or lost</small></td><td class="right metric">34<span class="unit">%</span></td><td class="right metric warn">21<span class="unit">%</span></td><td class="right metric">180<span class="unit">/400</span></td><td class="right"><span class="status-rule labeling"></span><span class="status-text">labeling</span></td></tr>
+          <tr><td class="name">off-topic<small>chat unrelated to the course</small></td><td class="right metric">18<span class="unit">%</span></td><td class="right metric">4<span class="unit">%</span></td><td class="right metric">220<span class="unit">/220</span></td><td class="right"><span class="status-rule complete"></span><span class="status-text">complete</span></td></tr>
+          <tr><td class="name">frustration<small>emotional signal &mdash; annoyance or giving up</small></td><td class="right metric">47<span class="unit">%</span></td><td class="right metric">15<span class="unit">%</span></td><td class="right metric">95<span class="unit">/200</span></td><td class="right"><span class="status-rule labeling"></span><span class="status-text">labeling</span></td></tr>
+          <tr><td class="name">requests-explanation<small>asks the tutor to walk through reasoning</small></td><td class="right metric">71<span class="unit">%</span></td><td class="right metric">6<span class="unit">%</span></td><td class="right metric">145<span class="unit">/300</span></td><td class="right"><span class="status-rule reviewing"></span><span class="status-text">reviewing</span></td></tr>
+        </tbody>
+      </table>
+      <p class="ledger-footnote"><span style="color:var(--ochre-dim);">&rarr;</span> Click a row to open run detail. Disagreement above 15&nbsp;% is underlined &mdash; usually a sign the definition is drifting.</p>
+    </section>
+
+    <section id="panel-run" class="panel" role="tabpanel" aria-hidden="true">
+      <header class="dateline">
+        <div class="lhs"><span class="smcp-eyebrow">RUN &mdash;</span><span class="run-name">help-seeking</span><button class="run-picker">change run ▾</button></div>
+        <span class="smcp" style="font-style:italic;color:var(--stone);font-size:12px;">OCT &middot; 2026</span>
+      </header>
+      <p class="readout">walked <span class="num">240/600</span><span class="sep">&middot;</span><span class="num">62%</span> yes<span class="sep">&middot;</span><span class="num">12</span> of <span class="num">150</span> overlap disagreed</p>
+
+      <section class="cluster">
+        <div class="section-mark"><span class="glyph">§ 1 &middot;</span><h2>Label health</h2><span class="rule"></span></div>
+        <div class="histogram">
+          <div class="hist-bin"><div class="hist-stack" style="height:78%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:68%"><div class="hist-no" style="height:82%"></div><div class="hist-yes" style="height:18%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:51%"><div class="hist-no" style="height:81%"></div><div class="hist-yes" style="height:19%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:29%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:20%"><div class="hist-no" style="height:50%"></div><div class="hist-yes" style="height:50%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:22%"><div class="hist-no" style="height:44%"></div><div class="hist-yes" style="height:56%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:34%"><div class="hist-no" style="height:29%"></div><div class="hist-yes" style="height:71%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:54%"><div class="hist-no" style="height:18%"></div><div class="hist-yes" style="height:82%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:85%"><div class="hist-no" style="height:9%"></div><div class="hist-yes" style="height:91%"></div></div></div>
+          <div class="hist-bin"><div class="hist-stack" style="height:100%"><div class="hist-no" style="height:2%"></div><div class="hist-yes" style="height:98%"></div></div></div>
+        </div>
+        <div class="hist-axis num"><span>.0</span><span>.1</span><span>.2</span><span>.3</span><span>.4</span><span>.5</span><span>.6</span><span>.7</span><span>.8</span><span>.9</span></div>
+        <p class="hist-caption"><em>Bimodal &mdash; the model is decisive on this concept.</em><span class="legend"><span class="swatch moss"></span>YES</span><span class="legend"><span class="swatch brick"></span>NO</span></p>
+
+        <div class="disagreement">
+          <div class="cell"><div class="label">DISAGREEMENT</div><div class="big">8<span style="font-size:16px;">%</span><span class="frac">12 / 150</span></div><div class="breakdown">below the <span class="num">15%</span> drift threshold.</div></div>
+          <div class="cell"><div class="label">AI&nbsp;YES &middot; HUMAN&nbsp;NO</div><div class="big">5</div><div class="breakdown">model over-applies on edge cases.</div></div>
+          <div class="cell"><div class="label">AI&nbsp;NO &middot; HUMAN&nbsp;YES</div><div class="big">7</div><div class="breakdown">model misses softer help-seeking.</div></div>
+        </div>
+      </section>
+
+      <section class="cluster">
+        <div class="section-mark"><span class="glyph">§ 2 &middot;</span><h2>Findings</h2><span class="rule"></span></div>
+
+        <h3 style="font-size:14px;font-weight:400;font-style:italic;color:var(--stone);margin-bottom:18px;">Yes-rate by assignment</h3>
+        <div class="bars">
+          <div class="row-name">Lab&nbsp;1 <em>&mdash; Probability</em></div><div class="row-bar"><div class="fill" style="width:78%;animation-delay:0ms;"></div></div><div class="row-pct">78<sup>42</sup></div>
+          <div class="row-name">Lab&nbsp;2 <em>&mdash; DataFrames</em></div><div class="row-bar"><div class="fill" style="width:71%;animation-delay:40ms;"></div></div><div class="row-pct">71<sup>38</sup></div>
+          <div class="row-name">Final Project</div><div class="row-bar"><div class="fill" style="width:64%;animation-delay:80ms;"></div></div><div class="row-pct">64<sup>28</sup></div>
+          <div class="row-name">Lab&nbsp;5 <em>&mdash; Hypothesis</em></div><div class="row-bar"><div class="fill" style="width:58%;animation-delay:120ms;"></div></div><div class="row-pct">58<sup>31</sup></div>
+          <div class="row-name">Midterm</div><div class="row-bar"><div class="fill" style="width:52%;animation-delay:160ms;"></div></div><div class="row-pct">52<sup>24</sup></div>
+          <div class="row-name">Lab&nbsp;3 <em>&mdash; Visualization</em></div><div class="row-bar"><div class="fill moss-dim" style="width:49%;animation-delay:200ms;"></div></div><div class="row-pct">49<sup>27</sup></div>
+          <div class="row-name">Lab&nbsp;4 <em>&mdash; Regression</em></div><div class="row-bar"><div class="fill moss-dim" style="width:41%;animation-delay:240ms;"></div></div><div class="row-pct">41<sup>22</sup></div>
+          <div class="row-name">Concept Check</div><div class="row-bar"><div class="fill moss-soft" style="width:23%;animation-delay:280ms;"></div></div><div class="row-pct">23<sup>28</sup></div>
+        </div>
+
+        <h3 style="font-size:14px;font-weight:400;font-style:italic;color:var(--stone);margin:56px 0 18px;">Yes-rate by conversation position</h3>
+        <div class="position-trio">
+          <div class="pt-card"><div class="pt-label">EARLY &middot; msgs 0&ndash;2</div><div class="pt-pct">71<span style="font-size:16px;color:var(--stone);">%</span></div><div class="pt-bar"><div class="fill" style="width:71%;"></div></div><div class="pt-foot">n&nbsp;= 108</div></div>
+          <div class="pt-card"><div class="pt-label">MID &middot; msgs 3&ndash;6</div><div class="pt-pct">64<span style="font-size:16px;color:var(--stone);">%</span></div><div class="pt-bar"><div class="fill" style="width:64%;animation-delay:60ms;"></div></div><div class="pt-foot">n&nbsp;= 92</div></div>
+          <div class="pt-card"><div class="pt-label">LATE &middot; msgs 7+</div><div class="pt-pct">48<span style="font-size:16px;color:var(--stone);">%</span></div><div class="pt-bar"><div class="fill" style="width:48%;animation-delay:120ms;"></div></div><div class="pt-foot">n&nbsp;= 40</div></div>
+        </div>
+
+        <h3 style="font-size:14px;font-weight:400;font-style:italic;color:var(--stone);margin:56px 0 18px;">Yes-rate over time</h3>
+        <div class="weekly">
+          <svg viewBox="0 0 800 160" preserveAspectRatio="none">
+            <line x1="0" y1="80" x2="800" y2="80" stroke="#e7dfc7" stroke-width="1" stroke-dasharray="2 4"/>
+            <polyline fill="none" stroke="#6b8456" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="50,56 157,67 264,46 371,51 478,61 585,72 692,64 760,59"/>
+            <polyline fill="none" stroke="#8c6d1f" stroke-width="1.4" stroke-dasharray="3 4" stroke-linejoin="round" stroke-linecap="round" points="50,107 157,95 264,87 371,76 478,70 585,74 692,79 760,83"/>
+            <circle cx="50" cy="56" r="2.5" fill="#6b8456"/><circle cx="157" cy="67" r="2.5" fill="#6b8456"/><circle cx="264" cy="46" r="2.5" fill="#6b8456"/><circle cx="371" cy="51" r="2.5" fill="#6b8456"/><circle cx="478" cy="61" r="2.5" fill="#6b8456"/><circle cx="585" cy="72" r="2.5" fill="#6b8456"/><circle cx="692" cy="64" r="2.5" fill="#6b8456"/><circle cx="760" cy="59" r="2.5" fill="#6b8456"/>
+          </svg>
+          <div class="weekly-axis smcp"><span>W34</span><span>W35</span><span>W36</span><span>W37</span><span>W38</span><span>W39</span><span>W40</span><span>W41</span></div>
+        </div>
+        <p class="weekly-caption"><em>Stable through midterm season &mdash; small dip W39.</em><span class="legend"><span class="legend-line"></span>YES&thinsp;RATE</span><span class="legend"><span class="legend-line dotted"></span>N (PER&thinsp;WK)</span></p>
+
+        <h3 style="font-size:14px;font-weight:400;font-style:italic;color:var(--stone);margin:56px 0 18px;">Example messages</h3>
+        <div class="examples">
+          <div class="example-group">
+            <div class="group-label"><span>YES &mdash; SAMPLED</span><span class="n">N&nbsp;=&nbsp;3 OF 149</span></div>
+            <blockquote><p>I'm not sure what bool_array does &mdash; can you explain again?</p><aside><span class="num">Lab&nbsp;2</span> &middot; mid &middot; ai 0.91 &middot; human yes</aside></blockquote>
+            <blockquote><p>Why does <code>.groupby()</code> return a different result for sum vs mean here?</p><aside><span class="num">Lab&nbsp;5</span> &middot; mid &middot; ai 0.84 &middot; human yes</aside></blockquote>
+            <blockquote><p>I keep getting a KeyError on this DataFrame &mdash; what am I doing wrong?</p><aside><span class="num">Lab&nbsp;2</span> &middot; early &middot; ai 0.78 &middot; human yes</aside></blockquote>
+          </div>
+          <div class="example-group">
+            <div class="group-label"><span>NO &mdash; SAMPLED</span><span class="n">N&nbsp;=&nbsp;3 OF 91</span></div>
+            <blockquote><p>Thanks, that worked!</p><aside><span class="num">Final</span> &middot; late &middot; ai 0.02 &middot; human no</aside></blockquote>
+            <blockquote><p>Make this plot blue.</p><aside><span class="num">Lab&nbsp;3</span> &middot; early &middot; ai 0.08 &middot; human no</aside></blockquote>
+            <blockquote><p>Can you write the code for me?</p><aside><span class="num">Concept</span> &middot; early &middot; ai 0.12 &middot; human no</aside></blockquote>
+          </div>
+          <div class="example-group edge">
+            <div class="group-label"><span>EDGE &mdash; FLAGGED FOR REVIEW</span><span class="n">N&nbsp;=&nbsp;2 OF 12</span></div>
+            <blockquote><p>What does it mean when something is &lsquo;closed under&rsquo; an operation?</p><aside class="flag"><span class="num">Lab&nbsp;1</span> &middot; mid &middot; <span class="num">ai 0.51 no</span> / <span class="num">human yes</span> &mdash; low confidence</aside></blockquote>
+            <blockquote><p>Should I use <code>.loc</code> or <code>.iloc</code> here?</p><aside class="flag"><span class="num">Lab&nbsp;2</span> &middot; early &middot; <span class="num">ai 0.42 no</span> / <span class="num">human yes</span> &mdash; human overruled</aside></blockquote>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  const panels = { cohort: document.getElementById('panel-cohort'), run: document.getElementById('panel-run') };
+  tabs.forEach((t) => t.addEventListener('click', () => {
+    tabs.forEach((x) => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    Object.entries(panels).forEach(([k, p]) => p.setAttribute('aria-hidden', k === t.dataset.tab ? 'false' : 'true'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+  document.querySelectorAll('.ledger tbody tr').forEach((row) => row.addEventListener('click', () => document.querySelector('.tab[data-tab="run"]').click()));
+</script>
+</body>
+</html>
