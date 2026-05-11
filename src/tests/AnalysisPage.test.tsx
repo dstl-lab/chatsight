@@ -35,6 +35,8 @@ vi.mock('../services/api', () => ({
     getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 50 }),
     getRecentHistory: vi.fn().mockResolvedValue([]),
     getLabels: vi.fn().mockResolvedValue([]),
+    getSingleLabelCohort: vi.fn().mockResolvedValue({ runs: [] }),
+    getSingleLabelRunDetail: vi.fn().mockResolvedValue(null),
   },
 }))
 
@@ -69,7 +71,10 @@ test('renders MultiLabelAnalysis when mode === "multi" (default)', async () => {
 test('renders SingleLabelAnalysis when mode === "single"', async () => {
   localStorage.setItem('chatsight-mode', 'single')
   renderPage()
-  await waitFor(() => expect(screen.getByRole('heading', { name: /Findings/i })).toBeInTheDocument())
+  // SingleLabelAnalysis mounts the cohort rail with this heading
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: /Single-label runs/i })).toBeInTheDocument(),
+  )
   // SingleLabel page does not show Label Frequency (that's a multi-label chart)
   expect(screen.queryByText('Label Frequency')).toBeNull()
 })
