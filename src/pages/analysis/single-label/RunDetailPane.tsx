@@ -229,7 +229,7 @@ function FindingsSubtab({
           </div>
           <span className="text-[11px] text-muted italic">sorted desc · n superscript</span>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
           <YesRateByAssignmentChart rows={detail.by_assignment} />
         </div>
       </div>
@@ -245,7 +245,7 @@ function FindingsSubtab({
             <div className="text-sm font-serif font-medium text-paper">Yes-rate over time</div>
             <span className="text-[11px] text-muted italic">weekly</span>
           </div>
-          <div className="flex-1 min-h-0 flex items-center">
+          <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center">
             <YesRateOverTimeChart weeks={detail.weekly} />
           </div>
         </div>

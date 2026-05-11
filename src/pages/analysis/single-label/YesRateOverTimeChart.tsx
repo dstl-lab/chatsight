@@ -30,7 +30,7 @@ export function YesRateOverTimeChart({ weeks }: Props) {
   const points = (ys: number[]) => xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
 
   return (
-    <div>
+    <div className="w-full">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block w-full h-[90px]">
         <line
           x1={0}

@@ -20,13 +20,16 @@ export function YesRateByAssignmentChart({ rows }: Props) {
   const sorted = [...rows].sort((a, b) => b.yes_pct - a.yes_pct)
 
   return (
-    <div className="grid grid-cols-[1fr_110px_44px] gap-x-2.5 gap-y-1.5 items-center text-[12px]">
+    <div
+      className="grid gap-x-2.5 gap-y-1.5 items-center text-[12px] w-full"
+      style={{ gridTemplateColumns: 'minmax(0, 140px) minmax(0, 1fr) 56px' }}
+    >
       {sorted.map((r, i) => (
         <div className="contents" key={r.key}>
-          <div className="text-[12.5px] text-paper truncate" title={r.key}>
+          <div className="min-w-0 text-[12.5px] text-paper truncate" title={r.key}>
             {r.key}
           </div>
-          <div className="relative h-2 bg-edge-warm rounded-[1px]">
+          <div className="relative h-2 bg-edge-warm rounded-[1px] min-w-0">
             <div
               className={`absolute top-0 left-0 bottom-0 origin-left ${fillColor(r.yes_pct)}`}
               style={{
@@ -36,7 +39,7 @@ export function YesRateByAssignmentChart({ rows }: Props) {
             />
           </div>
           <div
-            className="text-right text-[12.5px] text-paper"
+            className="text-right text-[12.5px] text-paper whitespace-nowrap"
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {r.yes_pct}%
