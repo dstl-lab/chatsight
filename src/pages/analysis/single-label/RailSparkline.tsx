@@ -1,5 +1,6 @@
 type Props = {
-  /** 0–100 weekly yes-rate values, oldest → newest, length ≤ 8 */
+  /** 0–100 weekly yes-rate values, oldest → newest, length ≤ 8.
+   *  x = week index, y = yes-rate% on an absolute 0–100 scale. */
   values: number[]
 }
 
@@ -12,48 +13,23 @@ export function RailSparkline({ values }: Props) {
     return <svg className="block flex-none" width={W} height={H} aria-hidden="true" />
   }
 
-  // Single-value case (common when all decisions land in one ISO week): no
-  // polyline to draw, so plot a short midline at the value's height + a dot
-  // so the rail still carries a visible signal.
-  if (values.length === 1) {
-    const v = values[0]
-    const y = H - PAD - (v / 100) * (H - PAD * 2)
-    return (
-      <svg
-        className="block flex-none"
-        width={W}
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <line
-          x1={PAD + 14}
-          y1={y}
-          x2={W - PAD - 14}
-          y2={y}
-          stroke="var(--app-moss)"
-          strokeWidth={1.4}
-          strokeLinecap="round"
-        />
-        <circle cx={W / 2} cy={y} r={1.8} fill="var(--app-moss)" />
-      </svg>
-    )
-  }
-
   const inner = W - PAD * 2
   const innerH = H - PAD * 2
-  const max = Math.max(...values)
-  const min = Math.min(...values)
-  const range = Math.max(max - min, 1)
-  const stepX = inner / (values.length - 1)
-  const points = values
-    .map((v, i) => {
-      const x = PAD + i * stepX
-      const y = H - PAD - ((v - min) / range) * innerH
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
+  // Absolute 0–100% scale on y so positions are comparable across runs.
+  const yFor = (v: number) => H - PAD - (Math.max(0, Math.min(100, v)) / 100) * innerH
+
+  // For a single value there's no "between" to draw a line across — place the
+  // dot at the midpoint of the available width so the position reads.
+  const xFor = (i: number) => {
+    if (values.length === 1) return W / 2
+    return PAD + (i / (values.length - 1)) * inner
+  }
+
+  const xs = values.map((_, i) => xFor(i))
+  const ys = values.map(yFor)
+  const points = xs.map((x, i) => `${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  const title = values.map((v, i) => `W${i + 1}: ${v}%`).join(' · ')
+
   return (
     <svg
       className="block flex-none"
@@ -61,16 +37,33 @@ export function RailSparkline({ values }: Props) {
       height={H}
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
-      aria-hidden="true"
+      role="img"
+      aria-label={`Weekly yes-rate: ${title}`}
     >
-      <polyline
-        fill="none"
-        stroke="var(--app-moss)"
-        strokeWidth={1.4}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={points}
+      <title>{title}</title>
+      {/* Faint 50% baseline so the dot's vertical position is interpretable */}
+      <line
+        x1={0}
+        y1={H / 2}
+        x2={W}
+        y2={H / 2}
+        stroke="var(--app-edge-warm)"
+        strokeWidth={0.8}
+        strokeDasharray="2 2"
       />
+      {values.length > 1 && (
+        <polyline
+          fill="none"
+          stroke="var(--app-moss)"
+          strokeWidth={1.4}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          points={points}
+        />
+      )}
+      {xs.map((x, i) => (
+        <circle key={i} cx={x} cy={ys[i]} r={1.8} fill="var(--app-moss)" />
+      ))}
     </svg>
   )
 }
