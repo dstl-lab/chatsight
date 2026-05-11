@@ -40,6 +40,12 @@ class LabelApplication(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Single-label pivot: explicit decision value (multi-label leaves NULL)
     value: Optional[str] = Field(default=None)  # "yes" | "no" | "skip" | None (multi)
+    # AI snapshot: captured by decision_service when a human reviews and overwrites
+    # an AI prediction. Lets analysis compute human-AI agreement/disagreement after
+    # review, since the live row's `value`/`applied_by` reflect the human decision.
+    # Both NULL when the row was never AI-predicted before being human-decided.
+    ai_value_at_review: Optional[str] = Field(default=None)       # "yes" | "no"
+    ai_confidence_at_review: Optional[float] = Field(default=None)  # 0.0–1.0
 
 
 class LabelPrediction(SQLModel, table=True):

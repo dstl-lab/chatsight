@@ -83,6 +83,10 @@ def _migrate_label_application(conn, inspect, text):
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN confidence FLOAT DEFAULT NULL"))
     if "value" not in cols:
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN value VARCHAR"))
+    if "ai_value_at_review" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_value_at_review VARCHAR DEFAULT NULL"))
+    if "ai_confidence_at_review" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_confidence_at_review FLOAT DEFAULT NULL"))
 
 
 def _migrate_labeling_session(conn, inspect, text):
