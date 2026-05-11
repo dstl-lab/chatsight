@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Findings · v3 The Specimen Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..800;1,6..72,300..800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap" rel="stylesheet" />
+<style>
+  /* ──────── V3: The Specimen Sheet ────────
+     Numbers as hero. Newsreader (display, variable opsz) + Source Serif 4 (body).
+     Asymmetric grids, huge percentages, generous negative space.
+     Modern editorial-design poster / type-specimen aesthetic. */
+
+  :root {
+    --paper:        #1a1408;
+    --paper-soft:   #3a2f1f;
+    --ink-warm:     #2a2415;
+    --ochre:        #b87a0e;
+    --ochre-dim:    #8c6d1f;
+    --ochre-bright: #d49619;
+    --moss:         #6b8456;
+    --moss-deep:    #4d5c3f;
+    --brick:        #a14c34;
+    --brick-deep:   #7a3a26;
+    --stone:        #6b6457;
+    --bg-warm:      #f6efdb;
+    --bg-warm-cool: #ecead6;
+    --edge-warm:    #e7dfc7;
+    --edge-strong:  #cdc09b;
+    --hairline:     #b8a578;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg-warm); color: var(--paper); }
+  body {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 17px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh; overflow-x: hidden;
+  }
+  ::selection { background: rgba(184, 122, 14, 0.22); }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .smcp { font-feature-settings: "smcp", "tnum"; letter-spacing: 0.12em; }
+  .nr { font-family: 'Newsreader', Georgia, serif; }
+
+  .progress-strip {
+    position: fixed; top: 0; left: 0; right: 0; height: 2px; background: var(--ochre);
+    transform-origin: left; animation: progress 900ms cubic-bezier(0.2,0.8,0.2,1) forwards; z-index: 100;
+  }
+  @keyframes progress { from {transform: scaleX(0);} to {transform: scaleX(1); opacity: 0;} }
+
+  /* Wider — specimen sheets need room */
+  .page { max-width: 1140px; margin: 0 auto; padding: 56px 64px 140px; }
+
+  /* Header — designer / specimen masthead */
+  .header-grid {
+    display: grid; grid-template-columns: 1fr auto; align-items: end;
+    border-bottom: 1px solid var(--paper); padding-bottom: 16px;
+  }
+  .header-grid .left { display: flex; align-items: baseline; gap: 16px; }
+  .header-grid .stamp {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-style: italic; font-weight: 400; font-size: 18px; color: var(--paper);
+  }
+  .header-grid .meta {
+    font-size: 11px; color: var(--stone); letter-spacing: 0.16em;
+    font-feature-settings: "smcp","tnum";
+  }
+  .header-grid .right {
+    text-align: right; font-style: italic; font-size: 12px; color: var(--stone);
+    letter-spacing: 0.12em;
+  }
+
+  /* Title block — asymmetric, big */
+  .title-block {
+    display: grid; grid-template-columns: 1fr 1fr; align-items: end;
+    gap: 56px; padding: 80px 0 56px;
+  }
+  h1.title {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-weight: 400; font-size: 88px; line-height: 0.92;
+    letter-spacing: -0.028em; color: var(--paper);
+  }
+  h1.title em {
+    font-style: italic; color: var(--ochre);
+    font-variation-settings: "opsz" 72;
+  }
+  .title-block .lede {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-size: 20px; line-height: 1.4; color: var(--paper-soft);
+    font-style: italic;
+    padding-left: 32px; border-left: 1px solid var(--ochre);
+  }
+
+  /* Tabs — designer "specimen page selector" */
+  .tabs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border-top: 1px solid var(--paper); border-bottom: 1px solid var(--paper);
+  }
+  .tab {
+    appearance: none; background: var(--bg-warm); border: none;
+    padding: 22px 28px; cursor: pointer;
+    font-family: 'Source Serif 4', serif; text-align: left;
+    border-right: 1px solid var(--paper);
+    transition: background 200ms ease;
+    position: relative;
+  }
+  .tab:last-child { border-right: none; }
+  .tab:hover { background: var(--bg-warm-cool); }
+  .tab[aria-selected="true"] {
+    background: var(--paper); color: var(--bg-warm);
+  }
+  .tab .label-num {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-style: italic; font-size: 13px; letter-spacing: 0.12em;
+    color: var(--ochre); display: block; margin-bottom: 6px;
+  }
+  .tab[aria-selected="true"] .label-num { color: var(--ochre-bright); }
+  .tab .label-text {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-size: 28px; font-weight: 400; letter-spacing: -0.012em;
+  }
+
+  .panel { display: none; padding-top: 64px; }
+  .panel[aria-hidden="false"] { display: block; animation: fadeUp 320ms cubic-bezier(0.2,0.8,0.2,1); }
+  @keyframes fadeUp { from {opacity: 0; transform: translateY(8px);} to {opacity:1; transform:translateY(0);} }
+
+  /* ─── COHORT — specimen-style cards as grid ─── */
+  .cohort-lede {
+    margin-bottom: 56px; max-width: 640px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 18;
+    font-style: italic; font-size: 18px; color: var(--paper-soft);
+  }
+
+  .cohort-grid {
+    display: grid; grid-template-columns: 1fr; gap: 0;
+    border-top: 1px solid var(--paper);
+  }
+  .specimen-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 200px 200px 130px;
+    align-items: stretch;
+    border-bottom: 1px solid var(--hairline);
+    cursor: pointer;
+    transition: background 180ms ease;
+    animation: rowIn 360ms ease backwards;
+  }
+  .specimen-row:hover { background: var(--bg-warm-cool); }
+  .specimen-row:nth-child(1) { animation-delay: 40ms; }
+  .specimen-row:nth-child(2) { animation-delay: 80ms; }
+  .specimen-row:nth-child(3) { animation-delay: 120ms; }
+  .specimen-row:nth-child(4) { animation-delay: 160ms; }
+  .specimen-row:nth-child(5) { animation-delay: 200ms; }
+  @keyframes rowIn { from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:translateY(0);} }
+
+  .specimen-row .index {
+    padding: 28px 0 28px 4px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-style: italic; font-size: 14px; color: var(--ochre);
+    letter-spacing: 0.16em; align-self: start;
+    font-feature-settings: "smcp", "tnum";
+  }
+  .specimen-row .name-block {
+    padding: 24px 32px 24px 0;
+    align-self: center;
+  }
+  .specimen-row .name {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-size: 40px; line-height: 1.0; letter-spacing: -0.018em;
+    color: var(--paper);
+  }
+  .specimen-row .desc {
+    margin-top: 8px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14.5px; color: var(--paper-soft);
+    max-width: 38ch;
+  }
+  .specimen-row .metric-cell {
+    padding: 24px 28px;
+    border-left: 1px solid var(--hairline);
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .specimen-row .metric-cell .lbl {
+    font-size: 10px; letter-spacing: 0.18em; color: var(--stone);
+    font-feature-settings: "smcp", "tnum";
+    margin-bottom: 8px;
+  }
+  .specimen-row .metric-cell .v {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-size: 56px; line-height: 1; font-variant-numeric: tabular-nums;
+    color: var(--paper); letter-spacing: -0.03em;
+  }
+  .specimen-row .metric-cell .v .pct { font-size: 22px; color: var(--stone); vertical-align: 22px; margin-left: 2px; }
+  .specimen-row .metric-cell .sub {
+    margin-top: 6px; font-size: 11px; color: var(--stone); font-style: italic;
+  }
+  .specimen-row .metric-cell.warn .v { color: var(--brick); }
+  .specimen-row .metric-cell.warn .sub { color: var(--brick); }
+  .specimen-row .status-cell {
+    padding: 24px 24px;
+    border-left: 1px solid var(--hairline);
+    display: flex; align-items: center; justify-content: flex-end;
+  }
+  .status-pip {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14px; letter-spacing: 0.04em;
+    padding: 6px 14px; border: 1px solid currentColor;
+  }
+  .status-pip.complete { color: var(--moss-deep); }
+  .status-pip.reviewing { color: var(--ochre); }
+  .status-pip.labeling { color: var(--ink-warm); }
+
+  .cohort-footnote {
+    margin-top: 40px; max-width: 540px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14.5px; color: var(--paper-soft);
+  }
+  .cohort-footnote .arr { color: var(--ochre); margin-right: 6px; }
+
+  /* ─── RUN DETAIL — every chart has a HERO number ─── */
+  .run-banner {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border-top: 1px solid var(--paper); border-bottom: 1px solid var(--paper);
+  }
+  .run-banner .left { padding: 32px 32px 32px 0; }
+  .run-banner .label-tag {
+    font-size: 10.5px; letter-spacing: 0.22em; color: var(--ochre);
+    font-feature-settings: "smcp", "tnum";
+  }
+  .run-banner h2 {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-weight: 400; font-size: 88px; line-height: 0.9; letter-spacing: -0.028em;
+    color: var(--paper); margin-top: 10px;
+  }
+  .run-banner h2 em {
+    font-style: italic; color: var(--ochre);
+    font-variation-settings: "opsz" 144;
+  }
+  .run-banner .picker {
+    margin-top: 18px;
+    appearance: none; background: transparent; border: 1px solid var(--paper);
+    padding: 8px 16px; font-family: inherit; font-size: 12px;
+    color: var(--paper); cursor: pointer; letter-spacing: 0.04em;
+  }
+  .run-banner .picker:hover { background: var(--paper); color: var(--bg-warm); }
+  .run-banner .right {
+    padding: 32px 0 32px 32px; border-left: 1px solid var(--paper);
+    display: flex; flex-direction: column; justify-content: center; gap: 18px;
+  }
+  .stat-line {
+    display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 18px;
+    border-bottom: 1px solid var(--hairline); padding-bottom: 8px;
+  }
+  .stat-line:last-child { border-bottom: none; }
+  .stat-line .lbl { font-size: 11px; letter-spacing: 0.18em; color: var(--stone); font-feature-settings: "smcp", "tnum"; }
+  .stat-line .v {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-size: 32px; font-variant-numeric: tabular-nums;
+    color: var(--paper); letter-spacing: -0.02em;
+  }
+  .stat-line .v .small { font-size: 14px; color: var(--stone); margin-left: 4px; }
+
+  /* Section spec — block letter header + hairline */
+  .spec-section { margin-top: 88px; }
+  .spec-section .hdr {
+    display: grid; grid-template-columns: auto 1fr; gap: 32px; align-items: baseline;
+    border-top: 1px solid var(--paper); padding-top: 18px; margin-bottom: 32px;
+  }
+  .spec-section .hdr .num {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-style: italic; font-weight: 400; font-size: 56px;
+    color: var(--ochre); line-height: 0.85; letter-spacing: -0.02em;
+  }
+  .spec-section .hdr .title {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-size: 44px; font-weight: 400; line-height: 1.0; letter-spacing: -0.018em;
+    color: var(--paper);
+  }
+  .spec-section .hdr .strap {
+    grid-column: 2; margin-top: 6px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 16px; color: var(--paper-soft); max-width: 60ch;
+  }
+
+  /* Histogram — hero number to the side */
+  .hist-block {
+    display: grid; grid-template-columns: 320px 1fr; gap: 56px; align-items: end;
+  }
+  .hist-block .hero {
+    padding-bottom: 8px;
+  }
+  .hist-block .hero .label {
+    font-size: 10.5px; letter-spacing: 0.22em; color: var(--ochre);
+    font-feature-settings: "smcp", "tnum";
+  }
+  .hist-block .hero .big {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-size: 200px; line-height: 0.82;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.05em;
+    color: var(--paper); margin-top: 4px;
+  }
+  .hist-block .hero .big em { font-style: italic; color: var(--ochre); font-variation-settings: "opsz" 144; }
+  .hist-block .hero .caption {
+    margin-top: 14px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 15px; color: var(--paper-soft);
+    max-width: 28ch;
+  }
+
+  .histogram { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; align-items: end; height: 220px; }
+  .hist-stack { display: flex; flex-direction: column; transform-origin: bottom; animation: barIn 600ms cubic-bezier(0.2,0.8,0.2,1) backwards; }
+  .hist-bin:nth-child(1) .hist-stack {animation-delay:0ms}
+  .hist-bin:nth-child(2) .hist-stack {animation-delay:30ms}
+  .hist-bin:nth-child(3) .hist-stack {animation-delay:60ms}
+  .hist-bin:nth-child(4) .hist-stack {animation-delay:90ms}
+  .hist-bin:nth-child(5) .hist-stack {animation-delay:120ms}
+  .hist-bin:nth-child(6) .hist-stack {animation-delay:150ms}
+  .hist-bin:nth-child(7) .hist-stack {animation-delay:180ms}
+  .hist-bin:nth-child(8) .hist-stack {animation-delay:210ms}
+  .hist-bin:nth-child(9) .hist-stack {animation-delay:240ms}
+  .hist-bin:nth-child(10) .hist-stack {animation-delay:270ms}
+  @keyframes barIn { from {transform: scaleY(0); opacity: 0;} to {transform: scaleY(1); opacity: 1;} }
+  .hist-no  { background: var(--brick); }
+  .hist-yes { background: var(--moss); }
+  .hist-axis-row { grid-column: 2 / 3; margin-top: 12px; display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; border-top: 1px solid var(--paper); padding-top: 8px; }
+  .hist-axis-row span {
+    font-size: 11px; color: var(--stone); text-align: center;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  }
+
+  /* Disagreement — asymmetric */
+  .disagreement {
+    margin-top: 56px;
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr;
+    border-top: 1px solid var(--paper); border-bottom: 1px solid var(--paper);
+  }
+  .disagreement .cell { padding: 32px 32px; border-right: 1px solid var(--hairline); }
+  .disagreement .cell:last-child { border-right: none; }
+  .disagreement .label {
+    font-size: 10.5px; letter-spacing: 0.22em; color: var(--ochre);
+    font-feature-settings: "smcp", "tnum";
+  }
+  .disagreement .big {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-size: 80px; line-height: 0.9;
+    color: var(--paper); font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em;
+    margin-top: 10px;
+  }
+  .disagreement .big .pct { font-size: 28px; color: var(--stone); vertical-align: 28px; margin-left: 4px; }
+  .disagreement .frac {
+    display: block; margin-top: 10px;
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14px; color: var(--paper-soft);
+  }
+  .disagreement .frac .num { font-style: normal; color: var(--paper); }
+  .disagreement .gloss {
+    margin-top: 14px; font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14px; color: var(--paper-soft); max-width: 24ch;
+  }
+
+  /* Assignment bars — bigger numbers, sparser */
+  .specimen-bars { display: grid; grid-template-columns: 260px 1fr 110px; column-gap: 32px; row-gap: 18px; align-items: center; }
+  .specimen-bars .row-name { font-family: 'Newsreader', serif; font-variation-settings: "opsz" 18; font-size: 20px; color: var(--paper); }
+  .specimen-bars .row-name em { color: var(--stone); font-size: 13px; margin-left: 6px; font-style: italic; }
+  .specimen-bars .row-bar { position: relative; height: 24px; background: var(--bg-warm-cool); }
+  .specimen-bars .row-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .specimen-bars .row-bar .fill.moss-dim { background: var(--moss-deep); }
+  .specimen-bars .row-bar .fill.moss-soft { background: rgba(107,132,86,0.5); }
+  @keyframes barFill { from {transform: scaleX(0);} to {transform: scaleX(1);} }
+  .specimen-bars .row-pct {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-size: 32px; color: var(--paper); text-align: right; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .specimen-bars .row-pct .pct { font-size: 13px; color: var(--stone); }
+  .specimen-bars .row-pct sup { margin-left: 6px; font-size: 10px; color: var(--ochre); letter-spacing: 0.04em; font-family: 'Source Serif 4'; font-feature-settings: "smcp","tnum"; }
+
+  /* Position trio — HUGE percentages */
+  .position-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--paper); border-bottom: 1px solid var(--paper); }
+  .pt-card { padding: 36px 32px; border-right: 1px solid var(--hairline); }
+  .pt-card:last-child { border-right: none; }
+  .pt-card .pt-label { font-size: 10.5px; color: var(--ochre); letter-spacing: 0.22em; font-feature-settings: "smcp", "tnum"; }
+  .pt-card .pt-pct {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-size: 120px; line-height: 0.88; color: var(--paper); font-variant-numeric: tabular-nums;
+    letter-spacing: -0.04em; margin-top: 14px;
+  }
+  .pt-card .pt-pct .small { font-size: 36px; color: var(--stone); vertical-align: 32px; margin-left: 2px; }
+  .pt-card .pt-bar { margin-top: 18px; height: 4px; background: var(--bg-warm-cool); position: relative; }
+  .pt-card .pt-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .pt-card .pt-foot { margin-top: 14px; font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14; font-style: italic; font-size: 14px; color: var(--paper-soft); }
+
+  /* Weekly */
+  .weekly-block {
+    display: grid; grid-template-columns: 260px 1fr; gap: 48px; align-items: stretch;
+    border-top: 1px solid var(--paper); border-bottom: 1px solid var(--paper);
+    padding: 36px 0;
+  }
+  .weekly-block .hero { display: flex; flex-direction: column; justify-content: center; }
+  .weekly-block .hero .label { font-size: 10.5px; letter-spacing: 0.22em; color: var(--ochre); font-feature-settings: "smcp", "tnum"; }
+  .weekly-block .hero .trend {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 144;
+    font-size: 64px; line-height: 1.0;
+    color: var(--paper); font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
+    margin-top: 10px;
+  }
+  .weekly-block .hero .trend em { font-style: italic; color: var(--ochre); font-variation-settings: "opsz" 144; }
+  .weekly-block .hero .gloss {
+    margin-top: 12px; font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 14px; color: var(--paper-soft); max-width: 28ch;
+  }
+  .weekly-block .chart svg { display: block; width: 100%; height: 200px; }
+  .weekly-axis { margin-top: 12px; display: grid; grid-template-columns: repeat(8, 1fr); font-size: 11px; color: var(--stone); text-align: center; font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em; }
+  .legend-row { margin-top: 14px; display: flex; gap: 22px; font-size: 11px; color: var(--stone); letter-spacing: 0.12em; font-feature-settings: "smcp","tnum"; }
+  .legend-line { display: inline-block; width: 22px; height: 1.5px; background: var(--moss); margin-right: 8px; vertical-align: middle; }
+  .legend-line.dotted { background: none; border-top: 1.5px dotted var(--ochre-dim); }
+
+  /* Examples */
+  .examples { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--paper); }
+  .example-group .group-label {
+    padding: 18px 0; border-bottom: 1px solid var(--hairline);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .example-group .group-label .ttl {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 72;
+    font-style: italic; font-size: 24px; color: var(--ochre); font-weight: 400; letter-spacing: -0.01em;
+  }
+  .example-group.edge .group-label .ttl { color: var(--brick); }
+  .example-group .group-label .n {
+    font-size: 11px; letter-spacing: 0.18em; color: var(--stone);
+    font-feature-settings: "smcp", "tnum";
+  }
+  .example-group blockquote {
+    display: grid; grid-template-columns: 60px 1fr 220px;
+    column-gap: 24px; padding: 28px 0; border-bottom: 1px solid var(--hairline);
+  }
+  .example-group blockquote .quote {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 18;
+    font-style: italic; font-weight: 400; font-size: 60px;
+    line-height: 0.85; color: var(--ochre); align-self: start; padding-top: 8px;
+  }
+  .example-group.edge blockquote .quote { color: var(--brick); }
+  .example-group blockquote p {
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 18;
+    font-size: 19px; line-height: 1.45; color: var(--paper); padding-top: 18px;
+  }
+  .example-group blockquote p code {
+    font-family: ui-monospace, monospace; font-size: 0.9em;
+    background: var(--bg-warm-cool); padding: 1px 6px;
+  }
+  .example-group blockquote aside {
+    align-self: center; padding: 8px 0; padding-left: 20px;
+    border-left: 1px solid var(--hairline);
+    font-family: 'Newsreader', serif; font-variation-settings: "opsz" 14;
+    font-style: italic; font-size: 13px; color: var(--stone); line-height: 1.6;
+  }
+  .example-group blockquote aside .num { font-style: normal; color: var(--paper); }
+  .example-group blockquote aside.flag { color: var(--brick); }
+  .example-group blockquote aside .row { display: block; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; } }
+  @media (max-width: 900px) {
+    .page { padding: 32px 24px 80px; }
+    .title-block { grid-template-columns: 1fr; gap: 24px; }
+    h1.title { font-size: 56px; }
+    .hist-block { grid-template-columns: 1fr; gap: 24px; }
+    .hist-block .hero .big { font-size: 120px; }
+    .specimen-row { grid-template-columns: 1fr; }
+    .specimen-row .metric-cell, .specimen-row .status-cell { border-left: none; border-top: 1px solid var(--hairline); padding: 16px 0; }
+    .run-banner { grid-template-columns: 1fr; }
+    .run-banner .right { border-left: none; border-top: 1px solid var(--paper); padding: 24px 0; }
+    .position-trio { grid-template-columns: 1fr; }
+    .pt-card { border-right: none; border-bottom: 1px solid var(--hairline); }
+    .pt-card .pt-pct { font-size: 80px; }
+    .weekly-block { grid-template-columns: 1fr; gap: 24px; }
+    .example-group blockquote { grid-template-columns: 1fr; }
+    .example-group blockquote .quote { font-size: 40px; }
+    .example-group blockquote aside { border-left: none; padding-left: 0; margin-top: 12px; }
+    .specimen-bars { grid-template-columns: 1fr; gap: 6px; }
+  }
+</style>
+</head>
+<body>
+  <div class="progress-strip" aria-hidden="true"></div>
+  <main class="page">
+    <header class="header-grid">
+      <div class="left">
+        <span class="stamp">Chatsight</span>
+        <span class="meta">FINDINGS · VOL I</span>
+      </div>
+      <div class="right">A specimen of single-label runs &nbsp;·&nbsp; <span class="smcp" style="font-style:normal;">MAY 10 2026</span></div>
+    </header>
+
+    <div class="title-block">
+      <h1 class="title">Single-label<br><em>findings</em>, at a glance.</h1>
+      <p class="lede">How decisively the model marks each concept. Where it disagrees with you. And what the data says when you look at it sideways.</p>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="cohort">
+        <span class="label-num">I · OVERVIEW</span>
+        <span class="label-text">Cohort &mdash; all runs</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="run">
+        <span class="label-num">II · IN DETAIL</span>
+        <span class="label-text">A single run, expanded</span>
+      </button>
+    </nav>
+
+    <section id="panel-cohort" class="panel" role="tabpanel" aria-hidden="false">
+      <p class="cohort-lede">Five single-label runs across the term, with their yes-rates and human–AI disagreement on the overlap set. Click a row to read it in detail.</p>
+
+      <div class="cohort-grid">
+        <div class="specimen-row">
+          <div class="index">No. I</div>
+          <div class="name-block">
+            <div class="name">Help-seeking</div>
+            <div class="desc">Asking the tutor for an explanation, not just an answer.</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">YES RATE</div>
+            <div class="v">62<span class="pct">%</span></div>
+            <div class="sub">149 of 240 decided</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">DISAGREEMENT</div>
+            <div class="v">8<span class="pct">%</span></div>
+            <div class="sub">12 of 150 overlap</div>
+          </div>
+          <div class="status-cell"><span class="status-pip reviewing">reviewing</span></div>
+        </div>
+        <div class="specimen-row">
+          <div class="index">No. II</div>
+          <div class="name-block">
+            <div class="name">Confusion</div>
+            <div class="desc">Student signals they are stuck or lost.</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">YES RATE</div>
+            <div class="v">34<span class="pct">%</span></div>
+            <div class="sub">61 of 180 decided</div>
+          </div>
+          <div class="metric-cell warn">
+            <div class="lbl">DISAGREEMENT</div>
+            <div class="v">21<span class="pct">%</span></div>
+            <div class="sub">above threshold</div>
+          </div>
+          <div class="status-cell"><span class="status-pip labeling">labeling</span></div>
+        </div>
+        <div class="specimen-row">
+          <div class="index">No. III</div>
+          <div class="name-block">
+            <div class="name">Off-topic</div>
+            <div class="desc">Chat unrelated to the course.</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">YES RATE</div>
+            <div class="v">18<span class="pct">%</span></div>
+            <div class="sub">40 of 220 decided</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">DISAGREEMENT</div>
+            <div class="v">4<span class="pct">%</span></div>
+            <div class="sub">crisp boundary</div>
+          </div>
+          <div class="status-cell"><span class="status-pip complete">complete</span></div>
+        </div>
+        <div class="specimen-row">
+          <div class="index">No. IV</div>
+          <div class="name-block">
+            <div class="name">Frustration</div>
+            <div class="desc">Emotional signal &mdash; annoyance or giving up.</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">YES RATE</div>
+            <div class="v">47<span class="pct">%</span></div>
+            <div class="sub">45 of 95 decided</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">DISAGREEMENT</div>
+            <div class="v">15<span class="pct">%</span></div>
+            <div class="sub">at threshold</div>
+          </div>
+          <div class="status-cell"><span class="status-pip labeling">labeling</span></div>
+        </div>
+        <div class="specimen-row">
+          <div class="index">No. V</div>
+          <div class="name-block">
+            <div class="name">Requests-explanation</div>
+            <div class="desc">Asks the tutor to walk through reasoning.</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">YES RATE</div>
+            <div class="v">71<span class="pct">%</span></div>
+            <div class="sub">103 of 145 decided</div>
+          </div>
+          <div class="metric-cell">
+            <div class="lbl">DISAGREEMENT</div>
+            <div class="v">6<span class="pct">%</span></div>
+            <div class="sub">crisp boundary</div>
+          </div>
+          <div class="status-cell"><span class="status-pip reviewing">reviewing</span></div>
+        </div>
+      </div>
+
+      <p class="cohort-footnote"><span class="arr">→</span> Disagreement above 15% is shown in brick &mdash; usually a sign the label definition is drifting and may need refinement.</p>
+    </section>
+
+    <section id="panel-run" class="panel" role="tabpanel" aria-hidden="true">
+      <header class="run-banner">
+        <div class="left">
+          <div class="label-tag">RUN No. I &middot; IN DETAIL</div>
+          <h2>Help-<em>seeking</em></h2>
+          <button class="picker">↻ Change run</button>
+        </div>
+        <div class="right">
+          <div class="stat-line"><span class="lbl">WALKED</span><span class="v num">240<span class="small">/ 600</span></span></div>
+          <div class="stat-line"><span class="lbl">YES RATE</span><span class="v num">62<span class="small">%</span></span></div>
+          <div class="stat-line"><span class="lbl">OVERLAP DISAGREED</span><span class="v num">12<span class="small">/ 150</span></span></div>
+        </div>
+      </header>
+
+      <section class="spec-section">
+        <div class="hdr">
+          <div class="num">I.</div>
+          <div>
+            <div class="title">Of the model's conviction</div>
+            <div class="strap">A histogram of AI confidence across this run, alongside the size and shape of the human–machine disagreement.</div>
+          </div>
+        </div>
+
+        <div class="hist-block">
+          <div class="hero">
+            <div class="label">SHAPE</div>
+            <div class="big"><em>Bimodal.</em></div>
+            <div class="caption">Mass concentrated near 0 and 1 &mdash; the model is decisive on this concept.</div>
+          </div>
+          <div>
+            <div class="histogram">
+              <div class="hist-bin"><div class="hist-stack" style="height:78%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:68%"><div class="hist-no" style="height:82%"></div><div class="hist-yes" style="height:18%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:51%"><div class="hist-no" style="height:81%"></div><div class="hist-yes" style="height:19%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:29%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:20%"><div class="hist-no" style="height:50%"></div><div class="hist-yes" style="height:50%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:22%"><div class="hist-no" style="height:44%"></div><div class="hist-yes" style="height:56%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:34%"><div class="hist-no" style="height:29%"></div><div class="hist-yes" style="height:71%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:54%"><div class="hist-no" style="height:18%"></div><div class="hist-yes" style="height:82%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:85%"><div class="hist-no" style="height:9%"></div><div class="hist-yes" style="height:91%"></div></div></div>
+              <div class="hist-bin"><div class="hist-stack" style="height:100%"><div class="hist-no" style="height:2%"></div><div class="hist-yes" style="height:98%"></div></div></div>
+            </div>
+            <div class="hist-axis-row">
+              <span>.0</span><span>.1</span><span>.2</span><span>.3</span><span>.4</span><span>.5</span><span>.6</span><span>.7</span><span>.8</span><span>.9</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="disagreement">
+          <div class="cell">
+            <div class="label">DISAGREEMENT</div>
+            <div class="big">8<span class="pct">%</span></div>
+            <div class="frac"><span class="num">12</span> of <span class="num">150</span> overlap</div>
+            <div class="gloss">Below the 15% drift threshold &mdash; the label is holding up.</div>
+          </div>
+          <div class="cell">
+            <div class="label">AI YES · HUMAN NO</div>
+            <div class="big">5</div>
+            <div class="gloss">Model over-applies on edge cases.</div>
+          </div>
+          <div class="cell">
+            <div class="label">AI NO · HUMAN YES</div>
+            <div class="big">7</div>
+            <div class="gloss">Model misses softer help-seeking.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="spec-section">
+        <div class="hdr">
+          <div class="num">II.</div>
+          <div>
+            <div class="title">What the data says</div>
+            <div class="strap">Yes-rate broken out by assignment, by conversation position, and across weeks &mdash; followed by sampled messages to gut-check the label.</div>
+          </div>
+        </div>
+
+        <h4 style="font-family:'Newsreader',serif;font-variation-settings:'opsz' 18;font-style:italic;font-weight:400;font-size:24px;color:var(--paper);margin-bottom:28px;letter-spacing:-0.012em;">By assignment <span style="color:var(--stone);">— sorted by yes-rate</span></h4>
+        <div class="specimen-bars">
+          <div class="row-name">Lab&nbsp;1 <em>— Probability</em></div><div class="row-bar"><div class="fill" style="width:78%;animation-delay:0ms;"></div></div><div class="row-pct">78<span class="pct">%</span><sup>n42</sup></div>
+          <div class="row-name">Lab&nbsp;2 <em>— DataFrames</em></div><div class="row-bar"><div class="fill" style="width:71%;animation-delay:40ms;"></div></div><div class="row-pct">71<span class="pct">%</span><sup>n38</sup></div>
+          <div class="row-name">Final Project</div><div class="row-bar"><div class="fill" style="width:64%;animation-delay:80ms;"></div></div><div class="row-pct">64<span class="pct">%</span><sup>n28</sup></div>
+          <div class="row-name">Lab&nbsp;5 <em>— Hypothesis</em></div><div class="row-bar"><div class="fill" style="width:58%;animation-delay:120ms;"></div></div><div class="row-pct">58<span class="pct">%</span><sup>n31</sup></div>
+          <div class="row-name">Midterm</div><div class="row-bar"><div class="fill" style="width:52%;animation-delay:160ms;"></div></div><div class="row-pct">52<span class="pct">%</span><sup>n24</sup></div>
+          <div class="row-name">Lab&nbsp;3 <em>— Visualization</em></div><div class="row-bar"><div class="fill moss-dim" style="width:49%;animation-delay:200ms;"></div></div><div class="row-pct">49<span class="pct">%</span><sup>n27</sup></div>
+          <div class="row-name">Lab&nbsp;4 <em>— Regression</em></div><div class="row-bar"><div class="fill moss-dim" style="width:41%;animation-delay:240ms;"></div></div><div class="row-pct">41<span class="pct">%</span><sup>n22</sup></div>
+          <div class="row-name">Concept Check</div><div class="row-bar"><div class="fill moss-soft" style="width:23%;animation-delay:280ms;"></div></div><div class="row-pct">23<span class="pct">%</span><sup>n28</sup></div>
+        </div>
+
+        <h4 style="font-family:'Newsreader',serif;font-variation-settings:'opsz' 18;font-style:italic;font-weight:400;font-size:24px;color:var(--paper);margin:80px 0 28px;letter-spacing:-0.012em;">By position <span style="color:var(--stone);">— where in the conversation</span></h4>
+        <div class="position-trio">
+          <div class="pt-card">
+            <div class="pt-label">EARLY · MSGS 0–2</div>
+            <div class="pt-pct">71<span class="small">%</span></div>
+            <div class="pt-bar"><div class="fill" style="width:71%;"></div></div>
+            <div class="pt-foot">n = 108</div>
+          </div>
+          <div class="pt-card">
+            <div class="pt-label">MID · MSGS 3–6</div>
+            <div class="pt-pct">64<span class="small">%</span></div>
+            <div class="pt-bar"><div class="fill" style="width:64%;animation-delay:60ms;"></div></div>
+            <div class="pt-foot">n = 92</div>
+          </div>
+          <div class="pt-card">
+            <div class="pt-label">LATE · MSGS 7+</div>
+            <div class="pt-pct">48<span class="small">%</span></div>
+            <div class="pt-bar"><div class="fill" style="width:48%;animation-delay:120ms;"></div></div>
+            <div class="pt-foot">n = 40</div>
+          </div>
+        </div>
+
+        <h4 style="font-family:'Newsreader',serif;font-variation-settings:'opsz' 18;font-style:italic;font-weight:400;font-size:24px;color:var(--paper);margin:80px 0 28px;letter-spacing:-0.012em;">Over time <span style="color:var(--stone);">— eight weeks</span></h4>
+        <div class="weekly-block">
+          <div class="hero">
+            <div class="label">TREND</div>
+            <div class="trend"><em>Steady.</em></div>
+            <div class="gloss">Yes-rate hovered between 55–71% through midterm season; a small dip in W39.</div>
+          </div>
+          <div class="chart">
+            <svg viewBox="0 0 800 200" preserveAspectRatio="none">
+              <line x1="0" y1="100" x2="800" y2="100" stroke="#cdc09b" stroke-width="1" stroke-dasharray="2 4"/>
+              <polyline fill="none" stroke="#6b8456" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="50,76 157,90 264,68 371,75 478,84 585,94 692,86 760,80"/>
+              <polyline fill="none" stroke="#8c6d1f" stroke-width="1.4" stroke-dasharray="3 4" stroke-linejoin="round" stroke-linecap="round" points="50,138 157,124 264,114 371,98 478,90 585,94 692,100 760,106"/>
+              <circle cx="50" cy="76" r="3.5" fill="#6b8456"/><circle cx="157" cy="90" r="3.5" fill="#6b8456"/><circle cx="264" cy="68" r="3.5" fill="#6b8456"/><circle cx="371" cy="75" r="3.5" fill="#6b8456"/><circle cx="478" cy="84" r="3.5" fill="#6b8456"/><circle cx="585" cy="94" r="3.5" fill="#6b8456"/><circle cx="692" cy="86" r="3.5" fill="#6b8456"/><circle cx="760" cy="80" r="3.5" fill="#6b8456"/>
+            </svg>
+            <div class="weekly-axis"><span>W34</span><span>W35</span><span>W36</span><span>W37</span><span>W38</span><span>W39</span><span>W40</span><span>W41</span></div>
+            <div class="legend-row">
+              <span><span class="legend-line"></span>YES RATE</span>
+              <span><span class="legend-line dotted"></span>N PER WEEK</span>
+            </div>
+          </div>
+        </div>
+
+        <h4 style="font-family:'Newsreader',serif;font-variation-settings:'opsz' 18;font-style:italic;font-weight:400;font-size:24px;color:var(--paper);margin:80px 0 0;letter-spacing:-0.012em;">A sampling <span style="color:var(--stone);">— gut-check the label</span></h4>
+
+        <div class="examples">
+          <div class="example-group">
+            <div class="group-label"><span class="ttl">Yes &mdash; sampled</span><span class="n">N = 3 OF 149</span></div>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>I'm not sure what bool_array does &mdash; can you explain again?</p>
+              <aside><span class="row"><span class="num">Lab 2</span> · mid</span><span class="row">ai 0.91 · human yes</span></aside>
+            </blockquote>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>Why does <code>.groupby()</code> return a different result for sum vs mean here?</p>
+              <aside><span class="row"><span class="num">Lab 5</span> · mid</span><span class="row">ai 0.84 · human yes</span></aside>
+            </blockquote>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>I keep getting a KeyError on this DataFrame &mdash; what am I doing wrong?</p>
+              <aside><span class="row"><span class="num">Lab 2</span> · early</span><span class="row">ai 0.78 · human yes</span></aside>
+            </blockquote>
+          </div>
+
+          <div class="example-group">
+            <div class="group-label"><span class="ttl">No &mdash; sampled</span><span class="n">N = 3 OF 91</span></div>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>Thanks, that worked!</p>
+              <aside><span class="row"><span class="num">Final</span> · late</span><span class="row">ai 0.02 · human no</span></aside>
+            </blockquote>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>Make this plot blue.</p>
+              <aside><span class="row"><span class="num">Lab 3</span> · early</span><span class="row">ai 0.08 · human no</span></aside>
+            </blockquote>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>Can you write the code for me?</p>
+              <aside><span class="row"><span class="num">Concept</span> · early</span><span class="row">ai 0.12 · human no</span></aside>
+            </blockquote>
+          </div>
+
+          <div class="example-group edge">
+            <div class="group-label"><span class="ttl">Edge &mdash; flagged for review</span><span class="n">N = 2 OF 12</span></div>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>What does it mean when something is &lsquo;closed under&rsquo; an operation?</p>
+              <aside class="flag"><span class="row"><span class="num">Lab 1</span> · mid</span><span class="row"><span class="num">ai 0.51 no</span> / <span class="num">human yes</span></span><span class="row">— low confidence</span></aside>
+            </blockquote>
+            <blockquote>
+              <div class="quote">&ldquo;</div>
+              <p>Should I use <code>.loc</code> or <code>.iloc</code> here?</p>
+              <aside class="flag"><span class="row"><span class="num">Lab 2</span> · early</span><span class="row"><span class="num">ai 0.42 no</span> / <span class="num">human yes</span></span><span class="row">— human overruled</span></aside>
+            </blockquote>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  const panels = { cohort: document.getElementById('panel-cohort'), run: document.getElementById('panel-run') };
+  tabs.forEach((t) => t.addEventListener('click', () => {
+    tabs.forEach((x) => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    Object.entries(panels).forEach(([k, p]) => p.setAttribute('aria-hidden', k === t.dataset.tab ? 'false' : 'true'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+  document.querySelectorAll('.specimen-row').forEach((row) => row.addEventListener('click', () => document.querySelector('.tab[data-tab="run"]').click()));
+</script>
+</body>
+</html>

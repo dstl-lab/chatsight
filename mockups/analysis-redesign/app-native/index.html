@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>/analysis · app-native mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,ital,wght@8..60,0,400;8..60,0,500;8..60,0,600;8..60,1,400&display=swap" rel="stylesheet" />
+<style>
+  /* ──────── Chatsight tokens (copied from src/index.css) ────────
+     This mockup uses the same CSS variables the live app uses, so it
+     reads as a real route inside the tool — not a printed artifact. */
+  :root {
+    /* light / warm-flow (single-label mode) */
+    --app-paper:        #1a1408;
+    --app-on-canvas:    #1a1408;
+    --app-on-surface:   #404040;
+    --app-tertiary:     #525252;
+    --app-muted:        #6b6457;
+    --app-faint:        #a3a3a3;
+    --app-ochre:        #b87a0e;
+    --app-ochre-dim:    #8c6d1f;
+    --app-moss:         #6b8456;
+    --app-moss-dim:     #4d5c3f;
+    --app-brick:        #a14c34;
+    --app-brick-dim:    #7a3a26;
+    --app-stone:        #6b6457;
+    --app-bg-warm:      #f6efdb;
+    --app-canvas:       #f6efdb;       /* warm-flow swaps canvas */
+    --app-surface:      #f0e8cf;
+    --app-elevated:     #ebe2c0;
+    --app-edge-warm:    #e7dfc7;
+    --app-edge:         #d9c89b;
+    --app-edge-strong:  #cdc09b;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--app-canvas); color: var(--app-on-canvas); height: 100%; }
+  body {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 14px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;                  /* viewport-locked */
+  }
+  ::selection { background: rgba(184, 122, 14, 0.22); }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .smcp { font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em; }
+
+  /* ──────── App shell ──────── */
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+  }
+
+  /* Top bar — mirrors Navigation.tsx vocabulary */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--app-edge-warm);
+    background: var(--app-canvas);
+  }
+  .topbar .lhs { display: flex; align-items: center; gap: 32px; }
+  .topbar .brand {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 18px; tracking: -0.01em;
+    color: var(--app-paper);
+  }
+  .topbar .brand .dot {
+    display: inline-block; width: 6px; height: 6px;
+    background: var(--app-ochre); border-radius: 50%;
+    margin-right: 10px; vertical-align: 2px;
+  }
+  .topbar nav { display: flex; gap: 4px; }
+  .topbar nav a {
+    appearance: none; background: none; border: 0;
+    font-family: inherit; font-size: 13px; color: var(--app-muted);
+    padding: 6px 10px; border-radius: 2px;
+    text-decoration: none; cursor: pointer;
+    transition: color 160ms ease, background 160ms ease;
+  }
+  .topbar nav a:hover { color: var(--app-paper); background: var(--app-surface); }
+  .topbar nav a.active {
+    color: var(--app-paper); background: var(--app-surface);
+  }
+  .topbar .rhs { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--app-muted); }
+  .mode-toggle {
+    display: inline-flex; align-items: center; gap: 0;
+    border: 1px solid var(--app-edge); border-radius: 2px; padding: 1px; background: var(--app-canvas);
+  }
+  .mode-toggle button {
+    appearance: none; background: transparent; border: none;
+    font-family: inherit; font-size: 11.5px; color: var(--app-muted);
+    padding: 4px 10px; cursor: pointer; border-radius: 1px;
+    letter-spacing: 0.04em;
+    font-feature-settings: "smcp", "tnum";
+  }
+  .mode-toggle button.active { background: var(--app-paper); color: var(--app-canvas); }
+
+  /* ──────── Main two-column layout ──────── */
+  .main { display: grid; grid-template-columns: 304px 1fr; min-height: 0; }
+
+  /* ─── Left rail — cohort ─── */
+  .rail {
+    border-right: 1px solid var(--app-edge-warm);
+    background: var(--app-surface);
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .rail-header {
+    padding: 14px 18px 12px; display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid var(--app-edge-warm);
+  }
+  .rail-header h2 {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 14px; color: var(--app-paper); letter-spacing: -0.005em;
+  }
+  .rail-header .count {
+    font-size: 10.5px; color: var(--app-muted);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.1em;
+  }
+
+  .rail-filter {
+    padding: 8px 12px; border-bottom: 1px solid var(--app-edge-warm);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .rail-filter input {
+    appearance: none; flex: 1; min-width: 0;
+    background: var(--app-canvas); border: 1px solid var(--app-edge-warm);
+    border-radius: 2px; padding: 5px 8px;
+    font-family: inherit; font-size: 12px; color: var(--app-paper);
+  }
+  .rail-filter input::placeholder { color: var(--app-faint); }
+  .rail-filter input:focus { outline: none; border-color: var(--app-ochre-dim); }
+
+  .rail-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .rail-entry {
+    position: relative; padding: 12px 18px 12px 18px; cursor: pointer;
+    border-bottom: 1px solid var(--app-edge-warm);
+    transition: background 140ms ease;
+    animation: rowIn 320ms ease backwards;
+  }
+  .rail-entry:hover { background: var(--app-elevated); }
+  .rail-entry.selected { background: var(--app-elevated); }
+  .rail-entry.selected::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: var(--app-ochre);
+  }
+  .rail-entry:nth-child(1){animation-delay:30ms}
+  .rail-entry:nth-child(2){animation-delay:60ms}
+  .rail-entry:nth-child(3){animation-delay:90ms}
+  .rail-entry:nth-child(4){animation-delay:120ms}
+  .rail-entry:nth-child(5){animation-delay:150ms}
+  @keyframes rowIn { from {opacity:0; transform:translateX(-4px);} to {opacity:1; transform:translateX(0);} }
+
+  .rail-entry .name {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 14.5px; color: var(--app-paper); letter-spacing: -0.005em;
+  }
+  .rail-entry .desc {
+    margin-top: 2px;
+    font-size: 11.5px; color: var(--app-muted); line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+  }
+  .rail-entry .meta {
+    margin-top: 8px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px; color: var(--app-muted);
+  }
+  .rail-entry .meta .pill {
+    display: inline-flex; align-items: baseline; gap: 4px;
+    font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+  }
+  .rail-entry .meta .pill .v { color: var(--app-paper); font-size: 12px; font-weight: 500; }
+  .rail-entry .meta .pill .lbl { font-size: 10px; color: var(--app-muted); font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em; }
+  .rail-entry .meta .warn { color: var(--app-brick); }
+  .rail-entry .meta .warn .v { color: var(--app-brick); }
+
+  .rail-entry .status-row {
+    margin-top: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; color: var(--app-muted);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em;
+  }
+  .rail-entry .status-row .status { display: inline-flex; align-items: center; gap: 6px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .status-dot.complete  { background: var(--app-moss); }
+  .status-dot.labeling  { background: var(--app-ochre); }
+  .status-dot.reviewing { background: transparent; border: 1px solid var(--app-ochre); }
+
+  /* tiny weekly sparkline per cohort entry */
+  .rail-spark {
+    width: 88px; height: 18px; display: block; flex: none;
+  }
+  .rail-spark .line { fill: none; stroke: var(--app-moss); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+  .rail-entry .status-row .trend {
+    font-size: 9.5px; color: var(--app-muted); letter-spacing: 0.08em;
+    margin-right: 6px;
+  }
+
+  /* ─── Right pane — run detail ─── */
+  .pane { display: flex; flex-direction: column; min-height: 0; }
+
+  .pane-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px 14px;
+    border-bottom: 1px solid var(--app-edge-warm);
+  }
+  .pane-header .lhs { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+  .pane-header .eyebrow {
+    font-size: 10.5px; color: var(--app-ochre); font-feature-settings: "smcp", "tnum"; letter-spacing: 0.12em;
+  }
+  .pane-header .name {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 22px; color: var(--app-paper); letter-spacing: -0.012em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pane-header .readout {
+    font-size: 12px; color: var(--app-muted); font-style: italic;
+    margin-left: 4px;
+  }
+  .pane-header .readout .v { font-style: normal; color: var(--app-paper); font-variant-numeric: tabular-nums; }
+  .pane-header .readout .sep { color: var(--app-ochre-dim); margin: 0 8px; }
+  .pane-header .rhs { display: flex; align-items: center; gap: 10px; }
+  .pane-header button.linklike {
+    appearance: none; background: transparent; border: 0;
+    font-family: inherit; font-size: 12px; color: var(--app-muted); cursor: pointer;
+    padding: 4px 6px; border-radius: 2px;
+  }
+  .pane-header button.linklike:hover { color: var(--app-paper); background: var(--app-surface); }
+
+  /* Sub-tab strip — like a segmented control */
+  .subtabs {
+    display: flex; align-items: stretch;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--app-edge-warm);
+    gap: 0;
+  }
+  .subtab {
+    appearance: none; background: transparent; border: 0;
+    font-family: inherit; font-size: 13px; color: var(--app-muted);
+    padding: 12px 16px; cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 160ms ease, border-color 160ms ease;
+    display: inline-flex; align-items: baseline; gap: 8px;
+  }
+  .subtab:hover { color: var(--app-paper); }
+  .subtab[aria-selected="true"] {
+    color: var(--app-paper); border-bottom-color: var(--app-ochre);
+  }
+  .subtab .count {
+    font-size: 10.5px; color: var(--app-muted); font-variant-numeric: tabular-nums;
+    background: var(--app-surface); padding: 1px 6px; border-radius: 2px;
+  }
+
+  /* Pane body — health view default */
+  .pane-body {
+    flex: 1; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .panel { display: none; flex: 1; min-height: 0; }
+  .panel[aria-hidden="false"] { display: flex; flex-direction: column; animation: fadeIn 220ms ease; }
+  @keyframes fadeIn { from {opacity:0; transform: translateY(4px);} to {opacity:1; transform:translateY(0);} }
+
+  /* HEALTH view — main histogram + right sidebar (coverage, agreement) + disagreement strip below */
+  .health {
+    padding: 16px 24px 14px;
+    display: grid;
+    grid-template-columns: 1fr 252px;
+    grid-template-rows: 1fr auto;
+    gap: 14px;
+    min-height: 0;
+  }
+  .health .histogram-area  { grid-column: 1; grid-row: 1; }
+  .health .health-sidebar  { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .health .disagreement    { grid-column: 1 / -1; grid-row: 2; }
+
+  /* Coverage card */
+  .coverage-card .row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .coverage-card .row .v {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 22px; color: var(--app-paper); font-variant-numeric: tabular-nums;
+    letter-spacing: -0.018em; line-height: 1.0;
+  }
+  .coverage-card .row .v .pct { font-size: 13px; color: var(--app-muted); margin-left: 1px; }
+  .coverage-card .row .frac { font-size: 11px; color: var(--app-muted); font-style: italic; font-variant-numeric: tabular-nums; }
+  .coverage-card .track {
+    position: relative; height: 6px; background: var(--app-edge-warm); border-radius: 1px; overflow: hidden;
+  }
+  .coverage-card .track .fill {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    background: var(--app-ochre);
+    animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards;
+    transform-origin: left;
+  }
+  .coverage-card .legend-row {
+    margin-top: 8px; display: flex; gap: 12px; align-items: baseline;
+    font-size: 10.5px; color: var(--app-muted);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em;
+  }
+  .coverage-card .legend-row .seg {
+    display: inline-flex; align-items: baseline; gap: 5px;
+  }
+  .coverage-card .legend-row .seg .sw { display: inline-block; width: 8px; height: 8px; vertical-align: middle; }
+  .coverage-card .legend-row .seg .sw.cov { background: var(--app-ochre); }
+  .coverage-card .legend-row .seg .sw.unc { background: var(--app-edge-warm); border: 1px solid var(--app-edge); }
+  .coverage-card .legend-row .seg .v { color: var(--app-paper); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  /* Agreement vs confidence card */
+  .agreement-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .agreement-card .bars {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+    align-items: end; flex: 1; min-height: 0;
+  }
+  .agreement-card .bar-col { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; }
+  .agreement-card .bar-fill {
+    width: 100%;
+    background: var(--app-moss);
+    transform-origin: bottom;
+    animation: barIn 600ms cubic-bezier(0.2,0.8,0.2,1) backwards;
+  }
+  .agreement-card .bar-fill.weak { background: var(--app-brick); }
+  .agreement-card .bar-fill.mid  { background: var(--app-ochre); }
+  .agreement-card .bar-val {
+    margin-top: 4px;
+    font-size: 10px; color: var(--app-paper); font-variant-numeric: tabular-nums;
+    text-align: center; font-weight: 500;
+  }
+  .agreement-card .x-axis {
+    margin-top: 6px; padding-top: 4px;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+    border-top: 1px solid var(--app-edge-warm);
+  }
+  .agreement-card .x-axis span {
+    font-size: 9px; color: var(--app-muted); text-align: center;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+  }
+  .agreement-card .gloss {
+    margin-top: 6px; font-size: 10.5px; color: var(--app-muted); font-style: italic; line-height: 1.35;
+  }
+  .health .chart-card {
+    background: var(--app-canvas);
+    border: 1px solid var(--app-edge-warm);
+    border-radius: 2px;
+    padding: 18px 22px 16px;
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .chart-card .card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .chart-card .card-title {
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 14px; color: var(--app-paper); letter-spacing: -0.005em;
+  }
+  .chart-card .card-sub {
+    font-size: 11.5px; color: var(--app-muted); font-style: italic;
+  }
+  .chart-card .legend {
+    display: inline-flex; gap: 14px; font-size: 10.5px; color: var(--app-muted);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em;
+  }
+  .chart-card .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .chart-card .legend .swatch { display: inline-block; width: 9px; height: 9px; }
+  .chart-card .legend .swatch.moss  { background: var(--app-moss); }
+  .chart-card .legend .swatch.brick { background: var(--app-brick); }
+
+  .histogram-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .histogram {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: repeat(10, 1fr);
+    gap: 8px; align-items: end;
+  }
+  .hist-stack { display: flex; flex-direction: column; transform-origin: bottom; animation: barIn 600ms cubic-bezier(0.2,0.8,0.2,1) backwards; }
+  .hist-bin:nth-child(1) .hist-stack {animation-delay:0ms}
+  .hist-bin:nth-child(2) .hist-stack {animation-delay:30ms}
+  .hist-bin:nth-child(3) .hist-stack {animation-delay:60ms}
+  .hist-bin:nth-child(4) .hist-stack {animation-delay:90ms}
+  .hist-bin:nth-child(5) .hist-stack {animation-delay:120ms}
+  .hist-bin:nth-child(6) .hist-stack {animation-delay:150ms}
+  .hist-bin:nth-child(7) .hist-stack {animation-delay:180ms}
+  .hist-bin:nth-child(8) .hist-stack {animation-delay:210ms}
+  .hist-bin:nth-child(9) .hist-stack {animation-delay:240ms}
+  .hist-bin:nth-child(10) .hist-stack {animation-delay:270ms}
+  @keyframes barIn { from {transform: scaleY(0); opacity: 0;} to {transform: scaleY(1); opacity: 1;} }
+  .hist-no  { background: var(--app-brick); }
+  .hist-yes { background: var(--app-moss); }
+
+  .hist-axis {
+    margin-top: 8px; padding-top: 6px;
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px;
+    border-top: 1px solid var(--app-edge-warm);
+  }
+  .hist-axis span {
+    font-size: 10px; color: var(--app-muted); text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .hist-caption {
+    margin-top: 10px; font-size: 11.5px; color: var(--app-muted);
+    display: flex; justify-content: space-between; align-items: baseline; font-style: italic;
+  }
+
+  /* Disagreement strip — three cells, app-style */
+  .disagreement {
+    background: var(--app-canvas);
+    border: 1px solid var(--app-edge-warm);
+    border-radius: 2px;
+    display: grid; grid-template-columns: 1.3fr 1fr 1fr;
+  }
+  .dis-cell { padding: 14px 18px; border-right: 1px solid var(--app-edge-warm); }
+  .dis-cell:last-child { border-right: none; }
+  .dis-cell .label {
+    font-size: 10px; color: var(--app-ochre);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.12em;
+  }
+  .dis-cell .big {
+    margin-top: 4px;
+    font-family: 'Source Serif 4', serif; font-weight: 500;
+    font-size: 28px; line-height: 1.0;
+    color: var(--app-paper); font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .dis-cell .big .pct { font-size: 14px; color: var(--app-muted); margin-left: 1px; }
+  .dis-cell .big .frac { font-size: 11px; color: var(--app-muted); font-weight: 400; font-style: italic; margin-left: 6px; vertical-align: 4px; }
+  .dis-cell .gloss { margin-top: 6px; font-size: 11.5px; color: var(--app-muted); font-style: italic; line-height: 1.35; }
+
+  /* FINDINGS view */
+  .findings {
+    padding: 18px 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr auto;
+    gap: 14px;
+    min-height: 0;
+  }
+  .findings .chart-card.span-2 { grid-column: 1 / -1; }
+  .findings .compact-bars { font-size: 12px; max-height: 100%; overflow: hidden; }
+  .compact-bars .row { display: grid; grid-template-columns: 1fr 110px 44px; column-gap: 10px; align-items: center; padding: 4px 0; }
+  .compact-bars .row .name { color: var(--app-paper); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .compact-bars .row .name em { color: var(--app-muted); font-size: 11px; margin-left: 4px; }
+  .compact-bars .row .bar { position: relative; height: 8px; background: var(--app-edge-warm); border-radius: 1px; }
+  .compact-bars .row .bar .fill { position: absolute; top:0; left: 0; bottom: 0; background: var(--app-moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .compact-bars .row .bar .fill.dim  { background: var(--app-moss-dim); }
+  .compact-bars .row .bar .fill.soft { background: rgba(107,132,86,0.45); }
+  @keyframes barFill { from {transform: scaleX(0);} to {transform: scaleX(1);} }
+  .compact-bars .row .pct { font-size: 12.5px; color: var(--app-paper); font-variant-numeric: tabular-nums; text-align: right; }
+  .compact-bars .row .pct sup { color: var(--app-muted); font-size: 9px; margin-left: 3px; }
+
+  .position-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .position-cell {
+    background: var(--app-canvas);
+    border: 1px solid var(--app-edge-warm);
+    border-radius: 2px;
+    padding: 10px 12px;
+  }
+  .position-cell .lbl { font-size: 10px; color: var(--app-ochre); font-feature-settings: "smcp", "tnum"; letter-spacing: 0.1em; }
+  .position-cell .big {
+    font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 22px;
+    color: var(--app-paper); font-variant-numeric: tabular-nums; letter-spacing: -0.018em;
+    margin-top: 2px; line-height: 1.0;
+  }
+  .position-cell .big .pct { font-size: 12px; color: var(--app-muted); margin-left: 1px; }
+  .position-cell .bar { margin-top: 6px; height: 3px; background: var(--app-edge-warm); border-radius: 1px; position: relative; }
+  .position-cell .bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--app-moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .position-cell .foot { margin-top: 4px; font-size: 10.5px; color: var(--app-muted); font-style: italic; }
+
+  .weekly-card { display: flex; flex-direction: column; min-height: 0; }
+  .weekly-card svg { display: block; width: 100%; height: 90px; }
+  .weekly-axis { display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 4px; font-size: 9.5px; color: var(--app-muted); text-align: center; font-feature-settings: "smcp", "tnum"; letter-spacing: 0.06em; }
+
+  .examples-toggle {
+    grid-column: 1 / -1;
+    background: var(--app-canvas);
+    border: 1px solid var(--app-edge-warm);
+    border-radius: 2px;
+    padding: 10px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--app-paper); cursor: pointer;
+    transition: background 160ms ease;
+  }
+  .examples-toggle:hover { background: var(--app-elevated); }
+  .examples-toggle .lhs { display: inline-flex; gap: 12px; align-items: baseline; }
+  .examples-toggle .pill {
+    font-size: 10.5px; color: var(--app-muted);
+    font-feature-settings: "smcp", "tnum"; letter-spacing: 0.08em;
+  }
+  .examples-toggle .pill .v { color: var(--app-paper); font-variant-numeric: tabular-nums; margin-left: 4px; font-weight: 500; }
+  .examples-toggle .arrow { color: var(--app-ochre); transition: transform 160ms ease; }
+  .examples-toggle[aria-expanded="true"] .arrow { transform: rotate(90deg); }
+
+  /* Bottom drawer for examples */
+  .drawer {
+    position: fixed; left: 304px; right: 0; bottom: 0;
+    height: 0; overflow: hidden;
+    background: var(--app-canvas);
+    border-top: 1px solid var(--app-edge);
+    transition: height 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 50;
+    display: flex; flex-direction: column;
+  }
+  .drawer.open { height: 38vh; }
+  .drawer-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 24px; border-bottom: 1px solid var(--app-edge-warm);
+  }
+  .drawer-head h3 {
+    font-family: 'Source Serif 4', serif; font-weight: 500; font-size: 14px;
+    color: var(--app-paper);
+  }
+  .drawer-head button {
+    appearance: none; background: transparent; border: 0; font-family: inherit;
+    font-size: 12px; color: var(--app-muted); cursor: pointer; padding: 4px 8px; border-radius: 2px;
+  }
+  .drawer-head button:hover { color: var(--app-paper); background: var(--app-surface); }
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 12px 24px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .ex-group h4 { font-size: 10.5px; color: var(--app-ochre); font-feature-settings: "smcp", "tnum"; letter-spacing: 0.1em; padding-bottom: 6px; border-bottom: 1px solid var(--app-edge-warm); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .ex-group h4 .n { color: var(--app-muted); }
+  .ex-group.edge h4 { color: var(--app-brick); }
+  .ex-item { padding: 8px 0; border-bottom: 1px solid var(--app-edge-warm); }
+  .ex-item:last-child { border-bottom: none; }
+  .ex-item .text { font-size: 12.5px; color: var(--app-paper); line-height: 1.4; }
+  .ex-item .text code { font-family: ui-monospace, monospace; font-size: 0.9em; background: var(--app-elevated); padding: 0 3px; border-radius: 1px; }
+  .ex-item .meta { margin-top: 4px; font-size: 10.5px; color: var(--app-muted); font-style: italic; }
+  .ex-item .meta .num { color: var(--app-paper); font-style: normal; }
+  .ex-item.edge .meta { color: var(--app-brick); }
+
+  /* Loading / progress strip */
+  .progress-strip {
+    position: fixed; top: 56px; left: 0; right: 0; height: 2px;
+    background: var(--app-ochre); transform-origin: left;
+    animation: progress 900ms cubic-bezier(0.2,0.8,0.2,1) forwards; z-index: 60;
+  }
+  @keyframes progress { from {transform: scaleX(0);} to {transform: scaleX(1); opacity: 0;} }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; }
+  }
+
+  /* Dark mode preview — toggle data-theme on html element to see */
+  [data-theme="dark"] {
+    --app-paper:        #f5f5f5;
+    --app-on-canvas:    #f5f5f5;
+    --app-on-surface:   #e5e5e5;
+    --app-tertiary:     #d4d4d4;
+    --app-muted:        #a3a3a3;
+    --app-faint:        #737373;
+    --app-canvas:       #0a0a0a;
+    --app-surface:      #171717;
+    --app-elevated:     #262626;
+    --app-edge-warm:    #262626;
+    --app-edge:         #404040;
+    --app-edge-strong:  #525252;
+    --app-bg-warm:      #0a0a0a;
+    --app-ochre:        #d49619;
+    --app-ochre-dim:    #b87a0e;
+  }
+</style>
+</head>
+<body>
+  <div class="progress-strip" aria-hidden="true"></div>
+
+  <div class="app">
+
+    <header class="topbar">
+      <div class="lhs">
+        <span class="brand"><span class="dot"></span>Chatsight</span>
+        <nav>
+          <a href="#">Run</a>
+          <a href="#">Queue</a>
+          <a href="#">Labels</a>
+          <a href="#" class="active">Analysis</a>
+          <a href="#">Summaries</a>
+          <a href="#">History</a>
+        </nav>
+      </div>
+      <div class="rhs">
+        <span class="mode-toggle">
+          <button class="active">SINGLE</button>
+          <button>MULTI</button>
+        </span>
+      </div>
+    </header>
+
+    <main class="main">
+
+      <!-- ─── Left rail: cohort ─── -->
+      <aside class="rail">
+        <div class="rail-header">
+          <h2>Single-label runs</h2>
+          <span class="count">5</span>
+        </div>
+        <div class="rail-filter">
+          <input type="text" placeholder="filter runs…" />
+        </div>
+        <div class="rail-list" id="rail-list">
+          <div class="rail-entry selected" data-run="help-seeking">
+            <div class="name">help-seeking</div>
+            <div class="desc">asking the tutor for an explanation, not just an answer</div>
+            <div class="meta">
+              <span class="pill"><span class="v num">62%</span><span class="lbl">YES</span></span>
+              <span class="pill"><span class="v num">8%</span><span class="lbl">DIS</span></span>
+              <span class="pill"><span class="v num">240/600</span></span>
+            </div>
+            <div class="status-row">
+              <span class="status"><span class="status-dot reviewing"></span>REVIEWING</span>
+              <svg class="rail-spark" viewBox="0 0 88 18" preserveAspectRatio="none"><polyline class="line" points="2,5 14,7 26,3 38,5 50,7 62,11 74,8 86,9"/></svg>
+            </div>
+          </div>
+          <div class="rail-entry" data-run="confusion">
+            <div class="name">confusion</div>
+            <div class="desc">student signals they are stuck or lost</div>
+            <div class="meta">
+              <span class="pill"><span class="v num">34%</span><span class="lbl">YES</span></span>
+              <span class="pill warn"><span class="v num">21%</span><span class="lbl">DIS</span></span>
+              <span class="pill"><span class="v num">180/400</span></span>
+            </div>
+            <div class="status-row">
+              <span class="status"><span class="status-dot labeling"></span>LABELING</span>
+              <svg class="rail-spark" viewBox="0 0 88 18" preserveAspectRatio="none"><polyline class="line" points="2,14 14,12 26,9 38,7 50,5 62,4 74,3 86,3"/></svg>
+            </div>
+          </div>
+          <div class="rail-entry" data-run="off-topic">
+            <div class="name">off-topic</div>
+            <div class="desc">chat unrelated to the course</div>
+            <div class="meta">
+              <span class="pill"><span class="v num">18%</span><span class="lbl">YES</span></span>
+              <span class="pill"><span class="v num">4%</span><span class="lbl">DIS</span></span>
+              <span class="pill"><span class="v num">220/220</span></span>
+            </div>
+            <div class="status-row">
+              <span class="status"><span class="status-dot complete"></span>COMPLETE</span>
+              <svg class="rail-spark" viewBox="0 0 88 18" preserveAspectRatio="none"><polyline class="line" points="2,13 14,12 26,13 38,13 50,12 62,12 74,11 86,12"/></svg>
+            </div>
+          </div>
+          <div class="rail-entry" data-run="frustration">
+            <div class="name">frustration</div>
+            <div class="desc">emotional signal — annoyance or giving up</div>
+            <div class="meta">
+              <span class="pill"><span class="v num">47%</span><span class="lbl">YES</span></span>
+              <span class="pill"><span class="v num">15%</span><span class="lbl">DIS</span></span>
+              <span class="pill"><span class="v num">95/200</span></span>
+            </div>
+            <div class="status-row">
+              <span class="status"><span class="status-dot labeling"></span>LABELING</span>
+              <svg class="rail-spark" viewBox="0 0 88 18" preserveAspectRatio="none"><polyline class="line" points="2,12 14,9 26,11 38,7 50,4 62,6 74,5 86,5"/></svg>
+            </div>
+          </div>
+          <div class="rail-entry" data-run="requests-explanation">
+            <div class="name">requests-explanation</div>
+            <div class="desc">asks the tutor to walk through reasoning</div>
+            <div class="meta">
+              <span class="pill"><span class="v num">71%</span><span class="lbl">YES</span></span>
+              <span class="pill"><span class="v num">6%</span><span class="lbl">DIS</span></span>
+              <span class="pill"><span class="v num">145/300</span></span>
+            </div>
+            <div class="status-row">
+              <span class="status"><span class="status-dot reviewing"></span>REVIEWING</span>
+              <svg class="rail-spark" viewBox="0 0 88 18" preserveAspectRatio="none"><polyline class="line" points="2,11 14,8 26,5 38,3 50,2 62,3 74,3 86,2"/></svg>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ─── Right pane: run detail ─── -->
+      <section class="pane">
+
+        <header class="pane-header">
+          <div class="lhs">
+            <span class="eyebrow">RUN</span>
+            <span class="name">help-seeking</span>
+            <span class="readout">
+              walked <span class="v">240/600</span>
+              <span class="sep">·</span>
+              yes <span class="v">62%</span> <span style="opacity:0.6;">msgs</span> / <span class="v">38%</span> <span style="opacity:0.6;">convos</span>
+              <span class="sep">·</span>
+              <span class="v">12</span>/<span class="v">150</span> overlap disagreed
+            </span>
+          </div>
+          <div class="rhs">
+            <button class="linklike">↻ refresh</button>
+            <button class="linklike">↗ export</button>
+          </div>
+        </header>
+
+        <nav class="subtabs" role="tablist">
+          <button class="subtab" role="tab" aria-selected="true" data-sub="health">
+            Label health <span class="count num">2</span>
+          </button>
+          <button class="subtab" role="tab" aria-selected="false" data-sub="findings">
+            Findings <span class="count num">4</span>
+          </button>
+        </nav>
+
+        <div class="pane-body">
+
+          <!-- HEALTH (default) -->
+          <div class="panel" id="panel-health" role="tabpanel" aria-hidden="false">
+            <div class="health">
+              <div class="chart-card histogram-area">
+                <div class="card-head">
+                  <div>
+                    <div class="card-title">Confidence distribution</div>
+                    <div class="card-sub">222 AI predictions · bimodal — the model is decisive on this concept</div>
+                  </div>
+                  <div class="legend">
+                    <span><span class="swatch moss"></span>YES</span>
+                    <span><span class="swatch brick"></span>NO</span>
+                  </div>
+                </div>
+                <div class="histogram">
+                  <div class="hist-bin"><div class="hist-stack" style="height:78%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:68%"><div class="hist-no" style="height:82%"></div><div class="hist-yes" style="height:18%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:51%"><div class="hist-no" style="height:81%"></div><div class="hist-yes" style="height:19%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:29%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:20%"><div class="hist-no" style="height:50%"></div><div class="hist-yes" style="height:50%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:22%"><div class="hist-no" style="height:44%"></div><div class="hist-yes" style="height:56%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:34%"><div class="hist-no" style="height:29%"></div><div class="hist-yes" style="height:71%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:54%"><div class="hist-no" style="height:18%"></div><div class="hist-yes" style="height:82%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:85%"><div class="hist-no" style="height:9%"></div><div class="hist-yes" style="height:91%"></div></div></div>
+                  <div class="hist-bin"><div class="hist-stack" style="height:100%"><div class="hist-no" style="height:2%"></div><div class="hist-yes" style="height:98%"></div></div></div>
+                </div>
+                <div class="hist-axis">
+                  <span>.0</span><span>.1</span><span>.2</span><span>.3</span><span>.4</span><span>.5</span><span>.6</span><span>.7</span><span>.8</span><span>.9</span>
+                </div>
+                <div class="hist-caption">
+                  <span>Bins of 0.1 confidence · AI rows only</span>
+                  <span>coverage: 222 / 222</span>
+                </div>
+              </div>
+
+              <div class="health-sidebar">
+                <div class="chart-card coverage-card">
+                  <div class="card-head">
+                    <div class="card-title">AI coverage</div>
+                  </div>
+                  <div class="row">
+                    <span class="v">10<span class="pct">%</span></span>
+                    <span class="frac">222 / 2,180</span>
+                  </div>
+                  <div class="track">
+                    <div class="fill" style="width: 10%;"></div>
+                  </div>
+                  <div class="legend-row">
+                    <span class="seg"><span class="sw cov"></span>AI&nbsp;<span class="v num">222</span></span>
+                    <span class="seg"><span class="sw unc"></span>UNCOV&nbsp;<span class="v num">1,958</span></span>
+                  </div>
+                </div>
+                <div class="chart-card agreement-card">
+                  <div class="card-head">
+                    <div class="card-title">Agreement by confidence</div>
+                  </div>
+                  <div class="bars">
+                    <div class="bar-col">
+                      <div class="bar-fill" style="height: 91%; animation-delay: 0ms;"></div>
+                      <div class="bar-val num">91%</div>
+                    </div>
+                    <div class="bar-col">
+                      <div class="bar-fill mid" style="height: 76%; animation-delay: 40ms;"></div>
+                      <div class="bar-val num">76%</div>
+                    </div>
+                    <div class="bar-col">
+                      <div class="bar-fill weak" style="height: 55%; animation-delay: 80ms;"></div>
+                      <div class="bar-val num">55%</div>
+                    </div>
+                    <div class="bar-col">
+                      <div class="bar-fill mid" style="height: 87%; animation-delay: 120ms;"></div>
+                      <div class="bar-val num">87%</div>
+                    </div>
+                    <div class="bar-col">
+                      <div class="bar-fill" style="height: 96%; animation-delay: 160ms;"></div>
+                      <div class="bar-val num">96%</div>
+                    </div>
+                  </div>
+                  <div class="x-axis">
+                    <span>.0–.2</span><span>.2–.4</span><span>.4–.6</span><span>.6–.8</span><span>.8–1</span>
+                  </div>
+                  <div class="gloss">Most trustworthy at the extremes &mdash; the middle bin is a coin flip.</div>
+                </div>
+              </div>
+
+              <div class="disagreement">
+                <div class="dis-cell">
+                  <div class="label">DISAGREEMENT</div>
+                  <div class="big">8<span class="pct">%</span><span class="frac">12 / 150 overlap</span></div>
+                  <div class="gloss">Below the 15% drift threshold — the label is holding up.</div>
+                </div>
+                <div class="dis-cell">
+                  <div class="label">AI YES · HUMAN NO</div>
+                  <div class="big">5</div>
+                  <div class="gloss">Model over-applies on edge cases.</div>
+                </div>
+                <div class="dis-cell">
+                  <div class="label">AI NO · HUMAN YES</div>
+                  <div class="big">7</div>
+                  <div class="gloss">Model misses softer help-seeking.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FINDINGS -->
+          <div class="panel" id="panel-findings" role="tabpanel" aria-hidden="true">
+            <div class="findings">
+              <div class="chart-card">
+                <div class="card-head"><div class="card-title">Yes-rate by assignment</div><span class="card-sub">sorted desc · sample size in superscript</span></div>
+                <div class="compact-bars">
+                  <div class="row"><div class="name">Lab 1 <em>— Probability</em></div><div class="bar"><div class="fill" style="width:78%;animation-delay:0ms"></div></div><div class="pct">78%<sup>42</sup></div></div>
+                  <div class="row"><div class="name">Lab 2 <em>— DataFrames</em></div><div class="bar"><div class="fill" style="width:71%;animation-delay:30ms"></div></div><div class="pct">71%<sup>38</sup></div></div>
+                  <div class="row"><div class="name">Final Project</div><div class="bar"><div class="fill" style="width:64%;animation-delay:60ms"></div></div><div class="pct">64%<sup>28</sup></div></div>
+                  <div class="row"><div class="name">Lab 5 <em>— Hypothesis</em></div><div class="bar"><div class="fill" style="width:58%;animation-delay:90ms"></div></div><div class="pct">58%<sup>31</sup></div></div>
+                  <div class="row"><div class="name">Midterm</div><div class="bar"><div class="fill" style="width:52%;animation-delay:120ms"></div></div><div class="pct">52%<sup>24</sup></div></div>
+                  <div class="row"><div class="name">Lab 3 <em>— Visualization</em></div><div class="bar"><div class="fill dim" style="width:49%;animation-delay:150ms"></div></div><div class="pct">49%<sup>27</sup></div></div>
+                  <div class="row"><div class="name">Lab 4 <em>— Regression</em></div><div class="bar"><div class="fill dim" style="width:41%;animation-delay:180ms"></div></div><div class="pct">41%<sup>22</sup></div></div>
+                  <div class="row"><div class="name">Concept Check</div><div class="bar"><div class="fill soft" style="width:23%;animation-delay:210ms"></div></div><div class="pct">23%<sup>28</sup></div></div>
+                </div>
+              </div>
+
+              <div class="chart-card">
+                <div class="card-head"><div class="card-title">By conversation position</div><span class="card-sub">early / mid / late</span></div>
+                <div class="position-row">
+                  <div class="position-cell">
+                    <div class="lbl">EARLY · 0–2</div>
+                    <div class="big">71<span class="pct">%</span></div>
+                    <div class="bar"><div class="fill" style="width:71%"></div></div>
+                    <div class="foot">n = 108</div>
+                  </div>
+                  <div class="position-cell">
+                    <div class="lbl">MID · 3–6</div>
+                    <div class="big">64<span class="pct">%</span></div>
+                    <div class="bar"><div class="fill" style="width:64%;animation-delay:60ms"></div></div>
+                    <div class="foot">n = 92</div>
+                  </div>
+                  <div class="position-cell">
+                    <div class="lbl">LATE · 7+</div>
+                    <div class="big">48<span class="pct">%</span></div>
+                    <div class="bar"><div class="fill" style="width:48%;animation-delay:120ms"></div></div>
+                    <div class="foot">n = 40</div>
+                  </div>
+                </div>
+
+                <div style="margin-top: 14px;" class="weekly-card">
+                  <div class="card-head" style="margin: 0 0 4px;"><div class="card-title" style="font-size:13px;">Over time</div><span class="card-sub">W34 – W41</span></div>
+                  <svg viewBox="0 0 800 90" preserveAspectRatio="none">
+                    <line x1="0" y1="45" x2="800" y2="45" stroke="#e7dfc7" stroke-width="1" stroke-dasharray="2 4"/>
+                    <polyline fill="none" stroke="#6b8456" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="40,32 145,38 250,26 355,29 460,34 565,42 670,36 760,32"/>
+                    <polyline fill="none" stroke="#8c6d1f" stroke-width="1.2" stroke-dasharray="3 4" stroke-linejoin="round" stroke-linecap="round" points="40,68 145,60 250,55 355,48 460,44 565,46 670,49 760,52"/>
+                    <circle cx="40"  cy="32" r="2.2" fill="#6b8456"/>
+                    <circle cx="145" cy="38" r="2.2" fill="#6b8456"/>
+                    <circle cx="250" cy="26" r="2.2" fill="#6b8456"/>
+                    <circle cx="355" cy="29" r="2.2" fill="#6b8456"/>
+                    <circle cx="460" cy="34" r="2.2" fill="#6b8456"/>
+                    <circle cx="565" cy="42" r="2.2" fill="#6b8456"/>
+                    <circle cx="670" cy="36" r="2.2" fill="#6b8456"/>
+                    <circle cx="760" cy="32" r="2.2" fill="#6b8456"/>
+                  </svg>
+                  <div class="weekly-axis"><span>W34</span><span>W35</span><span>W36</span><span>W37</span><span>W38</span><span>W39</span><span>W40</span><span>W41</span></div>
+                </div>
+              </div>
+
+              <div class="examples-toggle" id="examples-toggle" aria-expanded="false">
+                <div class="lhs">
+                  <strong>Example messages</strong>
+                  <span class="pill">YES<span class="v">149</span></span>
+                  <span class="pill">NO<span class="v">91</span></span>
+                  <span class="pill">EDGE<span class="v">12</span></span>
+                </div>
+                <span class="arrow">▸</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Examples drawer (slides up from bottom of right pane) -->
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-head">
+        <h3>Example messages — help-seeking</h3>
+        <button id="drawer-close">close ✕</button>
+      </div>
+      <div class="drawer-body">
+        <div class="ex-group">
+          <h4><span>YES — SAMPLED</span><span class="n">3 OF 149</span></h4>
+          <div class="ex-item">
+            <div class="text">I'm not sure what bool_array does — can you explain again?</div>
+            <div class="meta"><span class="num">Lab 2</span> · mid · ai 0.91 · human yes</div>
+          </div>
+          <div class="ex-item">
+            <div class="text">Why does <code>.groupby()</code> return a different result for sum vs mean here?</div>
+            <div class="meta"><span class="num">Lab 5</span> · mid · ai 0.84 · human yes</div>
+          </div>
+          <div class="ex-item">
+            <div class="text">I keep getting a KeyError on this DataFrame — what am I doing wrong?</div>
+            <div class="meta"><span class="num">Lab 2</span> · early · ai 0.78 · human yes</div>
+          </div>
+        </div>
+        <div class="ex-group">
+          <h4><span>NO — SAMPLED</span><span class="n">3 OF 91</span></h4>
+          <div class="ex-item">
+            <div class="text">Thanks, that worked!</div>
+            <div class="meta"><span class="num">Final</span> · late · ai 0.02 · human no</div>
+          </div>
+          <div class="ex-item">
+            <div class="text">Make this plot blue.</div>
+            <div class="meta"><span class="num">Lab 3</span> · early · ai 0.08 · human no</div>
+          </div>
+          <div class="ex-item">
+            <div class="text">Can you write the code for me?</div>
+            <div class="meta"><span class="num">Concept</span> · early · ai 0.12 · human no</div>
+          </div>
+        </div>
+        <div class="ex-group edge">
+          <h4><span>EDGE — FLAGGED</span><span class="n">2 OF 12</span></h4>
+          <div class="ex-item edge">
+            <div class="text">What does it mean when something is 'closed under' an operation?</div>
+            <div class="meta"><span class="num">Lab 1</span> · mid · ai 0.51 no / human yes — low confidence</div>
+          </div>
+          <div class="ex-item edge">
+            <div class="text">Should I use <code>.loc</code> or <code>.iloc</code> here?</div>
+            <div class="meta"><span class="num">Lab 2</span> · early · ai 0.42 no / human yes — human overruled</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+  // Sub-tabs (Health / Findings)
+  const subtabs = document.querySelectorAll('.subtab');
+  const subpanels = {
+    health:   document.getElementById('panel-health'),
+    findings: document.getElementById('panel-findings'),
+  };
+  subtabs.forEach((t) => t.addEventListener('click', () => {
+    subtabs.forEach((x) => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    Object.entries(subpanels).forEach(([k, p]) =>
+      p.setAttribute('aria-hidden', k === t.dataset.sub ? 'false' : 'true')
+    );
+  }));
+
+  // Cohort selection
+  const railEntries = document.querySelectorAll('.rail-entry');
+  railEntries.forEach((e) => e.addEventListener('click', () => {
+    railEntries.forEach((x) => x.classList.remove('selected'));
+    e.classList.add('selected');
+    // In the real app we'd refetch run detail. Mockup just updates the header name.
+    document.querySelector('.pane-header .name').textContent = e.dataset.run;
+  }));
+
+  // Examples drawer
+  const drawer = document.getElementById('drawer');
+  const drawerClose = document.getElementById('drawer-close');
+  document.getElementById('examples-toggle').addEventListener('click', (ev) => {
+    const open = drawer.classList.toggle('open');
+    ev.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false');
+    drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+  });
+  drawerClose.addEventListener('click', () => {
+    drawer.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    document.getElementById('examples-toggle').setAttribute('aria-expanded', 'false');
+  });
+
+  // Mode toggle (cosmetic)
+  document.querySelectorAll('.mode-toggle button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.mode-toggle button').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      const isMulti = b.textContent.trim() === 'MULTI';
+      document.documentElement.setAttribute('data-theme', isMulti ? 'dark' : 'light');
+    });
+  });
+</script>
+</body>
+</html>
