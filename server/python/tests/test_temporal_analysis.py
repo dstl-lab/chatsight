@@ -33,7 +33,9 @@ def test_temporal_response_shape(client):
     assert "labels" in hm and "notebooks" in hm
     assert "raw_counts" in hm and "row_normalized" in hm and "column_normalized" in hm
 
-    assert isinstance(data["labeling_throughput"], list)
+    assert isinstance(data["labeling_throughput"], dict)
+    assert isinstance(data["labeling_throughput"]["data"], list)
+    assert "error" in data["labeling_throughput"]
 
 
 def test_temporal_throughput_by_day_and_source(client, session):
@@ -58,7 +60,7 @@ def test_temporal_throughput_by_day_and_source(client, session):
 
     r = client.get("/api/analysis/temporal")
     data = r.json()
-    row = next(x for x in data["labeling_throughput"] if x["date"] == "2026-04-10")
+    row = next(x for x in data["labeling_throughput"]["data"] if x["date"] == "2026-04-10")
     assert row["human"] == 2
     assert row["ai"] == 1
     assert row["total"] == 3
@@ -88,9 +90,9 @@ def test_temporal_throughput_fills_gap_days(client, session):
 
     r = client.get("/api/analysis/temporal")
     data = r.json()
-    dates = [x["date"] for x in data["labeling_throughput"]]
+    dates = [x["date"] for x in data["labeling_throughput"]["data"]]
     assert dates == ["2026-05-01", "2026-05-02", "2026-05-03"]
-    mid = next(x for x in data["labeling_throughput"] if x["date"] == "2026-05-02")
+    mid = next(x for x in data["labeling_throughput"]["data"] if x["date"] == "2026-05-02")
     assert mid["human"] == 0 and mid["ai"] == 0 and mid["total"] == 0
 
 
