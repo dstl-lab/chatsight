@@ -10,6 +10,7 @@ import type {
   SingleLabelSummary, HandoffResponse, ReviewItem,
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
   AssistResponse,
+  SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -226,6 +227,21 @@ export const api = {
     }
     const suffix = q.toString() ? `?${q.toString()}` : ''
     return req(`/api/analysis/temporal${suffix}`)
+  },
+
+  // ── Single-label analysis ──────────────────────────────────────
+  getSingleLabelCohort: (): Promise<SingleLabelCohortResponse> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabelCohort)
+             : req('/api/analysis/single-label/cohort'),
+
+  getSingleLabelRunDetail: (runId: number): Promise<SingleLabelRunDetail> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabelRunDetail)
+             : req(`/api/analysis/single-label/runs/${runId}`),
+
+  getMilestones: (course?: string): Promise<AssignmentMilestone[]> => {
+    if (USE_MOCK) return Promise.resolve([])
+    const suffix = course ? `?course=${encodeURIComponent(course)}` : ''
+    return req(`/api/analysis/milestones${suffix}`)
   },
 
   exportCsv: async (): Promise<Blob> => {
