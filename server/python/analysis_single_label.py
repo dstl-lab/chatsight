@@ -16,9 +16,15 @@ exactly the Reviewed-AI rows above — captured via ai_value_at_review when
 decision_service.upsert_decision overwrites an AI row.
 """
 
+import os
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+try:
+    from zoneinfo import ZoneInfo  # stdlib (Python 3.9+)
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore[assignment]
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
@@ -193,6 +199,118 @@ def _message_text_index(session: Session) -> dict[tuple[int, int], str]:
     return {(m.chatlog_id, m.message_index): m.message_text for m in cache}
 
 
+def _created_at_index(session: Session) -> dict[tuple[int, int], datetime]:
+    """(chatlog_id, message_index) → MessageCache.created_at when present."""
+    cache = session.exec(select(MessageCache)).all()
+    return {
+        (m.chatlog_id, m.message_index): m.created_at
+        for m in cache
+        if m.created_at is not None
+    }
+
+
+def _conversation_length_index(session: Session) -> dict[int, int]:
+    """chatlog_id → total message count in the conversation (MAX(message_index)+1)."""
+    cache = session.exec(select(MessageCache)).all()
+    max_by_chat: dict[int, int] = {}
+    for m in cache:
+        cur = max_by_chat.get(m.chatlog_id, -1)
+        if m.message_index > cur:
+            max_by_chat[m.chatlog_id] = m.message_index
+    return {cid: idx + 1 for cid, idx in max_by_chat.items()}
+
+
+def _analysis_tz() -> Optional[object]:
+    """ANALYSIS_TIMEZONE env var resolved to a tzinfo object, or None."""
+    if ZoneInfo is None:
+        return None
+    name = (os.getenv("ANALYSIS_TIMEZONE") or "America/Los_Angeles").strip()
+    try:
+        return ZoneInfo(name or "America/Los_Angeles")
+    except Exception:
+        return None
+
+
+def _local_hour(dt: datetime, tz: Optional[object]) -> int:
+    """Hour-of-day (0–23) in the analysis timezone. Naive timestamps are
+    treated as UTC (Postgres timestamps without zone usually are)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if tz is not None:
+        try:
+            dt = dt.astimezone(tz)  # type: ignore[arg-type]
+        except Exception:
+            pass
+    return dt.hour
+
+
+def _by_hour_of_day(
+    humans: list[LabelApplication],
+    created_at_for: dict[tuple[int, int], datetime],
+    tz: Optional[object],
+) -> list[dict]:
+    """[{hour, yes, no, yes_pct}], 24 entries (0–23), in hour order. Messages
+    without a cached timestamp are excluded from the denominator."""
+    buckets = [{"yes": 0, "no": 0} for _ in range(24)]
+    for a in humans:
+        if a.value not in ("yes", "no"):
+            continue
+        ts = created_at_for.get((a.chatlog_id, a.message_index))
+        if ts is None:
+            continue
+        h = _local_hour(ts, tz)
+        buckets[h][a.value] += 1
+    return [
+        {
+            "hour": h,
+            "yes": b["yes"],
+            "no": b["no"],
+            "yes_pct": _round_pct(b["yes"], b["yes"] + b["no"]),
+        }
+        for h, b in enumerate(buckets)
+    ]
+
+
+def _depth_bucket(total_msgs: int) -> str:
+    if total_msgs <= 5:
+        return "short"
+    if total_msgs <= 15:
+        return "mid"
+    return "long"
+
+
+def _by_conversation_depth(
+    humans: list[LabelApplication],
+    conv_length_for: dict[int, int],
+) -> list[dict]:
+    """[{bucket: short|mid|long, yes, no, yes_pct}]. Buckets: short ≤5,
+    6–15, long 16+. Conversations without a cached length fall into the
+    short bucket as a conservative default."""
+    buckets = {
+        "short": {"yes": 0, "no": 0},
+        "mid": {"yes": 0, "no": 0},
+        "long": {"yes": 0, "no": 0},
+    }
+    for a in humans:
+        if a.value not in ("yes", "no"):
+            continue
+        total = conv_length_for.get(a.chatlog_id)
+        if total is None:
+            # Fall back to the message_index — at least this row's position
+            # gives a lower bound on conversation length.
+            total = a.message_index + 1
+        buckets[_depth_bucket(total)][a.value] += 1
+    return [
+        {
+            "bucket": b,
+            "yes": v["yes"],
+            "no": v["no"],
+            "yes_pct": _round_pct(v["yes"], v["yes"] + v["no"]),
+        }
+        for b, v in buckets.items()
+    ]
+
+
 def _position_bucket(message_index: int) -> str:
     if message_index <= 2:
         return "early"
@@ -344,24 +462,15 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)) -> dict
         for b, v in pos_buckets.items()
     ]
 
-    # ── weekly ──
-    weekly_map: dict[str, dict[str, int]] = defaultdict(lambda: {"yes": 0, "no": 0})
-    for a in humans:
-        if a.value not in ("yes", "no"):
-            continue
-        weekly_map[_week_start(a.created_at)][a.value] += 1
-    weekly = sorted(
-        (
-            {
-                "week_start": w,
-                "yes": v["yes"],
-                "no": v["no"],
-                "yes_pct": _round_pct(v["yes"], v["yes"] + v["no"]),
-            }
-            for w, v in weekly_map.items()
-        ),
-        key=lambda r: r["week_start"],
-    )
+    # ── by hour-of-day & conversation depth ──
+    # Both bucket on dimensions intrinsic to the message data (not the
+    # labeling timeline), so they keep signal when labeling happens in
+    # one sitting. Replaces the previous `weekly` time-series.
+    created_at_for = _created_at_index(session)
+    conv_length_for = _conversation_length_index(session)
+    tz = _analysis_tz()
+    by_hour_of_day = _by_hour_of_day(humans, created_at_for, tz)
+    by_conversation_depth = _by_conversation_depth(humans, conv_length_for)
 
     # ── examples ──
     text_lookup = _message_text_index(session)
@@ -413,6 +522,7 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)) -> dict
         },
         "by_assignment": by_assignment,
         "by_position": by_position,
-        "weekly": weekly,
+        "by_hour_of_day": by_hour_of_day,
+        "by_conversation_depth": by_conversation_depth,
         "examples": examples,
     }

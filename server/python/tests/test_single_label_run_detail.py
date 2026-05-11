@@ -206,3 +206,77 @@ def test_run_detail_by_assignment_uses_mapping(client, session):
     by_key = {r["key"]: r for r in by_assn}
     assert by_key["Lab 1"] == {"key": "Lab 1", "yes": 1, "no": 1, "yes_pct": 50}
     assert by_key["Unassigned"]["yes_pct"] == 100
+
+
+def test_run_detail_by_hour_of_day(client, session):
+    """Hour-of-day buckets reflect MessageCache.created_at after conversion to
+    the analysis timezone (default America/Los_Angeles). UTC 18:00 = PST 10:00."""
+    rid = _make_run(session)
+    # cache rows with timestamps in UTC
+    session.add(
+        MessageCache(
+            chatlog_id=1, message_index=0, message_text="m0",
+            created_at=datetime(2026, 5, 1, 18, 0, 0),  # 10am PT, summer DST: 11am PT, winter: 10am PT — assume PT 10 or 11
+        )
+    )
+    session.add(
+        MessageCache(
+            chatlog_id=2, message_index=0, message_text="m2",
+            created_at=datetime(2026, 5, 1, 19, 30, 0),  # ~11/12 PT
+        )
+    )
+    session.commit()
+    _add(session, rid, 1, 0, "yes")
+    _add(session, rid, 2, 0, "no")
+
+    body = client.get(f"/api/analysis/single-label/runs/{rid}").json()
+    by_hour = body["by_hour_of_day"]
+    assert len(by_hour) == 24
+    # exactly one yes and one no land somewhere in the array
+    total_yes = sum(b["yes"] for b in by_hour)
+    total_no = sum(b["no"] for b in by_hour)
+    assert total_yes == 1 and total_no == 1
+
+
+def test_run_detail_by_hour_of_day_excludes_rows_without_timestamp(client, session):
+    """Messages whose MessageCache row lacks created_at are excluded from
+    the hour-of-day denominator."""
+    rid = _make_run(session)
+    # no MessageCache row at all → created_at lookup miss
+    _add(session, rid, 9, 0, "yes")
+    body = client.get(f"/api/analysis/single-label/runs/{rid}").json()
+    assert all(b["yes"] == 0 and b["no"] == 0 for b in body["by_hour_of_day"])
+
+
+def test_run_detail_by_conversation_depth_bucketing(client, session):
+    """Buckets: short ≤ 5, mid 6–15, long 16+. Conversation length from
+    MAX(message_index) + 1 of cached rows for that chatlog."""
+    rid = _make_run(session)
+    # chat 1: 5-message conversation (indices 0-4) → short bucket
+    for i in range(5):
+        session.add(MessageCache(chatlog_id=1, message_index=i, message_text=f"m{i}"))
+    # chat 2: 10-message conversation → mid
+    for i in range(10):
+        session.add(MessageCache(chatlog_id=2, message_index=i, message_text=f"m{i}"))
+    # chat 3: 20-message conversation → long
+    for i in range(20):
+        session.add(MessageCache(chatlog_id=3, message_index=i, message_text=f"m{i}"))
+    session.commit()
+    _add(session, rid, 1, 0, "yes")
+    _add(session, rid, 2, 0, "yes")
+    _add(session, rid, 2, 1, "no")
+    _add(session, rid, 3, 0, "no")
+
+    body = client.get(f"/api/analysis/single-label/runs/{rid}").json()
+    by_depth = {r["bucket"]: r for r in body["by_conversation_depth"]}
+    assert by_depth["short"] == {"bucket": "short", "yes": 1, "no": 0, "yes_pct": 100}
+    assert by_depth["mid"]   == {"bucket": "mid",   "yes": 1, "no": 1, "yes_pct": 50}
+    assert by_depth["long"]  == {"bucket": "long",  "yes": 0, "no": 1, "yes_pct": 0}
+
+
+def test_run_detail_no_weekly_field(client, session):
+    """The legacy `weekly` time series is no longer in the run-detail payload."""
+    rid = _make_run(session)
+    _add(session, rid, 1, 0, "yes")
+    body = client.get(f"/api/analysis/single-label/runs/{rid}").json()
+    assert "weekly" not in body
