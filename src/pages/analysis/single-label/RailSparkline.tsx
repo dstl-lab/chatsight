@@ -8,9 +8,39 @@ const H = 18
 const PAD = 2
 
 export function RailSparkline({ values }: Props) {
-  if (values.length < 2) {
+  if (values.length === 0) {
     return <svg className="block flex-none" width={W} height={H} aria-hidden="true" />
   }
+
+  // Single-value case (common when all decisions land in one ISO week): no
+  // polyline to draw, so plot a short midline at the value's height + a dot
+  // so the rail still carries a visible signal.
+  if (values.length === 1) {
+    const v = values[0]
+    const y = H - PAD - (v / 100) * (H - PAD * 2)
+    return (
+      <svg
+        className="block flex-none"
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <line
+          x1={PAD + 14}
+          y1={y}
+          x2={W - PAD - 14}
+          y2={y}
+          stroke="var(--app-moss)"
+          strokeWidth={1.4}
+          strokeLinecap="round"
+        />
+        <circle cx={W / 2} cy={y} r={1.8} fill="var(--app-moss)" />
+      </svg>
+    )
+  }
+
   const inner = W - PAD * 2
   const innerH = H - PAD * 2
   const max = Math.max(...values)

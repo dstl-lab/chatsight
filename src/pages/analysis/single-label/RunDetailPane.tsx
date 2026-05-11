@@ -234,28 +234,24 @@ function FindingsSubtab({
           <YesRateByAssignmentChart rows={detail.by_assignment} />
         </div>
       </div>
-      <div style={{ gridColumn: 2, gridRow: 1 }} className="flex flex-col gap-3 min-h-0 overflow-y-auto">
-        <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-3.5">
-            <div className="text-sm font-serif font-medium text-paper">By conversation position</div>
-            <span className="text-[11px] text-muted italic">depth within a chat</span>
-          </div>
-          <YesRateByPositionChart rows={detail.by_position} />
+      <div style={{ gridColumn: 2, gridRow: 1 }} className="chart-card min-h-0 overflow-y-auto">
+        <div className="flex items-baseline justify-between mb-3.5">
+          <div className="text-sm font-serif font-medium text-paper">By conversation position</div>
+          <span className="text-[11.5px] text-muted italic">depth within a chat</span>
         </div>
-        <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-3.5">
-            <div className="text-sm font-serif font-medium text-paper">By hour of day</div>
-            <span className="text-[11px] text-muted italic">when students ask</span>
-          </div>
-          <YesRateByHourOfDayChart rows={detail.by_hour_of_day} />
+        <YesRateByPositionChart rows={detail.by_position} />
+
+        <div className="flex items-baseline justify-between mt-5 mb-3.5">
+          <div className="text-[13px] font-serif font-medium text-paper">By hour of day</div>
+          <span className="text-[11.5px] text-muted italic">when students ask</span>
         </div>
-        <div className="chart-card">
-          <div className="flex items-baseline justify-between mb-3.5">
-            <div className="text-sm font-serif font-medium text-paper">By conversation depth</div>
-            <span className="text-[11px] text-muted italic">total chat length</span>
-          </div>
-          <YesRateByConversationDepthChart rows={detail.by_conversation_depth} />
+        <YesRateByHourOfDayChart rows={detail.by_hour_of_day} />
+
+        <div className="flex items-baseline justify-between mt-5 mb-3.5">
+          <div className="text-[13px] font-serif font-medium text-paper">By conversation depth</div>
+          <span className="text-[11.5px] text-muted italic">total chat length</span>
         </div>
+        <YesRateByConversationDepthChart rows={detail.by_conversation_depth} />
       </div>
 
       <button
