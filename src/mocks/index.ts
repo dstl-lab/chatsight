@@ -147,12 +147,14 @@ export const mockApi = {
         [0.45, 0.37, 0.18],
       ],
     },
-    labeling_throughput: [
-      { date: '2026-03-20', human: 5, ai: 0, total: 5 },
-      { date: '2026-03-21', human: 12, ai: 0, total: 12 },
-      { date: '2026-03-22', human: 8, ai: 15, total: 23 },
-      { date: '2026-03-23', human: 3, ai: 42, total: 45 },
-    ],
+    labeling_throughput: {
+      data: [
+        { date: '2026-03-20', human: 5, ai: 0, total: 5 },
+        { date: '2026-03-21', human: 12, ai: 0, total: 12 },
+        { date: '2026-03-22', human: 8, ai: 15, total: 23 },
+        { date: '2026-03-23', human: 3, ai: 42, total: 45 },
+      ],
+    },
   } satisfies TemporalAnalysis,
 
   history: [

@@ -37,6 +37,7 @@ vi.mock('../services/api', () => ({
     getLabels: vi.fn().mockResolvedValue([]),
     getSingleLabelCohort: vi.fn().mockResolvedValue({ runs: [] }),
     getSingleLabelRunDetail: vi.fn().mockResolvedValue(null),
+    getMilestones: vi.fn().mockResolvedValue([]),
   },
 }))
 

@@ -20,6 +20,7 @@ const MILESTONE_COURSE = 'dsc10_wi26'
 
 type HeatmapMode = 'raw' | 'row' | 'column'
 type LabelFreqMode = 'combined' | 'human' | 'ai'
+type AssignmentKind = AssignmentMilestone['kind']
 
 /** Pre-2026-05 fallback. The same data is now served from
  *  GET /api/analysis/milestones?course=dsc10_wi26 — kept inline only as the
