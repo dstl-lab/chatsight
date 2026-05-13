@@ -73,8 +73,8 @@ export function RunDetailPane({ runId }: Props) {
   }
 
   const totals = {
-    yes: detail.run.yes_pct === 0 ? 0 : Math.round((detail.run.yes_pct / 100) * detail.run.walked),
-    no: detail.run.walked - Math.round((detail.run.yes_pct / 100) * detail.run.walked),
+    yes: detail.run.yes_count,
+    no: detail.run.no_count,
     edge: detail.disagreement.disagree,
   }
 
@@ -92,14 +92,6 @@ export function RunDetailPane({ runId }: Props) {
             {detail.run.label_name}
           </span>
           <span className="text-[12px] text-muted italic ml-1 truncate">
-            walked{' '}
-            <span
-              className="not-italic text-paper"
-              style={{ fontVariantNumeric: 'tabular-nums' }}
-            >
-              {detail.run.walked}/{detail.run.total_target ?? '?'}
-            </span>
-            <span className="text-ochre-dim mx-2">·</span>
             yes{' '}
             <span
               className="not-italic text-paper"

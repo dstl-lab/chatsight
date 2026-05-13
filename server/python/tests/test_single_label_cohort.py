@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from sqlmodel import Session
 
-from models import LabelApplication, LabelDefinition
+from models import LabelApplication, LabelDefinition, MessageCache
 
 
 def _make_run(session: Session, name: str, phase: str = "labeling") -> LabelDefinition:
@@ -96,19 +96,63 @@ def test_cohort_with_reviewed_ai_predictions(client, session):
 
 
 def test_cohort_includes_weekly_sparkline(client, session):
+    """Sparkline buckets by the message's authored week (MessageCache.created_at),
+    not the label-application timestamp. Each message lives in MessageCache with
+    its student-sent timestamp; the LabelApplication's own created_at is
+    irrelevant for bucketing."""
     ld = _make_run(session, "help-seeking")
     base = datetime(2026, 4, 6, 10, 0, 0)  # a Monday
-    # Week 1: 3 yes / 1 no  → 75%
-    for i in range(3):
-        _add(session, ld.id, 1, i, "yes", created_at=base + timedelta(hours=i))
-    _add(session, ld.id, 2, 0, "no", created_at=base + timedelta(hours=4))
-    # Week 2: 1 yes / 1 no → 50%
     base2 = base + timedelta(days=7)
-    _add(session, ld.id, 3, 0, "yes", created_at=base2)
-    _add(session, ld.id, 4, 0, "no", created_at=base2 + timedelta(hours=2))
+    # Seed the underlying messages with their authored timestamps.
+    for i in range(3):
+        session.add(MessageCache(chatlog_id=1, message_index=i, message_text="m",
+                                 created_at=base + timedelta(hours=i)))
+    session.add(MessageCache(chatlog_id=2, message_index=0, message_text="m",
+                             created_at=base + timedelta(hours=4)))
+    session.add(MessageCache(chatlog_id=3, message_index=0, message_text="m",
+                             created_at=base2))
+    session.add(MessageCache(chatlog_id=4, message_index=0, message_text="m",
+                             created_at=base2 + timedelta(hours=2)))
+    session.commit()
+    # Week 1: 3 yes / 1 no → 75%
+    for i in range(3):
+        _add(session, ld.id, 1, i, "yes")
+    _add(session, ld.id, 2, 0, "no")
+    # Week 2: 1 yes / 1 no → 50%
+    _add(session, ld.id, 3, 0, "yes")
+    _add(session, ld.id, 4, 0, "no")
 
     row = client.get("/api/analysis/single-label/cohort").json()["runs"][0]
     assert row["weekly_sparkline"] == [75, 50]
+
+
+def test_cohort_sparkline_includes_ai_applications(client, session):
+    """Regression: weekly_sparkline buckets should include AI-applied rows, not
+    just human-decided ones. Buckets follow the message's authored week, so
+    AI applications on messages sent in a later week widen the sparkline even
+    when the AI ran in a single batch."""
+    ld = _make_run(session, "help-seeking")
+    base = datetime(2026, 4, 6, 10, 0, 0)  # Monday
+    base2 = base + timedelta(days=7)
+    # Two messages authored in week 1, four in week 2.
+    session.add(MessageCache(chatlog_id=1, message_index=0, message_text="m", created_at=base))
+    session.add(MessageCache(chatlog_id=1, message_index=1, message_text="m", created_at=base + timedelta(hours=1)))
+    for i in range(3):
+        session.add(MessageCache(chatlog_id=2, message_index=i, message_text="m",
+                                 created_at=base2 + timedelta(hours=i)))
+    session.add(MessageCache(chatlog_id=3, message_index=0, message_text="m",
+                             created_at=base2 + timedelta(hours=4)))
+    session.commit()
+    # Week 1: humans label both messages — 1 yes / 1 no → 50%
+    _add(session, ld.id, 1, 0, "yes")
+    _add(session, ld.id, 1, 1, "no")
+    # Week 2: AI labels all four — 3 yes / 1 no → 75%
+    for i in range(3):
+        _add(session, ld.id, 2, i, "yes", applied_by="ai", confidence=0.9)
+    _add(session, ld.id, 3, 0, "no", applied_by="ai", confidence=0.9)
+
+    row = client.get("/api/analysis/single-label/cohort").json()["runs"][0]
+    assert row["weekly_sparkline"] == [50, 75]
 
 
 def test_cohort_archived_run_is_excluded(client, session):

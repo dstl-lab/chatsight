@@ -60,16 +60,29 @@ def _most_recent(apps: list[LabelApplication], ld: LabelDefinition) -> datetime:
     return max((a.created_at for a in apps), default=ld.created_at)
 
 
-def _weekly_yes_rates(humans: list[LabelApplication], max_weeks: int = 8) -> list[int]:
+def _weekly_yes_rates(
+    apps: list[LabelApplication],
+    message_created_at: dict[tuple[int, int], datetime],
+    max_weeks: int = 8,
+) -> list[int]:
     """Last `max_weeks` weeks of yes-rate (0–100), oldest → newest. Returns ≤max_weeks values.
 
-    Only weeks with at least one yes-or-no decision contribute.
+    Buckets by the **message's** creation date (from MessageCache.created_at)
+    rather than the label application's timestamp, so the sparkline reflects
+    when the conversations happened — not when an instructor or the AI
+    labeled them. Both human and AI applications contribute (each message has
+    at most one application per label via the unique constraint, so no double
+    counting). Rows whose MessageCache lookup is missing or has no
+    `created_at` are skipped.
     """
     bucket: dict[str, dict[str, int]] = defaultdict(lambda: {"yes": 0, "no": 0})
-    for a in humans:
+    for a in apps:
         if a.value not in ("yes", "no"):
             continue
-        bucket[_week_start(a.created_at)][a.value] += 1
+        dt = message_created_at.get((a.chatlog_id, a.message_index))
+        if dt is None:
+            continue
+        bucket[_week_start(dt)][a.value] += 1
     if not bucket:
         return []
     weeks_sorted = sorted(bucket.keys())[-max_weeks:]
@@ -88,6 +101,20 @@ def get_cohort(session: Session = Depends(get_session)) -> dict:
         .order_by(LabelDefinition.created_at)  # type: ignore[arg-type]
     ).all()
 
+    # Build (chatlog_id, message_index) -> message-created-at lookup once for
+    # every run's sparkline. Skips rows where the cache row is missing a
+    # timestamp (they're excluded from the weekly buckets entirely).
+    message_created_at: dict[tuple[int, int], datetime] = {
+        (cid, midx): dt
+        for cid, midx, dt in session.exec(
+            select(
+                MessageCache.chatlog_id,
+                MessageCache.message_index,
+                MessageCache.created_at,
+            ).where(MessageCache.created_at.is_not(None))  # type: ignore[union-attr]
+        ).all()
+    }
+
     rows = []
     for ld in runs:
         apps = session.exec(
@@ -97,9 +124,6 @@ def get_cohort(session: Session = Depends(get_session)) -> dict:
 
         yes_n = sum(1 for a in humans if a.value == "yes")
         no_n = sum(1 for a in humans if a.value == "no")
-        walked = len(
-            {(a.chatlog_id, a.message_index) for a in humans if a.value in ("yes", "no", "skip")}
-        )
 
         # Overlap = human-decided rows that have a captured AI snapshot.
         reviewed = [
@@ -118,12 +142,10 @@ def get_cohort(session: Session = Depends(get_session)) -> dict:
                 "yes_count": yes_n,
                 "no_count": no_n,
                 "yes_pct": _round_pct(yes_n, yes_n + no_n),
-                "walked": walked,
-                "total_target": ld.classification_total,
                 "disagreement_pct": _round_pct(disagree, overlap_count) if overlap_count else None,
                 "overlap_count": overlap_count,
                 "updated_at": _isoformat(_most_recent(apps, ld)),
-                "weekly_sparkline": _weekly_yes_rates(humans),
+                "weekly_sparkline": _weekly_yes_rates(apps, message_created_at),
             }
         )
 
@@ -488,9 +510,6 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)) -> dict
 
     yes_n = sum(1 for a in humans if a.value == "yes")
     no_n = sum(1 for a in humans if a.value == "no")
-    walked = len(
-        {(a.chatlog_id, a.message_index) for a in humans if a.value in ("yes", "no", "skip")}
-    )
 
     return {
         "run": {
@@ -499,8 +518,8 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)) -> dict
             "description": ld.description,
             "phase": ld.phase,
             "updated_at": _isoformat(_most_recent(apps, ld)),
-            "walked": walked,
-            "total_target": ld.classification_total,
+            "yes_count": yes_n,
+            "no_count": no_n,
             "yes_pct": _round_pct(yes_n, yes_n + no_n),
             "conv_yes_pct": conv_yes_pct,
         },

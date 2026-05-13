@@ -3262,8 +3262,18 @@ def _do_classification(
     yes_examples = _texts_for(yes_examples_rows[:10])
     no_examples = _texts_for(no_examples_rows[:10])
 
-    label.classification_total = len(pending)
-    label.classified_count = 0
+    # Counters are cumulative across retries. Existing AI rows (from earlier
+    # partial runs that didn't reach 'handed_off') still count as classified
+    # work — the unique constraint on (label_id, chatlog_id, message_index)
+    # means `pending` already excludes those messages, so we just offset.
+    existing_ai_count = db.exec(
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == label.id,
+            LabelApplication.applied_by == "ai",
+        )
+    ).one()
+    label.classification_total = existing_ai_count + len(pending)
+    label.classified_count = existing_ai_count
     db.add(label)
     db.commit()
 
@@ -3318,7 +3328,9 @@ def _classify_in_parallel(
         )
         return chunk, classifications
 
-    completed = 0
+    # Start from the cumulative count seeded by _do_classification so progress
+    # reporting reflects total AI rows written, not just this run's portion.
+    completed = label.classified_count or 0
     with ThreadPoolExecutor(max_workers=PARALLEL_CONCURRENCY) as ex:
         futures = [ex.submit(run_chunk, chunk) for chunk in chunks]
         try:
@@ -3459,7 +3471,8 @@ def _classify_via_batch_api(
 
     yes_msgs: list[str] = []
     no_msgs: list[str] = []
-    completed = 0
+    # Cumulative start — see same comment in _classify_in_parallel.
+    completed = label.classified_count or 0
     for idx, chunk in enumerate(chunks):
         row = results_by_key.get(f"chunk-{idx}")
         response_obj = (row or {}).get("response")
@@ -3616,8 +3629,8 @@ def retry_handoff_single_label(
 
     label.phase = "classifying"
     label.summary_json = None
-    label.classified_count = None
-    label.classification_total = None
+    # Keep classified_count / classification_total — they're cumulative across
+    # retries. _do_classification extends them by the new pending set's size.
     db.add(label)
     db.commit()
 

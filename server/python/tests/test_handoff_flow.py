@@ -377,6 +377,60 @@ def test_sample_size_omitted_classifies_all_pending(client, session):
     assert fresh.classification_total == 12
 
 
+def test_classification_total_is_cumulative_across_retries(client, session):
+    """Regression: classified_count / classification_total must accumulate across
+    retry-handoff. A partial run (some AI rows written, then crash → phase='failed')
+    followed by a successful retry must end with counters that reflect *every*
+    AI row for the label, not just the retry's portion. Previously retry-handoff
+    cleared both counters and the second _do_classification would set
+    classification_total to len(pending), undercounting the cumulative work."""
+    _seed(session, conversations=4, per_conv=3)  # 12 cached messages
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+
+    # Simulate a partial first run: 5 AI rows already on disk, label marked failed.
+    partial_keys = [(300, 0), (300, 1), (300, 2), (301, 0), (301, 1)]
+    for cid, midx in partial_keys:
+        session.add(LabelApplication(
+            label_id=a["id"],
+            chatlog_id=cid,
+            message_index=midx,
+            applied_by="ai",
+            confidence=0.9,
+            value="yes",
+        ))
+    label = session.get(LabelDefinition, a["id"])
+    label.phase = "failed"
+    label.is_active = False
+    label.classified_count = 5
+    label.classification_total = 5  # what the failed first run had written
+    session.add(label)
+    session.commit()
+
+    # Retry: counters must survive — they're cumulative.
+    r = client.post(f"/api/single-labels/{a['id']}/retry-handoff")
+    assert r.status_code == 200
+    after_retry = session.get(LabelDefinition, a["id"])
+    session.refresh(after_retry)
+    assert after_retry.classified_count == 5
+    assert after_retry.classification_total == 5
+
+    # Execute the retry's classification. 12 cached − 5 already-classified = 7 pending.
+    _run_classification(session, a["id"])
+
+    final = session.get(LabelDefinition, a["id"])
+    session.refresh(final)
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) == 12
+    assert final.classification_total == 12  # 5 prior + 7 new
+    assert final.classified_count == 12
+
+
 def test_batch_request_shape_uses_snake_case_protocol_and_uppercase_type_enums():
     """Regression: Gemini's Batch API rejects requests when JSON-schema `type`
     values aren't the proto Type enum (UPPERCASE) or when protocol-level fields

@@ -148,7 +148,6 @@ function Entry({
       <div className="mt-2 flex items-center gap-2.5 text-[11px] text-muted">
         <Pill v={`${row.yes_pct}%`} lbl="YES" />
         <Pill v={`${row.disagreement_pct ?? '—'}%`} lbl="DIS" warn={warn} />
-        <Pill v={row.total_target ? `${row.walked}/${row.total_target}` : `${row.walked}`} />
       </div>
       <div
         className="mt-2 flex items-center justify-between text-[10.5px] text-muted tracking-[0.08em]"

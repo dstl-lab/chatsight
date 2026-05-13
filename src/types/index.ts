@@ -391,9 +391,6 @@ export type SingleLabelCohortRow = {
   no_count: number
   /** 0–100; 0 if (yes + no) == 0 */
   yes_pct: number
-  /** distinct (chatlog_id, message_index) pairs with a human decision */
-  walked: number
-  total_target: number | null
   /** 0–100; null when overlap_count == 0 */
   disagreement_pct: number | null
   overlap_count: number
@@ -448,8 +445,8 @@ export interface SingleLabelRunDetail {
     description: string | null
     phase: 'queued' | 'labeling' | 'handed_off' | 'reviewing' | 'complete'
     updated_at: string
-    walked: number
-    total_target: number | null
+    yes_count: number
+    no_count: number
     /** per-message yes-rate, 0–100 */
     yes_pct: number
     /** per-conversation yes-rate, 0–100 */
