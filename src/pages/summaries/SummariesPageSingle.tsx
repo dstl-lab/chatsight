@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { LabelRail } from '../../components/summaries/LabelRail'
 import { DetailHeader, type SummariesTab } from '../../components/summaries/DetailHeader'
 import { BrowseTab } from '../../components/summaries/BrowseTab'
+import { SettingsTab } from '../../components/summaries/SettingsTab'
+import { RenameModal } from '../../components/summaries/RenameModal'
+import { DeleteConfirmModal } from '../../components/summaries/DeleteConfirmModal'
 import { api } from '../../services/api'
 import type { HandoffSummaryItem, SingleLabelDetail } from '../../types'
 
@@ -13,6 +16,8 @@ export function SummariesPageSingle() {
   })
   const [detail, setDetail] = useState<SingleLabelDetail | null>(null)
   const [tab, setTab] = useState<SummariesTab>('browse')
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const refreshList = useCallback(() => {
     api.listHandoffSummaries().then(setItems)
@@ -55,13 +60,31 @@ export function SummariesPageSingle() {
               detail={detail}
               activeTab={tab}
               onTabChange={setTab}
-              onMenuAction={() => { /* Task 24 */ }}
+              onMenuAction={(action) => {
+                if (action === 'rename' || action === 'edit') setRenameOpen(true)
+                else if (action === 'delete') setDeleteOpen(true)
+                else if (action === 'rehandoff') {
+                  if (!confirm('Re-handoff this label to Gemini?')) return
+                  api.handoffSingleLabel(detail.id).then(() => { refreshList(); refreshDetail() })
+                }
+              }}
             />
             {tab === 'browse' && (
               <BrowseTab label={detail} onLabelChanged={() => { refreshList(); refreshDetail() }} />
             )}
             {tab === 'settings' && (
-              <div className="flex-1 flex items-center justify-center text-muted">Settings tab — Task 24</div>
+              <SettingsTab
+                detail={detail}
+                onRehandoff={async () => {
+                  if (!confirm('Re-handoff this label to Gemini?')) return
+                  await api.handoffSingleLabel(detail.id)
+                  refreshList(); refreshDetail()
+                }}
+                onSaveThreshold={async (v) => {
+                  await api.patchSingleLabel(detail.id, { review_threshold: v })
+                  refreshDetail()
+                }}
+              />
             )}
           </>
         ) : (
@@ -70,6 +93,30 @@ export function SummariesPageSingle() {
           </div>
         )}
       </section>
+      {renameOpen && detail && (
+        <RenameModal
+          initialName={detail.name}
+          initialDescription={detail.description}
+          onSave={async (name, description) => {
+            await api.patchSingleLabel(detail.id, { name, description })
+            setRenameOpen(false)
+            refreshList(); refreshDetail()
+          }}
+          onCancel={() => setRenameOpen(false)}
+        />
+      )}
+      {deleteOpen && detail && (
+        <DeleteConfirmModal
+          labelName={detail.name}
+          onConfirm={async () => {
+            await api.deleteSingleLabel(detail.id)
+            setDeleteOpen(false)
+            setActiveId(null)
+            refreshList()
+          }}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
     </div>
   )
 }
