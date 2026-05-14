@@ -4386,21 +4386,48 @@ def upsert_single_label_note(
     return {"ok": True}
 
 
-@app.delete("/api/single-labels/{label_id}", response_model=DeleteLabelResponse)
-def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+@app.patch(
+    "/api/single-labels/{label_id}",
+    response_model=SingleLabelDetailResponse,
+)
+def patch_single_label(
+    label_id: int,
+    body: LabelUpdateRequest,
+    db: Session = Depends(get_session),
+):
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
-        raise HTTPException(status_code=404, detail="Single-label not found")
-    # Drop all decisions + cursors for this label
-    apps = db.exec(select(LabelApplication).where(LabelApplication.label_id == label_id)).all()
-    for a in apps:
-        db.delete(a)
-    cursors = db.exec(select(ConversationCursor).where(ConversationCursor.label_id == label_id)).all()
-    for c in cursors:
-        db.delete(c)
-    db.delete(label)
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    if body.name is not None:
+        label.name = body.name
+    if body.description is not None:
+        label.description = body.description
+    if body.review_threshold is not None:
+        if not (0.0 <= body.review_threshold <= 1.0):
+            raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
+        label.review_threshold = body.review_threshold
+
+    db.add(label)
     db.commit()
-    return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
+
+    # Return the freshly-computed detail by reusing the existing handler.
+    return get_single_label_detail(label_id, db=db)
+
+
+@app.delete("/api/single-labels/{label_id}")
+def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Archives the label (matches the existing label-archive behavior).
+    Returns orphaned messages to the unlabeled pool implicitly via the
+    `archived_at` filter applied by other queries."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    label.archived_at = datetime.utcnow()
+    db.add(label)
+    db.commit()
+    return {"ok": True}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -402,3 +402,67 @@ def test_upsert_note_404_when_label_is_multi_mode(client, session):
         json={"text": "hi"},
     )
     assert r.status_code == 404
+
+
+def test_patch_label_updates_name_description_threshold(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="old", description=None, mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+
+    r = client.patch(
+        f"/api/single-labels/{label.id}",
+        json={"name": "new", "description": "d", "review_threshold": 0.6},
+    )
+    assert r.status_code == 200, r.text
+
+    session.expire_all()
+    refreshed = session.get(LabelDefinition, label.id)
+    assert refreshed.name == "new"
+    assert refreshed.description == "d"
+    assert refreshed.review_threshold == 0.6
+
+
+def test_patch_label_partial_only_threshold(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="orig", description="orig-desc", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+
+    r = client.patch(
+        f"/api/single-labels/{label.id}",
+        json={"review_threshold": 0.55},
+    )
+    assert r.status_code == 200
+
+    session.expire_all()
+    refreshed = session.get(LabelDefinition, label.id)
+    assert refreshed.name == "orig"  # untouched
+    assert refreshed.description == "orig-desc"  # untouched
+    assert refreshed.review_threshold == 0.55
+
+
+def test_patch_label_404_when_multi_mode(client, session):
+    from models import LabelDefinition
+    multi = LabelDefinition(name="multi", mode="multi", phase="labeling")
+    session.add(multi); session.commit(); session.refresh(multi)
+    r = client.patch(f"/api/single-labels/{multi.id}", json={"name": "x"})
+    assert r.status_code == 404
+
+
+def test_delete_label_archives(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    r = client.delete(f"/api/single-labels/{label.id}")
+    assert r.status_code == 200
+
+    session.expire_all()
+    refreshed = session.get(LabelDefinition, label.id)
+    assert refreshed.archived_at is not None
+
+
+def test_delete_label_404_when_multi_mode(client, session):
+    from models import LabelDefinition
+    multi = LabelDefinition(name="multi", mode="multi", phase="labeling")
+    session.add(multi); session.commit(); session.refresh(multi)
+    r = client.delete(f"/api/single-labels/{multi.id}")
+    assert r.status_code == 404

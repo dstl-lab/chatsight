@@ -152,7 +152,7 @@ def test_undo_removes_last_decision(client, session):
     assert apps[0].message_index == 0
 
 
-def test_delete_single_label_cascades(client, session):
+def test_delete_single_label_archives(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()
     client.post(f"/api/single-labels/{label['id']}/activate")
@@ -163,8 +163,10 @@ def test_delete_single_label_cascades(client, session):
     r = client.delete(f"/api/single-labels/{label['id']}")
     assert r.status_code == 200
     assert r.json()["ok"] is True
-    apps = session.exec(select(LabelApplication)).all()
-    assert apps == []
+    from models import LabelDefinition
+    session.expire_all()
+    refreshed = session.get(LabelDefinition, label["id"])
+    assert refreshed.archived_at is not None
 
 
 def test_per_label_walk_order_differs(client, session):
