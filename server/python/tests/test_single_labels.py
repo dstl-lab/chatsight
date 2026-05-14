@@ -466,3 +466,15 @@ def test_delete_label_404_when_multi_mode(client, session):
     session.add(multi); session.commit(); session.refresh(multi)
     r = client.delete(f"/api/single-labels/{multi.id}")
     assert r.status_code == 404
+
+
+def test_patch_label_422_when_threshold_out_of_range(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+
+    r = client.patch(f"/api/single-labels/{label.id}", json={"review_threshold": 1.5})
+    assert r.status_code == 422
+
+    r2 = client.patch(f"/api/single-labels/{label.id}", json={"review_threshold": -0.1})
+    assert r2.status_code == 422
