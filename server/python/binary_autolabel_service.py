@@ -26,7 +26,10 @@ CLASSIFY_SYSTEM_INSTRUCTION = (
     "ONE label at a time. The instructor has provided a label name, an optional description, "
     "and a few-shot block of human-decided examples (some yes, some no). Classify each new "
     "message accordingly. Confidence: 1.0 = certain, 0.5 = guess. Use the examples to "
-    "calibrate borderline cases."
+    "calibrate borderline cases. "
+    "For each classification, also surface a short matched_pattern excerpt (a phrase from the "
+    "label description or examples that fits this message) and a one-sentence rationale grounded "
+    "in the message text."
 )
 
 CLASSIFY_FUNCTION_DECLARATION = {
@@ -43,8 +46,16 @@ CLASSIFY_FUNCTION_DECLARATION = {
                         "index": {"type": "integer", "description": "Index in the input messages array"},
                         "value": {"type": "string", "enum": ["yes", "no"]},
                         "confidence": {"type": "number", "description": "0.0 to 1.0"},
+                        "matched_pattern": {
+                            "type": "string",
+                            "description": "Short excerpt or phrase from the label description / examples that fits this message.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "One-sentence reason for the classification, grounded in the message text.",
+                        },
                     },
-                    "required": ["index", "value", "confidence"],
+                    "required": ["index", "value", "confidence", "matched_pattern", "rationale"],
                 },
             },
         },
