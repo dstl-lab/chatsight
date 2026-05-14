@@ -12,6 +12,7 @@ import type {
   AssistResponse,
   SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
   SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
+  BrowseBucket,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -509,7 +510,7 @@ export const api = {
 
   listSingleLabelMessages: (
     id: number,
-    opts: { bucket?: string; sort?: string; search?: string; offset?: number; limit?: number } = {},
+    opts: { bucket?: BrowseBucket; sort?: string; search?: string; offset?: number; limit?: number } = {},
   ): Promise<MessageListResponse> => {
     if (USE_MOCK) return Promise.resolve({ items: [], total: 0, offset: 0, limit: 50 })
     const params = new URLSearchParams()
