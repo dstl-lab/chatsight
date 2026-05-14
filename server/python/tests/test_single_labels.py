@@ -106,7 +106,7 @@ def test_list_messages_default_sort_confidence_ascending(client, session):
 
 def test_list_messages_filter_yes_excludes_review_bucket(client, session):
     label = _seed_label_with_rows(session)
-    r = client.get(f"/api/single-labels/{label.id}/messages?filter=yes&limit=200")
+    r = client.get(f"/api/single-labels/{label.id}/messages?bucket=yes&limit=200")
     items = r.json()["items"]
     assert len(items) > 0
     assert all(it["verdict"] == "yes" for it in items)
@@ -114,7 +114,7 @@ def test_list_messages_filter_yes_excludes_review_bucket(client, session):
 
 def test_list_messages_filter_review(client, session):
     label = _seed_label_with_rows(session)
-    r = client.get(f"/api/single-labels/{label.id}/messages?filter=review&limit=200")
+    r = client.get(f"/api/single-labels/{label.id}/messages?bucket=review&limit=200")
     items = r.json()["items"]
     assert all(it["verdict"] == "review" for it in items)
     assert len(items) == 2  # _seed_label_with_rows creates 2 review-bucket rows
@@ -124,7 +124,7 @@ def test_list_messages_pagination(client, session):
     label = _seed_label_with_rows(session, yes=30, no=0, review=0, human_gold=0)
     r = client.get(f"/api/single-labels/{label.id}/messages?offset=10&limit=10")
     body = r.json()
-    assert body["total"] >= 30
+    assert body["total"] == 30
     assert body["offset"] == 10
     assert body["limit"] == 10
     assert len(body["items"]) == 10
@@ -145,3 +145,15 @@ def test_list_messages_search_substring(client, session):
     items = r.json()["items"]
     assert len(items) == 1
     assert items[0]["chatlog_id"] == 1
+
+
+def test_list_messages_rejects_unknown_bucket(client, session):
+    label = _seed_label_with_rows(session)
+    r = client.get(f"/api/single-labels/{label.id}/messages?bucket=foobar")
+    assert r.status_code == 422
+
+
+def test_list_messages_rejects_oversized_limit(client, session):
+    label = _seed_label_with_rows(session)
+    r = client.get(f"/api/single-labels/{label.id}/messages?limit=10000")
+    assert r.status_code == 422  # FastAPI Query(le=500) rejects this

@@ -4,7 +4,7 @@ from typing import List, Optional
 import hashlib
 from collections import defaultdict
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 import csv
 import os
 import io
@@ -3024,16 +3024,23 @@ def get_single_label_detail(label_id: int, db: Session = Depends(get_session)):
 @app.get("/api/single-labels/{label_id}/messages", response_model=MessageListResponse)
 def list_single_label_messages(
     label_id: int,
-    filter: Optional[str] = None,
-    sort: str = "confidence_asc",
-    search: Optional[str] = None,
-    offset: int = 0,
-    limit: int = 50,
+    bucket: Optional[str] = Query(
+        None,
+        description="Filter chip: 'yes' | 'no' | 'review' | 'flagged' | 'notes' | 'pattern=<excerpt>'",
+    ),
+    sort: Literal["confidence_asc", "confidence_desc", "recently_flipped"] = "confidence_asc",
+    search: Optional[str] = Query(None, max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_session),
 ):
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="single-label not found")
+
+    ALLOWED_BUCKETS = {"yes", "no", "review", "flagged", "notes"}
+    if bucket is not None and bucket not in ALLOWED_BUCKETS and not bucket.startswith("pattern="):
+        raise HTTPException(status_code=422, detail=f"unknown bucket: {bucket!r}")
 
     threshold = label.review_threshold
 
@@ -3056,19 +3063,19 @@ def list_single_label_messages(
 
     pairs = db.exec(q).all()
 
-    # Apply filter
-    if filter == "yes":
+    # Apply bucket filter
+    if bucket == "yes":
         pairs = [p for p in pairs if p[0].value == "yes" and not is_review(p[0])]
-    elif filter == "no":
+    elif bucket == "no":
         pairs = [p for p in pairs if p[0].value == "no" and not is_review(p[0])]
-    elif filter == "review":
+    elif bucket == "review":
         pairs = [p for p in pairs if is_review(p[0])]
-    elif filter == "flagged":
+    elif bucket == "flagged":
         pairs = [p for p in pairs if p[0].flagged]
-    elif filter == "notes":
+    elif bucket == "notes":
         pairs = [p for p in pairs if p[0].note]
-    elif filter and filter.startswith("pattern="):
-        pat = filter[len("pattern="):]
+    elif bucket and bucket.startswith("pattern="):
+        pat = bucket[len("pattern="):]
         pairs = [p for p in pairs if p[0].matched_pattern == pat]
 
     # Sort
