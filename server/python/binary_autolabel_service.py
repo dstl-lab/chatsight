@@ -116,8 +116,9 @@ def classify_binary(
 ) -> List[Dict[str, Any]]:
     """Classify each message yes/no for the given label.
 
-    Returns a list of `{index, value, confidence}` dicts in the same order as messages.
-    Missing indices are filled in as `value="no", confidence=0.5`.
+    Returns a list of `{index, value, confidence, matched_pattern, rationale}` dicts
+    in the same order as messages. Missing indices are filled in as
+    `value="no", confidence=0.5, matched_pattern=None, rationale=None`.
     """
     if not messages:
         return []
@@ -143,9 +144,17 @@ def classify_binary(
                 "index": i,
                 "value": c.get("value", "no"),
                 "confidence": float(c.get("confidence", 0.5)),
+                "matched_pattern": c.get("matched_pattern"),
+                "rationale": c.get("rationale"),
             })
         else:
-            out.append({"index": i, "value": "no", "confidence": 0.5})
+            out.append({
+                "index": i,
+                "value": "no",
+                "confidence": 0.5,
+                "matched_pattern": None,
+                "rationale": None,
+            })
     return out
 
 
@@ -295,9 +304,10 @@ def parse_classify_batch_response(
     response_obj: Optional[Dict[str, Any]],
     num_messages: int,
 ) -> List[Dict[str, Any]]:
-    """Parse one line of the Batch API result JSONL into the same `{index, value,
-    confidence}[]` shape as `classify_binary`. Missing/failed entries default to
-    `value="no", confidence=0.5`."""
+    """Parse one line of the Batch API result JSONL into the same
+    `{index, value, confidence, matched_pattern, rationale}[]` shape as
+    `classify_binary`. Missing/failed entries default to
+    `value="no", confidence=0.5, matched_pattern=None, rationale=None`."""
     classifications: List[Dict[str, Any]] = []
     try:
         parts = (response_obj or {}).get("candidates", [{}])[0].get("content", {}).get("parts", [])
@@ -319,7 +329,15 @@ def parse_classify_batch_response(
                 "index": i,
                 "value": c.get("value", "no"),
                 "confidence": float(c.get("confidence", 0.5)),
+                "matched_pattern": c.get("matched_pattern"),
+                "rationale": c.get("rationale"),
             })
         else:
-            out.append({"index": i, "value": "no", "confidence": 0.5})
+            out.append({
+                "index": i,
+                "value": "no",
+                "confidence": 0.5,
+                "matched_pattern": None,
+                "rationale": None,
+            })
     return out
