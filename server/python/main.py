@@ -43,6 +43,7 @@ from schemas import (
     InferAssignmentsResponse, HandoffSummaryListItem,
     MergeAssignmentsRequest, MergeAssignmentsResponse,
     AssistNeighbor, AssistResponse,
+    ConfidenceHistogramBin, SingleLabelDetailResponse,
 )
 import decision_service
 import queue_service
@@ -2956,6 +2957,67 @@ def get_active_single_label(db: Session = Depends(get_session)):
     if not label:
         return None
     return _label_to_response(db, label)
+
+
+@app.get("/api/single-labels/{label_id}", response_model=SingleLabelDetailResponse)
+def get_single_label_detail(label_id: int, session: Session = Depends(get_session)):
+    label = session.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    threshold = label.review_threshold
+
+    rows = session.exec(
+        select(LabelApplication).where(LabelApplication.label_id == label_id)
+    ).all()
+
+    yes_count = sum(
+        1 for r in rows
+        if r.value == "yes"
+        and (r.applied_by == "human" or (r.confidence or 0) >= threshold)
+    )
+    no_count = sum(
+        1 for r in rows
+        if r.value == "no"
+        and (r.applied_by == "human" or (r.confidence or 0) >= threshold)
+    )
+    review_count = sum(
+        1 for r in rows
+        if r.applied_by == "ai" and (r.confidence or 0) < threshold
+    )
+
+    # Agreement vs gold set: among human rows with an AI snapshot, fraction
+    # where they agree. Suppressed when fewer than 20 rows (unstable).
+    gold = [r for r in rows if r.applied_by == "human" and r.ai_value_at_review is not None]
+    if len(gold) >= 20:
+        agree = sum(1 for r in gold if r.value == r.ai_value_at_review)
+        agreement = agree / len(gold)
+    else:
+        agreement = None
+
+    # Confidence histogram: 10 equal-width bins over [0, 1] for AI rows only.
+    bins = [0] * 10
+    for r in rows:
+        if r.applied_by == "ai" and r.confidence is not None:
+            idx = min(int(r.confidence * 10), 9)
+            bins[idx] += 1
+    histogram = [
+        ConfidenceHistogramBin(range_lo=i / 10, range_hi=(i + 1) / 10, count=bins[i])
+        for i in range(10)
+    ]
+
+    return SingleLabelDetailResponse(
+        id=label.id,
+        name=label.name,
+        description=label.description,
+        phase=label.phase,
+        yes_count=yes_count,
+        no_count=no_count,
+        review_count=review_count,
+        review_threshold=threshold,
+        agreement_vs_gold=agreement,
+        confidence_histogram=histogram,
+    )
 
 
 @app.post("/api/single-labels", response_model=SingleLabelResponse)
