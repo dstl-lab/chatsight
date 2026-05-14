@@ -3398,6 +3398,8 @@ def _classify_in_parallel(
                         applied_by="ai",
                         confidence=confidence,
                         value=value,
+                        matched_pattern=cls.get("matched_pattern"),
+                        rationale=cls.get("rationale"),
                     ))
                     if value == "yes":
                         yes_msgs.append(text)
@@ -3541,6 +3543,8 @@ def _parse_and_write_sub_batch(db, label, job, entry, bas) -> tuple[list[str], l
                 applied_by="ai",
                 confidence=confidence,
                 value=value,
+                matched_pattern=cls.get("matched_pattern"),
+                rationale=cls.get("rationale"),
             ))
             if value == "yes":
                 yes_msgs.append(text)
