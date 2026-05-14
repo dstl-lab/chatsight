@@ -366,6 +366,16 @@ export interface HandoffSummaryItem {
   classification_total: number | null
   error: string | null
   error_kind: 'rate_limited' | 'error' | null
+  // Gemini Batch API instrumentation — non-null only while a batch job is in
+  // flight. When `batch_state` is set, the UI shows a state-aware display.
+  // For multi-batch handoffs, `batch_total_count` / `batch_completed_count`
+  // drive the "X of N batches done" text and let the real % bar take over
+  // as soon as the first sub-batch lands.
+  batch_state: string | null
+  batch_submitted_at: string | null
+  batch_polled_at: string | null
+  batch_total_count: number | null
+  batch_completed_count: number | null
 }
 
 export interface AssistNeighbor {

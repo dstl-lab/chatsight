@@ -6,7 +6,18 @@ from typing import Any, Dict, List, Optional
 from google import genai
 from google.genai import types
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+# Per-request timeout (milliseconds). Without this the genai SDK defaults to no
+# read timeout, and a half-open TCP connection to Google can block a worker
+# thread indefinitely (we hit exactly this — a single hung chunk stalled an
+# otherwise-complete 17k-message run at 99.7%). 120s is generous for one
+# 50-message chunk; once the timeout fires, the parallel retry-loop in
+# `_classify_in_parallel` reissues the call.
+GEMINI_REQUEST_TIMEOUT_MS = 120_000
+
+client = genai.Client(
+    api_key=os.environ.get("GEMINI_API_KEY", ""),
+    http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
+)
 
 CLASSIFY_MODEL = "gemini-2.0-flash"
 

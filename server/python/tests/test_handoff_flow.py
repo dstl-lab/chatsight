@@ -1,5 +1,6 @@
 """Tests for handoff (now background-async), summary, refine, and review-queue endpoints."""
-from unittest.mock import patch
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 from sqlmodel import select
 
@@ -125,6 +126,145 @@ def test_classification_writes_ai_rows_and_summary(client, session):
     fresh = session.get(LabelDefinition, a["id"])
     assert fresh.phase == "handed_off"
     assert fresh.summary_json is not None
+
+
+def test_parallel_classify_retries_on_rate_limit_then_succeeds(client, session):
+    """The chunk runner retries Gemini 429 (RESOURCE_EXHAUSTED) errors with
+    exponential backoff. After self-throttling below the quota, the run
+    completes and AI rows are written normally."""
+    _seed(session, conversations=2, per_conv=3)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 300, 1, "no")
+
+    # Fail twice with 429, then succeed. Counters are per-call so any of the
+    # parallel chunks share the same rate-limit emulation.
+    call_count = {"n": 0}
+
+    class _RateLimited(Exception):
+        code = 429
+
+    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:
+            raise _RateLimited("429 RESOURCE_EXHAUSTED: quota exceeded")
+        return [
+            {"index": i, "value": "yes" if i % 2 == 0 else "no", "confidence": 0.9}
+            for i in range(len(messages))
+        ]
+
+    def fake_summary(*args, **kwargs):
+        return {"included": [], "excluded": []}
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=flaky_classify), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary), \
+         patch("main.time.sleep"):  # collapse backoff sleeps in tests
+        main._do_classification(session, label)
+
+    # Two 429s burned, then succeeded → AI rows landed normally.
+    assert call_count["n"] >= 3
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) > 0
+
+
+def test_parallel_classify_gives_up_after_max_retries_on_rate_limit(client, session):
+    """If 429s keep coming past PARALLEL_RETRY_MAX_ATTEMPTS, the chunk runner
+    surfaces the 429 to the caller. The exception handler in
+    `_classify_in_background` then marks the label rate_limited."""
+    _seed(session, conversations=1, per_conv=2)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+
+    def always_429(*args, **kwargs):
+        raise Exception("429 RESOURCE_EXHAUSTED: quota exceeded")
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=always_429), \
+         patch("main.time.sleep"):
+        import pytest as _pytest
+        with _pytest.raises(Exception, match="429"):
+            main._do_classification(session, label)
+
+
+def test_parallel_classify_retries_on_request_timeout(client, session):
+    """Hung connections (read/connect timeouts) are now treated as transient
+    and retried, matching the rate-limit retry path. This prevents a single
+    stuck socket from killing an otherwise-complete run (we hit exactly this
+    at 99.7% on a 17k-message handoff)."""
+    _seed(session, conversations=2, per_conv=3)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 300, 1, "no")
+
+    # First two calls raise a timeout-flavored exception; third succeeds.
+    call_count = {"n": 0}
+
+    class _ReadTimeout(Exception):
+        pass
+
+    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:
+            raise _ReadTimeout("read timeout while waiting for Gemini response")
+        return [
+            {"index": i, "value": "no", "confidence": 0.5}
+            for i in range(len(messages))
+        ]
+
+    def fake_summary(*args, **kwargs):
+        return {"included": [], "excluded": []}
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=flaky_classify), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary), \
+         patch("main.time.sleep"):
+        main._do_classification(session, label)
+
+    # Burned 2 timeouts then succeeded.
+    assert call_count["n"] >= 3
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == a["id"],
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) > 0
+
+
+def test_parallel_classify_does_not_retry_non_rate_limit_errors(client, session):
+    """Non-429 errors (auth, 500, validation, etc.) should NOT be retried —
+    the chunk runner fails fast so genuine bugs surface immediately."""
+    _seed(session, conversations=1, per_conv=2)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+
+    call_count = {"n": 0}
+
+    def auth_error(*args, **kwargs):
+        call_count["n"] += 1
+        raise Exception("401 UNAUTHENTICATED: bad API key")
+
+    label = session.get(LabelDefinition, a["id"])
+    with patch("binary_autolabel_service.classify_binary", side_effect=auth_error), \
+         patch("main.time.sleep"):
+        import pytest as _pytest
+        with _pytest.raises(Exception, match="401"):
+            main._do_classification(session, label)
+    # No retry burned on non-429 errors. With PARALLEL_CONCURRENCY=3 we may
+    # have up to 3 chunks failing concurrently, but each chunk should fail
+    # on its first attempt — call_count == number of chunks attempted, not
+    # number of chunks × retry attempts.
+    assert call_count["n"] <= main.PARALLEL_CONCURRENCY
 
 
 def test_summary_endpoint_after_classification(client, session):
@@ -517,3 +657,380 @@ def test_failed_handoff_still_appears_with_error(client, session):
     assert len(failed) == 1
     assert failed[0]["phase"] == "failed"
     assert failed[0]["error"] == "Gemini quota exceeded"
+
+
+# ─── Batch API instrumentation ────────────────────────────────────────────
+
+
+def _make_fake_job(state_name, name="batches/test-job", dest_inlined=None):
+    """Build a MagicMock job mimicking the genai Batch API shape that
+    `_classify_via_batch_api` reads from."""
+    j = MagicMock()
+    j.name = name
+    j.state.name = state_name
+    j.error = None
+    if dest_inlined is not None:
+        j.dest.file_name = None
+        j.dest.inlined_responses = dest_inlined
+    else:
+        j.dest = None
+    return j
+
+
+def test_batch_state_persists_through_poll_loop_and_clears_on_success(session):
+    """The batch path writes `batch_state` + `batch_polled_at` on every poll
+    tick (so the UI can show real liveness) and nulls the in-flight fields
+    once the job terminates successfully. `batch_submitted_at` is kept as a
+    historical record."""
+    import binary_autolabel_service as bas
+
+    label = LabelDefinition(name="batch-test", mode="single", phase="classifying")
+    session.add(label)
+    session.commit()
+    session.refresh(label)
+
+    pending = [(1, i, f"msg {i}") for i in range(3)]
+    states_after_create = iter(["JOB_STATE_RUNNING", "JOB_STATE_SUCCEEDED"])
+    snapshots: list[str] = []
+
+    def fake_get(name=None):
+        # Snapshot what the function just committed before serving the next state.
+        session.refresh(label)
+        snapshots.append(label.batch_state)
+        return _make_fake_job(
+            next(states_after_create),
+            dest_inlined=[],  # parse_classify_batch_response is patched, so contents irrelevant
+        )
+
+    fake_client = MagicMock()
+    fake_client.files.upload.return_value = MagicMock(name="uploads/x")
+    fake_client.files.delete = MagicMock()
+    fake_client.batches.create.return_value = _make_fake_job("JOB_STATE_PENDING")
+    fake_client.batches.get.side_effect = fake_get
+
+    fake_classifications = [
+        {"index": i, "value": "yes", "confidence": 0.9} for i in range(len(pending))
+    ]
+
+    with patch.object(bas, "client", fake_client), \
+         patch("main.time.sleep"), \
+         patch.object(bas, "parse_classify_batch_response", return_value=fake_classifications):
+        main._classify_via_batch_api(session, label, pending, [], [])
+
+    session.refresh(label)
+    # In-flight handle was nulled after terminal completion.
+    assert label.batch_job_name is None
+    assert label.batch_state is None
+    assert label.batch_polled_at is None
+    assert label.batch_total_count is None
+    assert label.batch_completed_count is None
+    # Historical record survives.
+    assert label.batch_submitted_at is not None
+    # The loop committed at least one intermediate state between submit and
+    # success — snapshots[0] should be what was committed by `create()` (PENDING),
+    # snapshots[1] should be what was committed after the first `get()` (RUNNING).
+    assert snapshots[0] == "JOB_STATE_PENDING"
+    assert snapshots[1] == "JOB_STATE_RUNNING"
+    # And the post-batch result-write loop populated the row count.
+    assert label.classified_count == len(pending)
+
+
+def test_batch_state_cleared_when_background_task_raises(session, engine):
+    """When the background classification raises, the failure handler in
+    `_classify_in_background` clears the in-flight batch handle so the
+    failed-state UI doesn't render a stale 'running' badge.
+    `batch_submitted_at` is intentionally preserved for postmortems."""
+    label = LabelDefinition(
+        name="batch-fail",
+        mode="single",
+        phase="classifying",
+        batch_job_name="batches/inflight",
+        batch_state="JOB_STATE_RUNNING",
+        batch_submitted_at=datetime.utcnow(),
+        batch_polled_at=datetime.utcnow(),
+    )
+    session.add(label)
+    session.commit()
+    session.refresh(label)
+    label_id = label.id
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("Gemini batch died")
+
+    # `_classify_in_background` opens its own Session(engine). Point it at the
+    # in-memory test engine so the cleanup commit lands in the test DB.
+    with patch.object(main, "engine", engine), \
+         patch("main._do_classification", side_effect=boom):
+        main._classify_in_background(label_id)
+
+    session.expire_all()
+    fresh = session.get(LabelDefinition, label_id)
+    assert fresh.phase == "failed"
+    assert fresh.batch_job_name is None
+    assert fresh.batch_state is None
+    assert fresh.batch_polled_at is None
+    # Historical record preserved.
+    assert fresh.batch_submitted_at is not None
+
+
+def test_handoff_summaries_includes_batch_fields(client, session):
+    """`/api/handoff-summaries` surfaces `batch_state`, `batch_submitted_at`,
+    and `batch_polled_at` so the SummariesPage can render the in-flight
+    state-aware display."""
+    label = LabelDefinition(
+        name="batch-flight",
+        mode="single",
+        phase="classifying",
+        classification_total=1234,
+        classified_count=0,
+        batch_job_name="batches/abc",
+        batch_state="JOB_STATE_RUNNING",
+        batch_submitted_at=datetime.utcnow(),
+        batch_polled_at=datetime.utcnow(),
+    )
+    session.add(label)
+    session.commit()
+
+    items = client.get("/api/handoff-summaries").json()
+    found = [it for it in items if it["label_name"] == "batch-flight"]
+    assert len(found) == 1
+    item = found[0]
+    assert item["batch_state"] == "JOB_STATE_RUNNING"
+    assert item["batch_submitted_at"] is not None
+    assert item["batch_polled_at"] is not None
+
+
+def test_handoff_summaries_omits_batch_fields_when_not_in_flight(client, session):
+    """A label that never used the batch path (or whose batch has terminated)
+    surfaces `batch_state` as None — the frontend uses presence-of-state to
+    decide whether to render the indeterminate UI."""
+    label = LabelDefinition(
+        name="no-batch", mode="single", phase="classifying",
+        classification_total=10, classified_count=3,
+    )
+    session.add(label)
+    session.commit()
+
+    items = client.get("/api/handoff-summaries").json()
+    found = [it for it in items if it["label_name"] == "no-batch"]
+    assert len(found) == 1
+    assert found[0]["batch_state"] is None
+    assert found[0]["batch_submitted_at"] is None
+    assert found[0]["batch_polled_at"] is None
+
+
+# ─── Multi-batch splitting ────────────────────────────────────────────────
+
+
+def _make_multi_batch_fakes(state_sequences):
+    """Build the standard mock client used by the multi-batch tests.
+    `state_sequences` maps job name -> list of states returned by successive
+    .get() calls on that job. Each .create() call returns a new PENDING job
+    named `batches/sb-{idx}` in order, matching the sb_idx assignment in
+    `_classify_via_batch_api`."""
+    create_count = {"n": 0}
+    upload_count = {"n": 0}
+
+    def fake_create(*, model=None, src=None, config=None):
+        idx = create_count["n"]
+        create_count["n"] += 1
+        return _make_fake_job("JOB_STATE_PENDING", name=f"batches/sb-{idx}")
+
+    state_iters = {name: iter(seq) for name, seq in state_sequences.items()}
+
+    def fake_get(name=None):
+        next_state = next(state_iters[name])
+        return _make_fake_job(
+            next_state,
+            name=name,
+            dest_inlined=[] if next_state == "JOB_STATE_SUCCEEDED" else None,
+        )
+
+    def fake_upload(*, file=None, config=None):
+        idx = upload_count["n"]
+        upload_count["n"] += 1
+        m = MagicMock()
+        m.name = f"uploads/file-{idx}"
+        return m
+
+    fake_client = MagicMock()
+    fake_client.files.upload.side_effect = fake_upload
+    fake_client.files.delete = MagicMock()
+    fake_client.batches.create.side_effect = fake_create
+    fake_client.batches.get.side_effect = fake_get
+    return fake_client, create_count, upload_count
+
+
+def test_multi_batch_path_advances_counts_as_sub_batches_land(session):
+    """When pending > BATCH_SPLIT_TARGET_MESSAGES, the batch path splits work
+    across N sub-batches; `classified_count` + `batch_completed_count` advance
+    as each one terminates SUCCEEDED rather than waiting for the whole job."""
+    import binary_autolabel_service as bas
+
+    label = LabelDefinition(name="multi-batch", mode="single", phase="classifying")
+    session.add(label)
+    session.commit()
+    session.refresh(label)
+
+    # 8000 pending msgs → 160 chunks of 50 → N=2 sub-batches (target 4000 each).
+    pending = [(1, i, f"msg {i}") for i in range(8000)]
+
+    fake_client, create_count, _ = _make_multi_batch_fakes({
+        # Tick 1: both still running. Tick 2: sb-0 succeeds, sb-1 still running.
+        # Tick 3: sb-1 succeeds.
+        "batches/sb-0": ["JOB_STATE_RUNNING", "JOB_STATE_SUCCEEDED"],
+        "batches/sb-1": ["JOB_STATE_RUNNING", "JOB_STATE_RUNNING", "JOB_STATE_SUCCEEDED"],
+    })
+
+    # Snapshot DB state BEFORE each tick (time.sleep is patched and runs first).
+    tick_snapshots: list[dict] = []
+
+    def fake_sleep(_seconds):
+        session.refresh(label)
+        tick_snapshots.append({
+            "classified_count": label.classified_count,
+            "batch_completed_count": label.batch_completed_count,
+            "batch_total_count": label.batch_total_count,
+            "batch_state": label.batch_state,
+        })
+
+    fake_classifications = lambda _resp, n: [
+        {"index": i, "value": "yes", "confidence": 0.9} for i in range(n)
+    ]
+
+    with patch.object(bas, "client", fake_client), \
+         patch("main.time.sleep", side_effect=fake_sleep), \
+         patch.object(bas, "parse_classify_batch_response", side_effect=fake_classifications):
+        main._classify_via_batch_api(session, label, pending, [], [])
+
+    session.refresh(label)
+    # Two sub-batches were created and both succeeded.
+    assert create_count["n"] == 2
+    assert label.classified_count == 8000
+    # All in-flight handles cleared after terminal.
+    assert label.batch_job_name is None
+    assert label.batch_state is None
+    assert label.batch_polled_at is None
+    assert label.batch_total_count is None
+    assert label.batch_completed_count is None
+    assert label.batch_submitted_at is not None
+
+    # Intermediate progress: classified_count is monotonically non-decreasing
+    # across ticks, and crosses 0 → ~4000 → 8000 as each sub-batch lands.
+    classified_series = [s["classified_count"] or 0 for s in tick_snapshots]
+    assert classified_series == sorted(classified_series)
+    # At least one tick observed partial progress (the first sub-batch landed
+    # while the second was still in flight). Sequence is roughly [0, 4000, ...].
+    assert any(0 < (s["classified_count"] or 0) < 8000 for s in tick_snapshots)
+    # batch_total_count is set immediately after submission, so every snapshot
+    # within the in-flight period reports it.
+    assert all(s["batch_total_count"] == 2 for s in tick_snapshots)
+    # At least one tick observed `batch_completed_count == 1` (between the
+    # first and second sub-batch landings). The final state of 2 lives only
+    # between the last poll and the post-loop cleanup, so we don't observe it
+    # in tick_snapshots — the after-loop `assert label.batch_completed_count
+    # is None` above already verifies the terminal cleanup.
+    assert any((s["batch_completed_count"] or 0) == 1 for s in tick_snapshots)
+
+
+def test_multi_batch_partial_failure_preserves_succeeded_sub_batch_rows(session):
+    """If one sub-batch hits a non-SUCCEEDED terminal, the batch function
+    raises. Already-committed AI rows from sibling sub-batches that succeeded
+    earlier stay in the DB so the retry path picks up from there via the
+    `(label_id, chatlog_id, message_index)` unique constraint."""
+    import binary_autolabel_service as bas
+
+    label = LabelDefinition(name="multi-partial-fail", mode="single", phase="classifying")
+    session.add(label)
+    session.commit()
+    session.refresh(label)
+
+    pending = [(1, i, f"msg {i}") for i in range(8000)]
+
+    fake_client, _, _ = _make_multi_batch_fakes({
+        # Tick 1: sb-0 succeeds, sb-1 still running.
+        # Tick 2: sb-1 fails.
+        "batches/sb-0": ["JOB_STATE_SUCCEEDED"],
+        "batches/sb-1": ["JOB_STATE_RUNNING", "JOB_STATE_FAILED"],
+    })
+
+    fake_classifications = lambda _resp, n: [
+        {"index": i, "value": "yes", "confidence": 0.9} for i in range(n)
+    ]
+
+    with patch.object(bas, "client", fake_client), \
+         patch("main.time.sleep"), \
+         patch.object(bas, "parse_classify_batch_response", side_effect=fake_classifications):
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError, match="JOB_STATE_FAILED"):
+            main._classify_via_batch_api(session, label, pending, [], [])
+
+    # The successful sub-batch's AI rows are still in the DB.
+    ai_rows = session.exec(
+        select(LabelApplication).where(
+            LabelApplication.label_id == label.id,
+            LabelApplication.applied_by == "ai",
+        )
+    ).all()
+    assert len(ai_rows) > 0
+    # And the label's classified_count reflects the partial work.
+    session.refresh(label)
+    assert label.classified_count is not None and label.classified_count > 0
+
+
+def test_n_eq_1_path_when_pending_at_or_below_split_target(session):
+    """For pending ≤ BATCH_SPLIT_TARGET_MESSAGES the splitter produces a single
+    sub-batch (N=1), keeping the small-handoff path behaviorally identical to
+    the pre-split version. Exercises `_group_chunks_into_sub_batches` boundary."""
+    import binary_autolabel_service as bas
+
+    label = LabelDefinition(name="n1-path", mode="single", phase="classifying")
+    session.add(label)
+    session.commit()
+    session.refresh(label)
+
+    # Exactly at the target — should still be 1 sub-batch.
+    pending = [(1, i, f"msg {i}") for i in range(main.BATCH_SPLIT_TARGET_MESSAGES)]
+
+    fake_client, create_count, _ = _make_multi_batch_fakes({
+        "batches/sb-0": ["JOB_STATE_SUCCEEDED"],
+    })
+
+    fake_classifications = lambda _resp, n: [
+        {"index": i, "value": "yes", "confidence": 0.9} for i in range(n)
+    ]
+
+    with patch.object(bas, "client", fake_client), \
+         patch("main.time.sleep"), \
+         patch.object(bas, "parse_classify_batch_response", side_effect=fake_classifications):
+        main._classify_via_batch_api(session, label, pending, [], [])
+
+    # Single sub-batch was created.
+    assert create_count["n"] == 1
+    session.refresh(label)
+    assert label.classified_count == main.BATCH_SPLIT_TARGET_MESSAGES
+
+
+def test_handoff_summaries_surfaces_batch_count_fields(client, session):
+    """`/api/handoff-summaries` exposes `batch_total_count` and
+    `batch_completed_count` so the UI can render 'X of N batches done'."""
+    label = LabelDefinition(
+        name="batch-counts",
+        mode="single",
+        phase="classifying",
+        classification_total=17416,
+        classified_count=8000,
+        batch_state="JOB_STATE_RUNNING",
+        batch_submitted_at=datetime.utcnow(),
+        batch_polled_at=datetime.utcnow(),
+        batch_total_count=5,
+        batch_completed_count=2,
+    )
+    session.add(label)
+    session.commit()
+
+    items = client.get("/api/handoff-summaries").json()
+    found = [it for it in items if it["label_name"] == "batch-counts"]
+    assert len(found) == 1
+    assert found[0]["batch_total_count"] == 5
+    assert found[0]["batch_completed_count"] == 2

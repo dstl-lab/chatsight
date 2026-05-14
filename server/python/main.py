@@ -3194,9 +3194,25 @@ def get_readiness(label_id: int, db: Session = Depends(get_session)):
 
 
 CLASSIFICATION_CHUNK_SIZE = 50
-PARALLEL_CONCURRENCY = 8
-BATCH_THRESHOLD = 500
+# 3 was chosen after `PARALLEL_CONCURRENCY = 8` blew through Gemini's
+# per-project quota in the first second of a fresh run. The retry-on-429
+# logic in `_classify_in_parallel` self-throttles below this when needed.
+PARALLEL_CONCURRENCY = 3
+# Retry settings for the chunk-classifier when Gemini returns 429. Other
+# error classes fail-fast so genuine bugs surface immediately.
+PARALLEL_RETRY_MAX_ATTEMPTS = 4   # initial try + 3 retries
+PARALLEL_RETRY_BACKOFF_SECONDS = [2.0, 4.0, 8.0]
+# TEMPORARY: bumped from 500 to route label-21 (17,416 msgs) through the
+# parallel-sync path after Google's Batch queue stalled hard. Revert to 500
+# after the label finishes so future large handoffs still get the Batch
+# discount + SLA.
+BATCH_THRESHOLD = 100_000
 BATCH_POLL_INTERVAL_SEC = 15
+# Above this size, _classify_via_batch_api splits work across multiple Gemini
+# Batch jobs so the UI can show real "X of N sub-batches done" progress (the
+# SDK exposes no per-request progress within a single job — only state).
+# Sized so a typical 17k-message handoff yields ~5 sub-batches → 20% steps.
+BATCH_SPLIT_TARGET_MESSAGES = 4000
 
 
 def _do_classification(
@@ -3309,7 +3325,17 @@ def _classify_in_parallel(
     each calling `classify_binary` (still patchable for tests). DB writes happen
     in the main thread as futures complete; `classified_count` advances by the
     count of each completed chunk. Exceptions propagate to the caller (matching
-    the legacy fail-fast behavior expected by test_failed_handoff_still_appears_with_error)."""
+    the legacy fail-fast behavior expected by test_failed_handoff_still_appears_with_error).
+
+    Thread-safety note: SQLAlchemy sessions are NOT thread-safe. We snapshot the
+    handful of `label` fields workers need as plain values *before* spawning
+    the pool. If workers touched ORM attributes directly, the lazy-load on an
+    expired instance would race with the main thread's commits and corrupt the
+    session, surfacing as a spurious `ObjectDeletedError` later."""
+    label_id = label.id
+    label_name = label.name
+    label_description = label.description
+
     chunks = [
         pending[i:i + CLASSIFICATION_CHUNK_SIZE]
         for i in range(0, len(pending), CLASSIFICATION_CHUNK_SIZE)
@@ -3319,14 +3345,40 @@ def _classify_in_parallel(
 
     def run_chunk(chunk):
         chunk_texts = [t for _, _, t in chunk]
-        classifications = binary_autolabel_service.classify_binary(
-            label_name=label.name,
-            label_description=label.description,
-            yes_examples=yes_examples,
-            no_examples=no_examples,
-            messages=chunk_texts,
-        )
-        return chunk, classifications
+        # Retry on transient errors (rate-limit, read/connect timeout). Other
+        # error classes fail-fast so genuine bugs (auth, malformed request,
+        # 500-class) surface immediately rather than after a long backoff.
+        last_exc: Optional[BaseException] = None
+        for attempt in range(PARALLEL_RETRY_MAX_ATTEMPTS):
+            try:
+                classifications = binary_autolabel_service.classify_binary(
+                    label_name=label_name,
+                    label_description=label_description,
+                    yes_examples=yes_examples,
+                    no_examples=no_examples,
+                    messages=chunk_texts,
+                )
+                return chunk, classifications
+            except Exception as e:
+                if not _is_transient_classify_error(e):
+                    raise
+                last_exc = e
+                if attempt == PARALLEL_RETRY_MAX_ATTEMPTS - 1:
+                    break
+                base = PARALLEL_RETRY_BACKOFF_SECONDS[
+                    min(attempt, len(PARALLEL_RETRY_BACKOFF_SECONDS) - 1)
+                ]
+                # ±25% jitter so worker threads don't all retry in lockstep.
+                wait = base * (0.75 + random.random() * 0.5)
+                kind = _classify_error_kind(e)
+                logger.info(
+                    "transient %s (attempt %d/%d), backing off %.1fs",
+                    kind if kind == "rate_limited" else "timeout",
+                    attempt + 1, PARALLEL_RETRY_MAX_ATTEMPTS, wait,
+                )
+                time.sleep(wait)
+        assert last_exc is not None  # only reachable after a transient chain
+        raise last_exc
 
     # Start from the cumulative count seeded by _do_classification so progress
     # reporting reflects total AI rows written, not just this run's portion.
@@ -3340,7 +3392,7 @@ def _classify_in_parallel(
                     value = cls.get("value", "no")
                     confidence = float(cls.get("confidence", 0.5))
                     db.add(LabelApplication(
-                        label_id=label.id,
+                        label_id=label_id,
                         chatlog_id=cid,
                         message_index=midx,
                         applied_by="ai",
@@ -3352,6 +3404,10 @@ def _classify_in_parallel(
                     else:
                         no_msgs.append(text)
                 completed += len(chunk)
+                # Refresh re-reads the row in the main thread, keeping the
+                # ORM instance consistent before we modify+commit it. Bypasses
+                # any expired-attribute weirdness from the prior commit.
+                db.refresh(label)
                 label.classified_count = completed
                 db.add(label)
                 db.commit()
@@ -3362,122 +3418,117 @@ def _classify_in_parallel(
     return yes_msgs, no_msgs
 
 
-def _classify_via_batch_api(
-    db: Session,
-    label: LabelDefinition,
-    pending: list,
-    yes_examples: list,
-    no_examples: list,
-) -> tuple[list[str], list[str]]:
-    """Batch API path: build a JSONL with one request per chunk, upload, submit a
-    batch job, poll until terminal, then download and parse the result file.
+# Aggregate-state ordering: lower = less-advanced. The poll loop reports the
+# *least-advanced* state across in-flight sub-batches so the UI honestly
+# reflects "are we still waiting for Google to start anything". Unknown states
+# fall through to a large sentinel so they don't accidentally outrank QUEUED.
+_BATCH_STATE_RANK = {
+    "JOB_STATE_UNSPECIFIED": 0,
+    "JOB_STATE_QUEUED": 1,
+    "JOB_STATE_PENDING": 2,
+    "JOB_STATE_UPDATING": 3,
+    "JOB_STATE_PAUSED": 3,
+    "JOB_STATE_RUNNING": 4,
+}
+_BATCH_TERMINAL_STATES = {
+    "JOB_STATE_SUCCEEDED",
+    "JOB_STATE_FAILED",
+    "JOB_STATE_CANCELLED",
+    "JOB_STATE_EXPIRED",
+}
 
-    Trade-off vs parallel sync: Google handles internal concurrency (much higher
-    throughput than 8 worker threads) at 50% cost, with a 24h SLA. Progress is
-    coarse — `classified_count` only advances at the end since the Batch API
-    surfaces job-level state, not per-request progress."""
-    from google.genai import types as genai_types
 
-    bas = binary_autolabel_service
-    chunks = [
-        pending[i:i + CLASSIFICATION_CHUNK_SIZE]
-        for i in range(0, len(pending), CLASSIFICATION_CHUNK_SIZE)
-    ]
+def _group_chunks_into_sub_batches(chunks, target_msgs):
+    """Group `chunks` so each sub-batch has approximately `target_msgs` messages.
+    Returns a list of sub-batches, each itself a list of chunks. For totals
+    ≤ target_msgs this yields exactly one sub-batch — keeping the N=1 path
+    identical to the pre-splitting behavior (single Gemini Batch job)."""
+    if not chunks:
+        return []
+    total = sum(len(c) for c in chunks)
+    n = max(1, -(-total // target_msgs))
+    target_per_sb = total / n
+    sub_batches: list[list] = []
+    cur: list = []
+    cur_msgs = 0
+    for chunk in chunks:
+        cur.append(chunk)
+        cur_msgs += len(chunk)
+        # Close out the current sub-batch once it hits the target, except keep
+        # everything left for the final sub-batch (avoids creating an n+1th
+        # tiny sub-batch from rounding).
+        if cur_msgs >= target_per_sb and len(sub_batches) < n - 1:
+            sub_batches.append(cur)
+            cur, cur_msgs = [], 0
+    if cur:
+        sub_batches.append(cur)
+    return sub_batches
 
-    # Build JSONL of batch requests. Key encodes the chunk index so we can map
-    # results back to the right pending tuples regardless of return order.
-    jsonl_path = None
-    uploaded_name = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-        ) as f:
-            jsonl_path = f.name
-            for idx, chunk in enumerate(chunks):
-                chunk_texts = [t for _, _, t in chunk]
-                req = bas.build_classify_batch_request(
-                    key=f"chunk-{idx}",
-                    label_name=label.name,
-                    label_description=label.description,
-                    yes_examples=yes_examples,
-                    no_examples=no_examples,
-                    messages=chunk_texts,
-                )
-                f.write(json_mod.dumps(req) + "\n")
 
-        uploaded = bas.client.files.upload(
-            file=jsonl_path,
-            config=genai_types.UploadFileConfig(
-                display_name=f"binary-classify-label-{label.id}",
-                mime_type="jsonl",
-            ),
-        )
-        uploaded_name = uploaded.name
+def _aggregate_batch_state(jobs) -> str:
+    """The 'least-advanced' state across `jobs`. Empty list returns SUCCEEDED."""
+    if not jobs:
+        return "JOB_STATE_SUCCEEDED"
+    return min(
+        (j.state.name for j in jobs),
+        key=lambda s: _BATCH_STATE_RANK.get(s, 99),
+    )
 
-        job = bas.client.batches.create(
-            model=bas.CLASSIFY_MODEL,
-            src=uploaded.name,
-            config={"display_name": f"binary-classify-label-{label.id}"},
-        )
 
-        terminal = {
-            "JOB_STATE_SUCCEEDED",
-            "JOB_STATE_FAILED",
-            "JOB_STATE_CANCELLED",
-            "JOB_STATE_EXPIRED",
-        }
-        while job.state.name not in terminal:
-            time.sleep(BATCH_POLL_INTERVAL_SEC)
-            job = bas.client.batches.get(name=job.name)
+def _cleanup_sub_batch_entry(entry, bas) -> None:
+    """Delete a sub-batch's local tempfile and remote uploaded source. Best-effort;
+    swallows per-resource cleanup errors so one stuck delete doesn't mask the
+    real exception that triggered cleanup."""
+    if entry.get("jsonl_path"):
+        try:
+            os.unlink(entry["jsonl_path"])
+        except OSError:
+            pass
+        entry["jsonl_path"] = None
+    if entry.get("uploaded_name"):
+        try:
+            bas.client.files.delete(name=entry["uploaded_name"])
+        except Exception:
+            pass
+        entry["uploaded_name"] = None
 
-        if job.state.name != "JOB_STATE_SUCCEEDED":
-            err = getattr(job, "error", None)
-            raise RuntimeError(f"Batch job ended in {job.state.name}: {err}")
 
-        # Read results — Batch returns either a result file or inline responses.
-        results_by_key: dict[str, dict] = {}
-        dest = getattr(job, "dest", None)
-        result_file_name = getattr(dest, "file_name", None) if dest else None
-        if result_file_name:
-            content = bas.client.files.download(file=result_file_name)
-            text = content.decode("utf-8") if isinstance(content, (bytes, bytearray)) else content
-            for line in text.splitlines():
-                if not line.strip():
-                    continue
-                row = json_mod.loads(line)
-                key = row.get("key")
-                if key:
-                    results_by_key[key] = row
-        else:
-            inlined = getattr(dest, "inlined_responses", None) or []
-            for i, inline in enumerate(inlined):
-                key = getattr(inline, "key", None) or f"chunk-{i}"
-                results_by_key[key] = {
-                    "key": key,
-                    "response": getattr(inline, "response", None),
-                    "error": getattr(inline, "error", None),
-                }
-    finally:
-        if jsonl_path:
-            try:
-                os.unlink(jsonl_path)
-            except OSError:
-                pass
-        if uploaded_name:
-            try:
-                bas.client.files.delete(name=uploaded_name)
-            except Exception:
-                pass
+def _parse_and_write_sub_batch(db, label, job, entry, bas) -> tuple[list[str], list[str]]:
+    """Download a single sub-batch's results, parse, and write AI rows. Returns
+    the (yes_texts, no_texts) contribution for the summarizer.
+
+    Chunk keys are globally indexed (`chunk-{global_idx}`) across all
+    sub-batches so the parsing logic is uniform regardless of N."""
+    results_by_key: dict[str, dict] = {}
+    dest = getattr(job, "dest", None)
+    result_file_name = getattr(dest, "file_name", None) if dest else None
+    if result_file_name:
+        content = bas.client.files.download(file=result_file_name)
+        text_content = content.decode("utf-8") if isinstance(content, (bytes, bytearray)) else content
+        for line in text_content.splitlines():
+            if not line.strip():
+                continue
+            row = json_mod.loads(line)
+            key = row.get("key")
+            if key:
+                results_by_key[key] = row
+    else:
+        inlined = getattr(dest, "inlined_responses", None) or []
+        for i, inline in enumerate(inlined):
+            key = getattr(inline, "key", None) or f"chunk-{entry['start_chunk_idx'] + i}"
+            results_by_key[key] = {
+                "key": key,
+                "response": getattr(inline, "response", None),
+                "error": getattr(inline, "error", None),
+            }
 
     yes_msgs: list[str] = []
     no_msgs: list[str] = []
-    # Cumulative start — see same comment in _classify_in_parallel.
-    completed = label.classified_count or 0
-    for idx, chunk in enumerate(chunks):
-        row = results_by_key.get(f"chunk-{idx}")
+    for local_idx, chunk in enumerate(entry["chunks"]):
+        global_idx = entry["start_chunk_idx"] + local_idx
+        row = results_by_key.get(f"chunk-{global_idx}")
         response_obj = (row or {}).get("response")
         if response_obj is not None and not isinstance(response_obj, dict):
-            # SDK may return typed objects for inline responses; coerce to dict.
             response_obj = response_obj.to_json_dict() if hasattr(response_obj, "to_json_dict") else None
         classifications = bas.parse_classify_batch_response(response_obj, len(chunk))
         for (cid, midx, text), cls in zip(chunk, classifications):
@@ -3495,10 +3546,191 @@ def _classify_via_batch_api(
                 yes_msgs.append(text)
             else:
                 no_msgs.append(text)
-        completed += len(chunk)
-        label.classified_count = completed
+    return yes_msgs, no_msgs
+
+
+def _classify_via_batch_api(
+    db: Session,
+    label: LabelDefinition,
+    pending: list,
+    yes_examples: list,
+    no_examples: list,
+) -> tuple[list[str], list[str]]:
+    """Batch API path: split `pending` into N sub-batches (sized by
+    BATCH_SPLIT_TARGET_MESSAGES), submit each as its own Gemini Batch job in
+    parallel, then poll all of them in a single 15 s tick loop. Each sub-batch
+    commits its results + advances `classified_count` the moment it terminates
+    SUCCEEDED — giving the UI honest per-batch progress (the SDK exposes no
+    per-request progress within a single job).
+
+    N=1 for jobs ≤ BATCH_SPLIT_TARGET_MESSAGES, so the small-handoff path is
+    behaviorally unchanged from the pre-split version.
+
+    Trade-off vs parallel sync: keeps Google's 50% Batch API discount and 24h
+    SLA. Each sub-batch carries its own queue wait, but submissions are
+    parallel so total wall-clock is dominated by max(sub_batch_time), not
+    sum(sub_batch_time)."""
+    from google.genai import types as genai_types
+
+    bas = binary_autolabel_service
+    chunks = [
+        pending[i:i + CLASSIFICATION_CHUNK_SIZE]
+        for i in range(0, len(pending), CLASSIFICATION_CHUNK_SIZE)
+    ]
+    sub_batches = _group_chunks_into_sub_batches(chunks, BATCH_SPLIT_TARGET_MESSAGES)
+    n = len(sub_batches)
+
+    # Seed progress counters before any I/O so the UI never observes a
+    # half-initialized in-flight state. `batch_submitted_at` doubles as the
+    # historical "when did the whole handoff start" marker.
+    submitted_at = datetime.utcnow()
+    label.batch_submitted_at = submitted_at
+    label.batch_total_count = n
+    label.batch_completed_count = 0
+    db.add(label)
+    db.commit()
+
+    entries: list[dict] = []
+    yes_msgs: list[str] = []
+    no_msgs: list[str] = []
+    completed = label.classified_count or 0
+
+    try:
+        # ── Submission: build JSONL → upload → batches.create per sub-batch.
+        # Sequential because each step is fast (seconds) relative to the
+        # subsequent Google-side runtime (minutes-hours).
+        global_chunk_idx = 0
+        for sb_idx, sb_chunks in enumerate(sub_batches):
+            start_idx = global_chunk_idx
+            jsonl_path = None
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+            ) as f:
+                jsonl_path = f.name
+                for chunk in sb_chunks:
+                    chunk_texts = [t for _, _, t in chunk]
+                    req = bas.build_classify_batch_request(
+                        key=f"chunk-{global_chunk_idx}",
+                        label_name=label.name,
+                        label_description=label.description,
+                        yes_examples=yes_examples,
+                        no_examples=no_examples,
+                        messages=chunk_texts,
+                    )
+                    f.write(json_mod.dumps(req) + "\n")
+                    global_chunk_idx += 1
+            uploaded = bas.client.files.upload(
+                file=jsonl_path,
+                config=genai_types.UploadFileConfig(
+                    display_name=f"binary-classify-label-{label.id}-sb{sb_idx}",
+                    mime_type="jsonl",
+                ),
+            )
+            job = bas.client.batches.create(
+                model=bas.CLASSIFY_MODEL,
+                src=uploaded.name,
+                config={"display_name": f"binary-classify-label-{label.id}-sb{sb_idx}"},
+            )
+            entries.append({
+                "sb_idx": sb_idx,
+                "job": job,
+                "chunks": sb_chunks,
+                "start_chunk_idx": start_idx,
+                "message_count": sum(len(c) for c in sb_chunks),
+                "uploaded_name": uploaded.name,
+                "jsonl_path": jsonl_path,
+                "cleaned": False,
+            })
+
+        # ── Initial commit of submitted state. `batch_job_name` carries the
+        # first sub-batch's job name as a representative handle (the multi-job
+        # case is implied by batch_total_count > 1; we don't persist all names
+        # since the recovery-on-restart story is intentionally out of scope).
+        last_aggregate = _aggregate_batch_state([e["job"] for e in entries])
+        label.batch_job_name = entries[0]["job"].name if entries else None
+        label.batch_state = last_aggregate
+        label.batch_polled_at = datetime.utcnow()
         db.add(label)
         db.commit()
+        logger.info(
+            "batch submitted: label=%s n_sub_batches=%d total_msgs=%d initial_state=%s",
+            label.id, n, len(pending), last_aggregate,
+        )
+
+        # ── Poll loop: each tick walks all in-flight sub-batches. Any that
+        # have hit a terminal state are parsed immediately (so classified_count
+        # advances as soon as a sub-batch lands rather than waiting for all of
+        # them). Any non-SUCCEEDED terminal raises and aborts the whole run —
+        # already-committed AI rows from sibling sub-batches stay in the DB
+        # and the retry path skips them via the (label_id, chatlog_id,
+        # message_index) unique constraint.
+        in_flight = list(entries)
+        while in_flight:
+            time.sleep(BATCH_POLL_INTERVAL_SEC)
+            still_in_flight: list[dict] = []
+            for entry in in_flight:
+                refreshed = bas.client.batches.get(name=entry["job"].name)
+                entry["job"] = refreshed
+                if refreshed.state.name in _BATCH_TERMINAL_STATES:
+                    if refreshed.state.name != "JOB_STATE_SUCCEEDED":
+                        err = getattr(refreshed, "error", None)
+                        raise RuntimeError(
+                            f"Sub-batch {refreshed.name} ended in "
+                            f"{refreshed.state.name}: {err}"
+                        )
+                    sub_yes, sub_no = _parse_and_write_sub_batch(
+                        db, label, refreshed, entry, bas
+                    )
+                    yes_msgs.extend(sub_yes)
+                    no_msgs.extend(sub_no)
+                    completed += entry["message_count"]
+                    label.classified_count = completed
+                    label.batch_completed_count = (label.batch_completed_count or 0) + 1
+                    db.add(label)
+                    db.commit()
+                    logger.info(
+                        "sub-batch complete: label=%s job=%s (%d/%d)",
+                        label.id, refreshed.name,
+                        label.batch_completed_count, label.batch_total_count,
+                    )
+                    _cleanup_sub_batch_entry(entry, bas)
+                    entry["cleaned"] = True
+                else:
+                    still_in_flight.append(entry)
+            in_flight = still_in_flight
+            new_aggregate = _aggregate_batch_state([e["job"] for e in in_flight])
+            label.batch_state = new_aggregate
+            label.batch_polled_at = datetime.utcnow()
+            db.add(label)
+            db.commit()
+            if new_aggregate != last_aggregate:
+                logger.info(
+                    "batch aggregate state: label=%s %s -> %s",
+                    label.id, last_aggregate, new_aggregate,
+                )
+                last_aggregate = new_aggregate
+    finally:
+        # Catch-all cleanup: any sub-batch that didn't reach SUCCEEDED still
+        # has an uploaded source on Google's side and a local tempfile. The
+        # successful path already cleans each entry inline above (cleaned=True).
+        for entry in entries:
+            if not entry.get("cleaned"):
+                _cleanup_sub_batch_entry(entry, bas)
+
+    # All sub-batches succeeded → null the in-flight handles so the UI's
+    # `isBatchInFlight` branch turns off and `phase='handed_off'` renders the
+    # final summary cleanly. `batch_submitted_at` stays as historical record.
+    label.batch_job_name = None
+    label.batch_state = None
+    label.batch_polled_at = None
+    label.batch_total_count = None
+    label.batch_completed_count = None
+    db.add(label)
+    db.commit()
+    logger.info(
+        "all sub-batches complete: label=%s classified=%d sub_batches=%d",
+        label.id, completed, n,
+    )
 
     return yes_msgs, no_msgs
 
@@ -3514,6 +3746,25 @@ def _classify_error_kind(exc: BaseException) -> str:
     if "429" in text or "resource_exhausted" in text or "rate limit" in text or "quota" in text:
         return "rate_limited"
     return "error"
+
+
+def _is_transient_classify_error(exc: BaseException) -> bool:
+    """Whether the parallel chunk runner should retry instead of fail-fast.
+    Covers two transient classes that an in-progress run shouldn't tank on:
+
+    - Rate-limiting (429 / RESOURCE_EXHAUSTED) — the existing retry case.
+    - Network timeouts — read/connect timeouts from a hung TCP connection to
+      Google. Without retry these turn a single bad socket into a whole-run
+      failure (we hit this at 99.7% on label 21).
+
+    Genuine bugs (auth, malformed request, 500-class errors) fall through to
+    fail-fast so they surface immediately instead of after a long backoff."""
+    if _classify_error_kind(exc) == "rate_limited":
+        return True
+    text = (str(exc) or "").lower()
+    name = type(exc).__name__.lower()
+    timeout_signals = ("timeout", "timed out", "deadline exceeded", "readtimeout", "connecttimeout")
+    return any(sig in text or sig in name for sig in timeout_signals)
 
 
 def _classify_in_background(label_id: int, sample_size: Optional[int] = None) -> None:
@@ -3542,6 +3793,14 @@ def _classify_in_background(label_id: int, sample_size: Optional[int] = None) ->
                 "error": str(e) or e.__class__.__name__,
                 "error_kind": _classify_error_kind(e),
             })
+            # Clear in-flight batch handle so the failed-state UI doesn't render
+            # a stale "running" badge. `batch_submitted_at` is preserved for
+            # postmortems (e.g., to know how long the batch ran before failing).
+            label.batch_job_name = None
+            label.batch_state = None
+            label.batch_polled_at = None
+            label.batch_total_count = None
+            label.batch_completed_count = None
             db.add(label)
             db.commit()
 
@@ -3970,5 +4229,10 @@ def list_handoff_summaries(db: Session = Depends(get_session)):
             classification_total=label.classification_total,
             error=payload.get("error") if label.phase == "failed" else None,
             error_kind=payload.get("error_kind") if label.phase == "failed" else None,
+            batch_state=label.batch_state,
+            batch_submitted_at=label.batch_submitted_at,
+            batch_polled_at=label.batch_polled_at,
+            batch_total_count=label.batch_total_count,
+            batch_completed_count=label.batch_completed_count,
         ))
     return out

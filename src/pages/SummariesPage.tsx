@@ -3,6 +3,44 @@ import { api } from '../services/api'
 import type { HandoffSummaryItem, SummaryPattern } from '../types'
 
 const RETRY_HOLD_MS = 1500
+// Gemini Batch job states we treat as "in flight" — the UI swaps the % bar
+// for an indeterminate state-aware display while we're in one of these.
+// JOB_STATE_SUCCEEDED is excluded so the brief window between batch-success
+// and phase='handed_off' falls through to the existing % bar (which is
+// already advancing per-chunk as results are parsed).
+const BATCH_FLIGHT_STATES = new Set(['JOB_STATE_PENDING', 'JOB_STATE_RUNNING'])
+// If we haven't seen a successful poll in this long, the in-process
+// BackgroundTask is most likely dead (e.g., killed by `uvicorn --reload`).
+const STALE_POLL_MS = 30_000
+
+function batchStateLabel(state: string): string {
+  if (state === 'JOB_STATE_PENDING') return 'Queued'
+  if (state === 'JOB_STATE_RUNNING') return 'Running'
+  // Unexpected pre-terminal states: surface raw so it's at least debuggable.
+  return state.replace(/^JOB_STATE_/, '').toLowerCase()
+}
+
+// Backend writes `datetime.utcnow()` (naive UTC) and Pydantic serializes it
+// without a timezone marker, e.g. "2026-05-13T19:51:42.646785". Per ECMA-262,
+// `Date.parse` interprets such strings as **local time**, which makes the
+// elapsed counter clamp to 0 in any non-UTC timezone. Force-interpret as UTC
+// by appending 'Z' when no offset is present.
+function parseUtcIso(iso: string): number {
+  const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(iso)
+  return Date.parse(hasTz ? iso : iso + 'Z')
+}
+
+function formatElapsed(fromIso: string, nowMs: number): string {
+  const startMs = parseUtcIso(fromIso)
+  if (Number.isNaN(startMs)) return ''
+  const sec = Math.max(0, Math.floor((nowMs - startMs) / 1000))
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  if (m < 60) return `${m}m ${s}s`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
+}
 
 export function SummariesPage() {
   const [summaries, setSummaries] = useState<HandoffSummaryItem[]>([])
@@ -113,6 +151,42 @@ function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
   const isClassifying = summary.phase === 'classifying'
   const isFailed = summary.phase === 'failed'
   const isRateLimited = isFailed && summary.error_kind === 'rate_limited'
+  const isBatchInFlight =
+    isClassifying &&
+    summary.batch_state != null &&
+    BATCH_FLIGHT_STATES.has(summary.batch_state)
+  // Multi-batch handoffs advance `classified_count` by ~one-Nth each time a
+  // sub-batch lands. Once *any* sub-batch has landed (classified_count > 0
+  // while still in flight), the real % bar is more informative than the
+  // indeterminate strip. Before the first landing we keep the strip — there
+  // is genuinely nothing meaningful to point at yet.
+  const hasRealBatchProgress = isBatchInFlight && (summary.classified_count ?? 0) > 0
+  const hasBatchCounts =
+    summary.batch_total_count != null &&
+    summary.batch_total_count > 1 &&
+    summary.batch_completed_count != null
+
+  // 1s wall clock — only ticks while a batch is in flight, so other cards
+  // don't re-render needlessly. Drives the elapsed-time label + stale-poll
+  // hint. Backend writes `batch_polled_at` every 15s; the visible delta
+  // refreshes on this 1s tick.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!isBatchInFlight) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [isBatchInFlight])
+
+  const elapsed = summary.batch_submitted_at
+    ? formatElapsed(summary.batch_submitted_at, now)
+    : ''
+  const lastPollAgeMs = summary.batch_polled_at
+    ? now - parseUtcIso(summary.batch_polled_at)
+    : 0
+  const isStalePoll =
+    isBatchInFlight && summary.batch_polled_at != null && lastPollAgeMs > STALE_POLL_MS
+  const lastPollSec = Math.max(0, Math.floor(lastPollAgeMs / 1000))
+
   const progressPct =
     summary.classification_total && summary.classification_total > 0
       ? Math.round(
@@ -135,7 +209,21 @@ function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
           <div className={`font-mono text-[10px] tracking-[0.16em] uppercase mb-1 flex items-center gap-2 ${
             isRateLimited ? 'text-ochre' : isFailed ? 'text-brick' : 'text-ochre'
           }`}>
-            {isClassifying ? (
+            {isBatchInFlight ? (
+              <>
+                <span className="relative inline-flex">
+                  <span className="absolute inline-flex w-1.5 h-1.5 rounded-full bg-ochre opacity-75 animate-ping" />
+                  <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-ochre" />
+                </span>
+                Classifying · Gemini batch · {batchStateLabel(summary.batch_state!)}
+                {hasBatchCounts && (
+                  <span className="text-faint" data-testid="batch-counts">
+                    {' · '}
+                    {summary.batch_completed_count} of {summary.batch_total_count} batches done
+                  </span>
+                )}
+              </>
+            ) : isClassifying ? (
               <>
                 <span className="relative inline-flex">
                   <span className="absolute inline-flex w-1.5 h-1.5 rounded-full bg-ochre opacity-75 animate-ping" />
@@ -176,8 +264,24 @@ function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
               <span className="font-mono text-[10px] text-faint">{open ? '▾' : '▸'}</span>
             </>
           )}
-          {isClassifying && (
+          {isClassifying && !isBatchInFlight && (
             <span className="font-mono text-[12px] text-ochre">{progressPct}%</span>
+          )}
+          {hasRealBatchProgress && (
+            <span
+              className="font-mono text-[12px] text-ochre tabular-nums"
+              data-testid="batch-progress-pct"
+            >
+              {progressPct}%
+            </span>
+          )}
+          {isBatchInFlight && elapsed && (
+            <span
+              className="font-mono text-[11px] text-muted tabular-nums"
+              data-testid="batch-elapsed"
+            >
+              {elapsed}
+            </span>
           )}
           {isFailed && !isRateLimited && (
             <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-brick">
@@ -192,7 +296,62 @@ function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
         </div>
       </button>
 
-      {isClassifying && (
+      {isClassifying && isBatchInFlight && (
+        <div className="px-6 pb-5" data-testid="batch-inflight-block">
+          {hasRealBatchProgress ? (
+            <div
+              className="h-[3px] bg-edge rounded-sm overflow-hidden"
+              role="progressbar"
+              aria-label="Gemini batch progress"
+              aria-valuenow={progressPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full bg-ochre transition-[width] duration-500 ease-out"
+                style={{ width: `${progressPct}%` }}
+                data-testid="batch-real-bar"
+              />
+            </div>
+          ) : (
+            <div
+              className="h-[3px] bg-edge rounded-sm overflow-hidden relative"
+              role="progressbar"
+              aria-label="Gemini batch in progress"
+              aria-busy="true"
+            >
+              <div className="absolute top-0 left-0 h-full w-[30%] bg-ochre batch-indeterminate-strip" />
+            </div>
+          )}
+          <div className="mt-2 font-serif text-[13px] text-muted leading-[1.5]">
+            {hasBatchCounts ? (
+              <>
+                Gemini is working through {summary.batch_total_count} sub-batches
+                in parallel — the bar advances each time one lands. You can keep
+                labeling other things in the meantime.
+              </>
+            ) : (
+              <>
+                This label was routed to the Gemini Batch API (the cheaper path
+                used for jobs &gt; 500 messages). Google reports job-level state
+                only, so there's no per-message progress to show until the
+                batch completes — feel free to keep labeling other messages in
+                the meantime.
+              </>
+            )}
+          </div>
+          {isStalePoll && (
+            <div
+              className="mt-2 font-mono text-[10px] tracking-[0.16em] uppercase text-ochre"
+              data-testid="batch-stale-hint"
+            >
+              Last update {lastPollSec}s ago — task may have stalled
+            </div>
+          )}
+        </div>
+      )}
+
+      {isClassifying && !isBatchInFlight && (
         <div className="px-6 pb-5">
           <div className="h-[3px] bg-edge rounded-sm overflow-hidden">
             <div
@@ -202,7 +361,7 @@ function SummaryCard({ summary, open, onToggle, onRetry }: SummaryCardProps) {
           </div>
           <div className="mt-2 font-serif text-[13px] text-muted leading-[1.5]">
             Gemini is working through the remaining unlabeled messages. The summary will
-            appear here when it's done — feel free to keep labeling other things.
+            appear here when it's done — feel free to keep labeling other messages.
           </div>
         </div>
       )}
