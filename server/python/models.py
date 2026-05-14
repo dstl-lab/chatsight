@@ -39,6 +39,10 @@ class LabelDefinition(SQLModel, table=True):
     # nulled out at terminal alongside the other in-flight handles.
     batch_total_count: Optional[int] = Field(default=None)
     batch_completed_count: Optional[int] = Field(default=None)
+    # Single-label review threshold (Summaries page Phase 1). AI predictions below
+    # this confidence land in the "Review" bucket. Configurable per-label via the
+    # Settings tab; default 0.7 matches the implicit threshold the legacy code used.
+    review_threshold: float = Field(default=0.7)
 
 
 class LabelApplication(SQLModel, table=True):

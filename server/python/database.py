@@ -87,6 +87,10 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_total_count INTEGER"))
     if "batch_completed_count" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_completed_count INTEGER"))
+    if "review_threshold" not in cols:
+        conn.execute(text(
+            "ALTER TABLE labeldefinition ADD COLUMN review_threshold FLOAT NOT NULL DEFAULT 0.7"
+        ))
 
 
 def _migrate_label_application(conn, inspect, text):
