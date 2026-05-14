@@ -2960,14 +2960,14 @@ def get_active_single_label(db: Session = Depends(get_session)):
 
 
 @app.get("/api/single-labels/{label_id}", response_model=SingleLabelDetailResponse)
-def get_single_label_detail(label_id: int, session: Session = Depends(get_session)):
-    label = session.get(LabelDefinition, label_id)
+def get_single_label_detail(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="single-label not found")
 
     threshold = label.review_threshold
 
-    rows = session.exec(
+    rows = db.exec(
         select(LabelApplication).where(LabelApplication.label_id == label_id)
     ).all()
 
