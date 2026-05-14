@@ -29,3 +29,13 @@ def test_label_application_carries_new_fields(engine):
         assert row.rationale.startswith("Student explicitly")
         assert row.flagged is False
         assert row.note is None
+
+        # Also verify the True / non-null paths round-trip.
+        row.flagged = True
+        row.note = "needs re-review"
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+
+        assert row.flagged is True
+        assert row.note == "needs re-review"
