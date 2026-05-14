@@ -3116,16 +3116,13 @@ def get_single_label_message_detail(
     label_id: int,
     chatlog_id: int,
     message_index: int = Query(0, ge=0),
-    context: str = Query("1"),  # "1" | "2" | "3" | "full"
+    context: Literal["1", "2", "3", "full"] = Query("1"),
     db: Session = Depends(get_session),
     ext_conn: Connection = Depends(get_ext_conn),
 ):
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="single-label not found")
-
-    if context not in {"1", "2", "3", "full"}:
-        raise HTTPException(status_code=422, detail=f"invalid context: {context!r}")
 
     app_row = db.exec(
         select(LabelApplication)

@@ -212,3 +212,16 @@ def test_message_detail_404_when_no_application_row(client, session):
     session.add(label); session.commit(); session.refresh(label)
     r = client.get(f"/api/single-labels/{label.id}/messages/999")
     assert r.status_code == 404
+
+
+def test_message_detail_404_when_label_id_not_found(client, session):
+    r = client.get("/api/single-labels/99999/messages/1")
+    assert r.status_code == 404
+
+
+def test_message_detail_404_when_label_is_multi_mode(client, session):
+    from models import LabelDefinition
+    multi_label = LabelDefinition(name="multi", mode="multi", phase="labeling")
+    session.add(multi_label); session.commit(); session.refresh(multi_label)
+    r = client.get(f"/api/single-labels/{multi_label.id}/messages/1")
+    assert r.status_code == 404
