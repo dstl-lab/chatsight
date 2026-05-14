@@ -4314,6 +4314,10 @@ def flip_single_label_verdict(
     message_index: int = Query(0, ge=0),
     db: Session = Depends(get_session),
 ):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
     app_row = db.exec(
         select(LabelApplication)
         .where(LabelApplication.label_id == label_id)

@@ -310,3 +310,20 @@ def test_flip_verdict_422_for_invalid_value(client, session):
         json={"verdict": "maybe"},
     )
     assert r.status_code == 422
+
+
+def test_flip_verdict_404_when_label_is_multi_mode(client, session):
+    from models import LabelDefinition, LabelApplication
+    multi_label = LabelDefinition(name="multi", mode="multi", phase="labeling")
+    session.add(multi_label); session.commit(); session.refresh(multi_label)
+    session.add(LabelApplication(
+        label_id=multi_label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.8,
+    ))
+    session.commit()
+    r = client.patch(
+        f"/api/single-labels/{multi_label.id}/applications/42",
+        params={"message_index": 0},
+        json={"verdict": "no"},
+    )
+    assert r.status_code == 404
