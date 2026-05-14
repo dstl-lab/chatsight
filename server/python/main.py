@@ -44,6 +44,7 @@ from schemas import (
     MergeAssignmentsRequest, MergeAssignmentsResponse,
     AssistNeighbor, AssistResponse,
     ConfidenceHistogramBin, SingleLabelDetailResponse,
+    MessageListItem, MessageListResponse,
 )
 import decision_service
 import queue_service
@@ -3018,6 +3019,87 @@ def get_single_label_detail(label_id: int, db: Session = Depends(get_session)):
         agreement_vs_gold=agreement,
         confidence_histogram=histogram,
     )
+
+
+@app.get("/api/single-labels/{label_id}/messages", response_model=MessageListResponse)
+def list_single_label_messages(
+    label_id: int,
+    filter: Optional[str] = None,
+    sort: str = "confidence_asc",
+    search: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    threshold = label.review_threshold
+
+    def is_review(row: LabelApplication) -> bool:
+        return row.applied_by == "ai" and (row.confidence or 0) < threshold
+
+    # Outer join so rows without a MessageCache entry still appear (with empty text).
+    q = (
+        select(LabelApplication, MessageCache)
+        .join(
+            MessageCache,
+            (MessageCache.chatlog_id == LabelApplication.chatlog_id)
+            & (MessageCache.message_index == LabelApplication.message_index),
+            isouter=True,
+        )
+        .where(LabelApplication.label_id == label_id)
+    )
+    if search:
+        q = q.where(MessageCache.message_text.ilike(f"%{search}%"))
+
+    pairs = db.exec(q).all()
+
+    # Apply filter
+    if filter == "yes":
+        pairs = [p for p in pairs if p[0].value == "yes" and not is_review(p[0])]
+    elif filter == "no":
+        pairs = [p for p in pairs if p[0].value == "no" and not is_review(p[0])]
+    elif filter == "review":
+        pairs = [p for p in pairs if is_review(p[0])]
+    elif filter == "flagged":
+        pairs = [p for p in pairs if p[0].flagged]
+    elif filter == "notes":
+        pairs = [p for p in pairs if p[0].note]
+    elif filter and filter.startswith("pattern="):
+        pat = filter[len("pattern="):]
+        pairs = [p for p in pairs if p[0].matched_pattern == pat]
+
+    # Sort
+    if sort == "confidence_asc":
+        pairs.sort(key=lambda p: (p[0].confidence is None, p[0].confidence or 0))
+    elif sort == "confidence_desc":
+        pairs.sort(key=lambda p: (p[0].confidence is None, -(p[0].confidence or 0)))
+    elif sort == "recently_flipped":
+        pairs.sort(key=lambda p: p[0].created_at or datetime.min, reverse=True)
+
+    total = len(pairs)
+    page = pairs[offset:offset + limit]
+
+    items = []
+    for app_row, msg in page:
+        verdict_bucket = "review" if is_review(app_row) else app_row.value
+        items.append(
+            MessageListItem(
+                chatlog_id=app_row.chatlog_id,
+                message_index=app_row.message_index,
+                text=msg.message_text if msg else "",
+                confidence=app_row.confidence,
+                verdict=verdict_bucket,
+                applied_by=app_row.applied_by,
+                flagged=app_row.flagged,
+                has_note=bool(app_row.note),
+                notebook=msg.notebook if msg else None,
+            )
+        )
+
+    return MessageListResponse(items=items, total=total, offset=offset, limit=limit)
 
 
 @app.post("/api/single-labels", response_model=SingleLabelResponse)

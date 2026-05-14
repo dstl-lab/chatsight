@@ -93,3 +93,55 @@ def test_get_label_detail_zero_rows(client, session):
     assert body["agreement_vs_gold"] is None
     assert len(body["confidence_histogram"]) == 10
     assert all(b["count"] == 0 for b in body["confidence_histogram"])
+
+
+def test_list_messages_default_sort_confidence_ascending(client, session):
+    label = _seed_label_with_rows(session)
+    r = client.get(f"/api/single-labels/{label.id}/messages?limit=200")
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    confidences = [it["confidence"] for it in items if it["confidence"] is not None]
+    assert confidences == sorted(confidences)  # ascending
+
+
+def test_list_messages_filter_yes_excludes_review_bucket(client, session):
+    label = _seed_label_with_rows(session)
+    r = client.get(f"/api/single-labels/{label.id}/messages?filter=yes&limit=200")
+    items = r.json()["items"]
+    assert len(items) > 0
+    assert all(it["verdict"] == "yes" for it in items)
+
+
+def test_list_messages_filter_review(client, session):
+    label = _seed_label_with_rows(session)
+    r = client.get(f"/api/single-labels/{label.id}/messages?filter=review&limit=200")
+    items = r.json()["items"]
+    assert all(it["verdict"] == "review" for it in items)
+    assert len(items) == 2  # _seed_label_with_rows creates 2 review-bucket rows
+
+
+def test_list_messages_pagination(client, session):
+    label = _seed_label_with_rows(session, yes=30, no=0, review=0, human_gold=0)
+    r = client.get(f"/api/single-labels/{label.id}/messages?offset=10&limit=10")
+    body = r.json()
+    assert body["total"] >= 30
+    assert body["offset"] == 10
+    assert body["limit"] == 10
+    assert len(body["items"]) == 10
+
+
+def test_list_messages_search_substring(client, session):
+    from models import LabelDefinition, LabelApplication, MessageCache
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(MessageCache(chatlog_id=1, message_index=0, message_text="wait, I misread"))
+    session.add(MessageCache(chatlog_id=2, message_index=0, message_text="can you help"))
+    session.add(LabelApplication(label_id=label.id, chatlog_id=1, message_index=0,
+                                 applied_by="ai", value="yes", confidence=0.85))
+    session.add(LabelApplication(label_id=label.id, chatlog_id=2, message_index=0,
+                                 applied_by="ai", value="no", confidence=0.85))
+    session.commit()
+    r = client.get(f"/api/single-labels/{label.id}/messages?search=misread")
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["chatlog_id"] == 1
