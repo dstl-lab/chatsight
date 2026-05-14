@@ -99,6 +99,14 @@ def _migrate_label_application(conn, inspect, text):
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_value_at_review VARCHAR DEFAULT NULL"))
     if "ai_confidence_at_review" not in cols:
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_confidence_at_review FLOAT DEFAULT NULL"))
+    if "matched_pattern" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN matched_pattern VARCHAR DEFAULT NULL"))
+    if "rationale" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN rationale TEXT DEFAULT NULL"))
+    if "flagged" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN flagged BOOLEAN NOT NULL DEFAULT 0"))
+    if "note" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN note TEXT DEFAULT NULL"))
 
 
 def _migrate_labeling_session(conn, inspect, text):

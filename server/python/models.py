@@ -60,6 +60,13 @@ class LabelApplication(SQLModel, table=True):
     # Both NULL when the row was never AI-predicted before being human-decided.
     ai_value_at_review: Optional[str] = Field(default=None)       # "yes" | "no"
     ai_confidence_at_review: Optional[float] = Field(default=None)  # 0.0–1.0
+    # Single-label revamp (Summaries page Phase 1): per-row metadata captured
+    # during AI classification (matched_pattern, rationale) and instructor
+    # post-hoc actions (flagged, note).
+    matched_pattern: Optional[str] = Field(default=None)
+    rationale: Optional[str] = Field(default=None)
+    flagged: bool = Field(default=False)
+    note: Optional[str] = Field(default=None)
 
 
 class LabelPrediction(SQLModel, table=True):
