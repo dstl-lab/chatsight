@@ -29,6 +29,13 @@ def record_decision(
     if value not in VALID_DECISIONS:
         raise ValueError(f"Invalid decision value: {value!r}")
 
+    label = session.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise ValueError(
+            f"Refusing to record decision: label {label_id} mode="
+            f"{getattr(label, 'mode', None)!r}, expected 'single'"
+        )
+
     existing = session.exec(
         select(LabelApplication).where(
             LabelApplication.label_id == label_id,
@@ -38,6 +45,13 @@ def record_decision(
     ).first()
 
     if existing:
+        # Snapshot the AI prediction before we overwrite it, so analysis can
+        # compute human-AI agreement/disagreement on reviewed messages.
+        # Idempotent: only capture on the FIRST human review of an AI row;
+        # subsequent flips between yes/no by the human leave the snapshot intact.
+        if existing.applied_by == "ai" and existing.ai_value_at_review is None:
+            existing.ai_value_at_review = existing.value
+            existing.ai_confidence_at_review = existing.confidence
         existing.value = value
         existing.applied_by = "human"
         existing.confidence = 1.0
@@ -161,6 +175,12 @@ def skip_conversation(session: Session, label_id: int, chatlog_id: int) -> int:
     """Skip every still-undecided student message in `chatlog_id` for this label by
     writing `LabelApplication(applied_by="human", value="skip")` rows. Returns the
     count of newly-written skip rows. Already-decided messages are left alone."""
+    label = session.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise ValueError(
+            f"Refusing to skip-conversation: label {label_id} mode="
+            f"{getattr(label, 'mode', None)!r}, expected 'single'"
+        )
     cache_rows = session.exec(
         select(MessageCache.message_index).where(MessageCache.chatlog_id == chatlog_id)
     ).all()

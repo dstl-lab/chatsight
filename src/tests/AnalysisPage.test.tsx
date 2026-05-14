@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AnalysisPage } from '../pages/AnalysisPage'
+import { ModeProvider } from '../hooks/useMode'
 import { api } from '../services/api'
 import { mockApi } from '../mocks'
 
@@ -34,6 +35,9 @@ vi.mock('../services/api', () => ({
     getQueuePosition: vi.fn().mockResolvedValue({ position: 1, total_remaining: 50 }),
     getRecentHistory: vi.fn().mockResolvedValue([]),
     getLabels: vi.fn().mockResolvedValue([]),
+    getSingleLabelCohort: vi.fn().mockResolvedValue({ runs: [] }),
+    getSingleLabelRunDetail: vi.fn().mockResolvedValue(null),
+    getMilestones: vi.fn().mockResolvedValue([]),
   },
 }))
 
@@ -44,13 +48,36 @@ const mockedApi = api as {
 }
 
 function renderPage() {
-  return render(<MemoryRouter><AnalysisPage /></MemoryRouter>)
+  return render(
+    <MemoryRouter>
+      <ModeProvider>
+        <AnalysisPage />
+      </ModeProvider>
+    </MemoryRouter>
+  )
 }
 
 beforeEach(() => {
+  localStorage.clear()
   mockedApi.getAnalysisSummary.mockResolvedValue(mockApi.analysisSummary)
   mockedApi.getTemporalAnalysis.mockResolvedValue(mockApi.temporalAnalysis)
   mockedApi.exportCsv.mockResolvedValue(new Blob(['test'], { type: 'text/csv' }))
+})
+
+test('renders MultiLabelAnalysis when mode === "multi" (default)', async () => {
+  renderPage()
+  await waitFor(() => expect(screen.getByText('Label Frequency')).toBeInTheDocument())
+})
+
+test('renders SingleLabelAnalysis when mode === "single"', async () => {
+  localStorage.setItem('chatsight-mode', 'single')
+  renderPage()
+  // SingleLabelAnalysis mounts the cohort rail with this heading
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: /Single-label runs/i })).toBeInTheDocument(),
+  )
+  // SingleLabel page does not show Label Frequency (that's a multi-label chart)
+  expect(screen.queryByText('Label Frequency')).toBeNull()
 })
 
 test('shows loading state initially', () => {

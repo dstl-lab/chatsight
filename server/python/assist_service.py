@@ -1,23 +1,69 @@
-"""Local-ML assist for /run: cosine-nearest labeled neighbors over cached embeddings.
-No external API calls, no fitted classifier — just retrieval over MessageEmbedding."""
+"""Local-ML assist for /run: in-memory cosine nearest-neighbors over
+MessageEmbedding. Loads the full embedding matrix once per engine and recomputes
+neighbors per-request via a single numpy matmul. No DB writes, no cache table."""
 from __future__ import annotations
 
-import json as _json
+import threading
 
 import numpy as np
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from models import (
-    LabelApplication,
-    LabelPrediction,
-    MessageCache,
-    MessageEmbedding,
-)
+from models import LabelApplication, MessageCache, MessageEmbedding
 
 
-def _decode(emb_bytes: bytes) -> np.ndarray:
-    return np.frombuffer(emb_bytes, dtype=np.float32)
+_lock = threading.Lock()
+
+
+def _build_cache(db: Session, fingerprint: tuple[int, int, int]) -> dict:
+    rows = db.exec(
+        select(
+            MessageEmbedding.chatlog_id,
+            MessageEmbedding.message_index,
+            MessageEmbedding.embedding,
+        )
+    ).all()
+    if not rows:
+        return {"matrix": None, "keys_idx": {}, "fingerprint": fingerprint}
+    keys = [(c, i) for (c, i, _) in rows]
+    vecs = np.stack([np.frombuffer(b, dtype=np.float32) for (_, _, b) in rows])
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    matrix = (vecs / norms).astype(np.float32)
+    return {
+        "matrix": matrix,
+        "keys_idx": {k: i for i, k in enumerate(keys)},
+        "fingerprint": fingerprint,
+    }
+
+
+def _embedding_fingerprint(db: Session) -> tuple[int, int, int]:
+    """A cheap signal that detects inserts, deletes, and in-place re-embeds.
+    (count, max_id, sum_id) — pure-count was insufficient because re-embedding
+    an existing (chatlog_id, message_index) does not change the row count, but
+    does change which rows we are now serving."""
+    row = db.exec(
+        select(
+            func.count(MessageEmbedding.id),
+            func.coalesce(func.max(MessageEmbedding.id), 0),
+            func.coalesce(func.sum(MessageEmbedding.id), 0),
+        )
+    ).one()
+    return (int(row[0]), int(row[1]), int(row[2]))
+
+
+def _get_cache(db: Session) -> dict:
+    """Per-engine cached matrix; reloads when the embedding fingerprint diverges."""
+    bind = db.get_bind()
+    current = _embedding_fingerprint(db)
+    with _lock:
+        cache = bind.info.get("assist_cache") if hasattr(bind, "info") else None
+        if cache is not None and cache.get("fingerprint") == current:
+            return cache
+        cache = _build_cache(db, current)
+        if hasattr(bind, "info"):
+            bind.info["assist_cache"] = cache
+        return cache
 
 
 def nearest_neighbors(
@@ -26,164 +72,102 @@ def nearest_neighbors(
     chatlog_id: int,
     message_index: int,
     k: int = 3,
+    assignment_id: int | None = None,
 ) -> list[dict]:
-    """Return up to k cosine-nearest labeled neighbors of the given message.
-    Each result: {chatlog_id, message_index, value, similarity, message_text}.
-    Returns [] if the focused message has no cached embedding or there are no
-    labeled neighbors. Skip-decisions are excluded — only yes/no count."""
-    focused_emb_row = db.exec(
-        select(MessageEmbedding).where(
-            MessageEmbedding.chatlog_id == chatlog_id,
-            MessageEmbedding.message_index == message_index,
-        )
-    ).first()
-    if not focused_emb_row:
+    """Up to k cosine-nearest human yes/no labeled neighbors of the focused message.
+    Returns [] if the focused message has no embedding or no labeled neighbors do.
+    When assignment_id is set, neighbors are restricted to messages tagged with the
+    same assignment so calibration anchors stay within the same lab/project context.
+    Each result: {chatlog_id, message_index, value, similarity, message_text}."""
+    cache = _get_cache(db)
+    if cache["matrix"] is None:
         return []
-    focused = _decode(focused_emb_row.embedding)
-    focused_norm = float(np.linalg.norm(focused))
-    if focused_norm == 0.0:
-        return []
+    keys_idx = cache["keys_idx"]
+    matrix = cache["matrix"]
 
-    apps = db.exec(
-        select(
-            LabelApplication.chatlog_id,
-            LabelApplication.message_index,
-            LabelApplication.value,
-        ).where(
-            LabelApplication.label_id == label_id,
-            LabelApplication.applied_by == "human",
-            LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
-        )
-    ).all()
-    # Exclude the focused message from its own neighbor pool (e.g., on undo
-    # or post-decision navigation, a labeled message may be re-focused).
-    apps = [(c, i, v) for (c, i, v) in apps if not (c == chatlog_id and i == message_index)]
-    if not apps:
+    focused_idx = keys_idx.get((chatlog_id, message_index))
+    if focused_idx is None:
         return []
+    focused = matrix[focused_idx]
 
-    candidates: list[dict] = []
+    stmt = select(
+        LabelApplication.chatlog_id,
+        LabelApplication.message_index,
+        LabelApplication.value,
+    ).where(
+        LabelApplication.label_id == label_id,
+        LabelApplication.applied_by == "human",
+        LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
+    )
+    if assignment_id is not None:
+        stmt = stmt.join(
+            MessageCache,
+            (MessageCache.chatlog_id == LabelApplication.chatlog_id)
+            & (MessageCache.message_index == LabelApplication.message_index),
+        ).where(MessageCache.assignment_id == assignment_id)
+    apps = db.exec(stmt).all()
+
+    candidate_idx: list[int] = []
+    candidate_meta: list[tuple[int, int, str]] = []
     for cid, midx, value in apps:
-        emb_row = db.exec(
-            select(MessageEmbedding).where(
-                MessageEmbedding.chatlog_id == cid,
-                MessageEmbedding.message_index == midx,
-            )
-        ).first()
-        if not emb_row:
+        if cid == chatlog_id and midx == message_index:
             continue
-        v = _decode(emb_row.embedding)
-        denom = focused_norm * float(np.linalg.norm(v))
-        if denom == 0.0:
+        idx = keys_idx.get((cid, midx))
+        if idx is None:
             continue
-        sim = float(np.dot(focused, v) / denom)
-        candidates.append({
+        candidate_idx.append(idx)
+        candidate_meta.append((cid, midx, value))
+    if not candidate_idx:
+        return []
+
+    sub = matrix[candidate_idx]
+    sims = sub @ focused
+
+    k_eff = min(k, len(sims))
+    top_part = np.argpartition(-sims, k_eff - 1)[:k_eff]
+    top_local = top_part[np.argsort(-sims[top_part])]
+
+    top: list[dict] = []
+    for li in top_local:
+        cid, midx, value = candidate_meta[int(li)]
+        top.append({
             "chatlog_id": cid,
             "message_index": midx,
             "value": value,
-            "similarity": sim,
+            "similarity": float(sims[int(li)]),
         })
 
-    candidates.sort(key=lambda c: c["similarity"], reverse=True)
-    top = candidates[:k]
-
-    for c in top:
-        msg = db.exec(
-            select(MessageCache).where(
-                MessageCache.chatlog_id == c["chatlog_id"],
-                MessageCache.message_index == c["message_index"],
+    text_keys = {(t["chatlog_id"], t["message_index"]) for t in top}
+    if text_keys:
+        msgs = db.exec(
+            select(
+                MessageCache.chatlog_id,
+                MessageCache.message_index,
+                MessageCache.message_text,
+            ).where(MessageCache.chatlog_id.in_({c for c, _ in text_keys}))
+        ).all()
+        text_map = {(c, i): t for (c, i, t) in msgs}
+        for t in top:
+            t["message_text"] = text_map.get(
+                (t["chatlog_id"], t["message_index"]), ""
             )
-        ).first()
-        c["message_text"] = msg.message_text if msg else ""
 
     return top
 
 
-# ---------------------------------------------------------------------------
-# Cache rebuild helpers
-# ---------------------------------------------------------------------------
-
-REBUILD_DIVERGENCE = 5
-
-
-def _human_label_count(db: Session, label_id: int) -> int:
-    """SELECT COUNT(*) — runs on every /next call, must not load rows."""
-    return db.exec(
-        select(func.count()).select_from(LabelApplication).where(
-            LabelApplication.label_id == label_id,
-            LabelApplication.applied_by == "human",
-            LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
-        )
-    ).one()
-
-
-def _latest_model_version(db: Session, label_id: int) -> int | None:
-    row = db.exec(
-        select(LabelPrediction.model_version)
-        .where(LabelPrediction.label_id == label_id)
-        .limit(1)
-    ).first()
-    return row if row is not None else None
-
-
 def rebuild_cache_if_stale(db: Session, label_id: int) -> bool:
-    """If the per-label human-label count has diverged from the cached
-    model_version by >= REBUILD_DIVERGENCE (or no cache exists), wipe and
-    rebuild the LabelPrediction rows for this label. Returns True if a
-    rebuild ran."""
-    current = _human_label_count(db, label_id)
-    cached = _latest_model_version(db, label_id)
-
-    if cached is None and current < REBUILD_DIVERGENCE:
-        # Below the cold-start threshold, no cache yet — leave it.
-        return False
-    if cached is not None and (current - cached) < REBUILD_DIVERGENCE:
-        return False
-
-    # Wipe existing rows for this label.
-    existing = db.exec(
-        select(LabelPrediction).where(LabelPrediction.label_id == label_id)
-    ).all()
-    for row in existing:
-        db.delete(row)
-    db.commit()
-
-    # Compute pending = cached messages minus already-labeled ones.
-    decided = set(db.exec(
-        select(LabelApplication.chatlog_id, LabelApplication.message_index)
-        .where(LabelApplication.label_id == label_id)
-    ).all())
-    cached_msgs = db.exec(
-        select(MessageCache.chatlog_id, MessageCache.message_index)
-    ).all()
-    pending = [(c, i) for (c, i) in cached_msgs if (c, i) not in decided]
-
-    for cid, midx in pending:
-        neighbors = nearest_neighbors(db, label_id, cid, midx, k=3)
-        db.add(LabelPrediction(
-            label_id=label_id,
-            chatlog_id=cid,
-            message_index=midx,
-            nearest_neighbors=_json.dumps(neighbors),
-            model_version=current,
-        ))
-    db.commit()
-    return True
+    """No-op kept for callsite compatibility. The in-memory matrix reloads
+    automatically inside nearest_neighbors() when MessageEmbedding count diverges."""
+    return False
 
 
 def get_cached_neighbors(
-    db: Session, label_id: int, chatlog_id: int, message_index: int
+    db: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    assignment_id: int | None = None,
 ) -> list[dict]:
-    """Return the cached neighbors for a (label, message), or [] if no cache row."""
-    row = db.exec(
-        select(LabelPrediction).where(
-            LabelPrediction.label_id == label_id,
-            LabelPrediction.chatlog_id == chatlog_id,
-            LabelPrediction.message_index == message_index,
-        )
-    ).first()
-    if not row:
-        return []
-    try:
-        return list(_json.loads(row.nearest_neighbors))
-    except (ValueError, TypeError):
-        return []
+    return nearest_neighbors(
+        db, label_id, chatlog_id, message_index, k=3, assignment_id=assignment_id
+    )

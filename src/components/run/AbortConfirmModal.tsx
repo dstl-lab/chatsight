@@ -11,19 +11,30 @@ interface Props {
 export function AbortConfirmModal({ labelName, yesCount, noCount, onConfirm, onCancel }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key !== 'Escape') return
+      // Stop propagation so a stacked modal or page-level Escape handler
+      // doesn't also fire on the same keystroke.
+      e.stopPropagation()
+      onCancel()
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('keydown', handler, { capture: true })
+    return () => window.removeEventListener('keydown', handler, { capture: true })
   }, [onCancel])
 
   const total = yesCount + noCount
 
+  // Track mousedown target on the overlay so a click that started inside the
+  // inner card (e.g., text selection drag) doesn't dismiss when released
+  // outside it.
+  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onCancel()
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onMouseDown={handleOverlayMouseDown}>
       <div
         className="bg-surface border border-edge rounded-xl p-6 max-w-sm w-full shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-3">
           <span className="text-brick text-lg">&#9888;</span>

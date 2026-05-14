@@ -39,6 +39,8 @@ def select_best_example(label_name: str, description: str, example_messages: Lis
     Given a label's description and a list of candidate human-labeled messages,
     return the single message that best exemplifies the description.
     """
+    if not example_messages:
+        raise ValueError("select_best_example requires at least one example_messages entry")
     numbered = "\n".join(f"{i + 1}. {m}" for i, m in enumerate(example_messages))
 
     prompt = f"""You are helping an instructor review labels in a student-AI tutoring chatlog labeling system.

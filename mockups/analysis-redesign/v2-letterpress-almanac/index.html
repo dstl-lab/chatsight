@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Findings · v2 The Letterpress Almanac</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400&display=swap" rel="stylesheet" />
+<style>
+  /* ──────── V2: The Letterpress Almanac ────────
+     Decorated direction. Fraunces (display, variable axes) + Source Serif 4 (body).
+     Drop caps, asterism ornaments, double-rules. Old Farmer's Almanac / late-19th
+     printer's catalog. Generous ochre, more ornamental than V1. */
+
+  :root {
+    --paper:        #1a1408;
+    --paper-soft:   #2a2415;
+    --ink-warm:     #3a2a14;
+    --ochre:        #b87a0e;
+    --ochre-dim:    #8c6d1f;
+    --ochre-bright: #d49619;
+    --moss:         #6b8456;
+    --moss-dim:     #4d5c3f;
+    --brick:        #a14c34;
+    --stone:        #6b6457;
+    --bg-warm:      #f3e9c9;
+    --bg-warm-deep: #ead9a8;
+    --edge-warm:    #d9c89b;
+    --edge-strong:  #a89668;
+    --edge-deep:    #5a4a22;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg-warm); color: var(--paper); }
+  body {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 16.5px; line-height: 1.6;
+    min-height: 100vh; overflow-x: hidden;
+    /* subtle paper-grain texture — pure CSS, no image fetch */
+    background-image:
+      radial-gradient(circle at 8% 12%, rgba(184,122,14,0.04) 0, transparent 40%),
+      radial-gradient(circle at 92% 88%, rgba(161,76,52,0.03) 0, transparent 40%);
+  }
+  ::selection { background: rgba(184, 122, 14, 0.25); }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .smcp { font-feature-settings: "smcp", "tnum"; letter-spacing: 0.1em; }
+  .disp { font-family: 'Fraunces', 'Source Serif 4', Georgia, serif; font-variation-settings: "opsz" 144, "SOFT" 50; }
+
+  .progress-strip {
+    position: fixed; top: 0; left: 0; right: 0; height: 2px; background: var(--ochre);
+    transform-origin: left; animation: progress 900ms cubic-bezier(0.2,0.8,0.2,1) forwards; z-index: 100;
+  }
+  @keyframes progress { from {transform: scaleX(0);} to {transform: scaleX(1); opacity: 0;} }
+
+  .page { max-width: 880px; margin: 0 auto; padding: 56px 64px 120px; }
+
+  /* Masthead: a printer's-mark-style banner */
+  .masthead {
+    text-align: center; padding: 18px 0 24px;
+    border-top: 3px double var(--edge-deep);
+    border-bottom: 3px double var(--edge-deep);
+    position: relative;
+  }
+  .masthead .stamp {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "WONK" 1;
+    font-weight: 700; font-size: 14px; letter-spacing: 0.32em; color: var(--ink-warm);
+    text-transform: uppercase;
+  }
+  .masthead .stamp .ornament { color: var(--ochre); margin: 0 12px; }
+  .masthead .vol {
+    display: block; margin-top: 6px;
+    font-style: italic; font-size: 12.5px; color: var(--stone);
+    letter-spacing: 0.04em;
+  }
+
+  /* Title — like a chapter opener with drop cap */
+  .title-block {
+    padding: 60px 0 32px;
+    text-align: center;
+    position: relative;
+  }
+  h1.title {
+    font-family: 'Fraunces', serif;
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+    font-weight: 500;
+    font-size: 84px; line-height: 0.96; letter-spacing: -0.022em;
+    color: var(--paper);
+  }
+  h1.title em {
+    font-style: italic; color: var(--ochre);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+  }
+  .subtitle {
+    margin: 18px auto 0; max-width: 540px;
+    font-style: italic; font-size: 17px; color: var(--paper-soft);
+  }
+  .subtitle::before, .subtitle::after { content: "—"; color: var(--ochre-dim); margin: 0 10px; }
+
+  /* Asterism ornament — uses real Unicode asterism + flanking rules */
+  .asterism {
+    display: flex; align-items: center; gap: 18px;
+    margin: 56px auto 40px; max-width: 380px;
+    color: var(--ochre);
+  }
+  .asterism .rule { flex: 1; height: 1px; background: var(--edge-strong); }
+  .asterism .glyph { font-family: 'Fraunces', serif; font-size: 18px; letter-spacing: 0.4em; }
+
+  /* Tabs as register entries */
+  .tabs {
+    display: flex; justify-content: center; gap: 0;
+    padding-top: 32px; border-bottom: 1px solid var(--edge-strong);
+  }
+  .tab {
+    appearance: none; background: none; border: none;
+    padding: 0 28px 16px; margin-bottom: -1px;
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36, "SOFT" 30;
+    font-size: 18px; color: var(--stone); cursor: pointer; letter-spacing: -0.005em;
+    transition: color 180ms ease;
+    position: relative;
+  }
+  .tab + .tab { border-left: 1px solid var(--edge-strong); }
+  .tab:hover { color: var(--paper); }
+  .tab[aria-selected="true"] {
+    color: var(--paper);
+    border-bottom: 3px double var(--ochre);
+  }
+  .tab .roman {
+    display: block; font-style: italic; font-size: 11px;
+    color: var(--ochre-dim); letter-spacing: 0.12em; margin-bottom: 4px;
+  }
+
+  .panel { display: none; padding-top: 56px; }
+  .panel[aria-hidden="false"] { display: block; animation: fadeUp 320ms cubic-bezier(0.2,0.8,0.2,1); }
+  @keyframes fadeUp { from {opacity: 0; transform: translateY(8px);} to {opacity:1; transform:translateY(0);} }
+
+  /* ─── Cohort: a Register, with leader dots ─── */
+  .register-intro {
+    text-align: center; max-width: 520px; margin: 0 auto 40px;
+    font-style: italic; font-size: 15.5px; color: var(--paper-soft);
+  }
+  .register-intro em { color: var(--ochre); font-style: italic; }
+
+  .register {
+    border-top: 3px double var(--edge-deep);
+    border-bottom: 3px double var(--edge-deep);
+  }
+  .register .entry {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto auto;
+    column-gap: 16px;
+    align-items: baseline;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--edge-warm);
+    cursor: pointer;
+    position: relative;
+    animation: rowIn 360ms ease backwards;
+  }
+  .register .entry:last-child { border-bottom: none; }
+  .register .entry:hover { background: rgba(217, 200, 155, 0.30); }
+  .register .entry:nth-child(1) { animation-delay: 40ms; }
+  .register .entry:nth-child(2) { animation-delay: 80ms; }
+  .register .entry:nth-child(3) { animation-delay: 120ms; }
+  .register .entry:nth-child(4) { animation-delay: 160ms; }
+  .register .entry:nth-child(5) { animation-delay: 200ms; }
+  @keyframes rowIn { from {opacity:0; transform:translateY(4px);} to {opacity:1; transform:translateY(0);} }
+
+  .entry .numeral {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144;
+    font-style: italic; font-size: 26px; color: var(--ochre);
+    width: 40px;
+  }
+  .entry .label-block .name {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 72, "SOFT" 50;
+    font-size: 24px; color: var(--paper); letter-spacing: -0.01em;
+  }
+  .entry .label-block .desc {
+    font-size: 12.5px; font-style: italic; color: var(--stone); margin-top: 2px;
+  }
+  .entry .leader {
+    border-bottom: 1px dotted var(--ochre-dim); transform: translateY(-6px);
+    min-width: 30px;
+  }
+  .entry .metric {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum","smcp";
+    font-size: 18px; color: var(--paper);
+    min-width: 64px; text-align: right;
+  }
+  .entry .metric .unit { font-size: 11px; color: var(--stone); margin-left: 2px; }
+  .entry .metric.warn { color: var(--brick); border-bottom: 1.5px solid var(--brick); padding-bottom: 1px; }
+  .entry .status {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36;
+    font-style: italic; font-size: 12px; color: var(--stone);
+    padding: 2px 10px; border: 1px solid var(--edge-strong); border-radius: 2px;
+    letter-spacing: 0.04em;
+    background: rgba(243,233,201,0.6);
+  }
+  .entry .status.complete { color: var(--moss-dim); border-color: var(--moss-dim); }
+  .entry .status.reviewing { color: var(--ochre); border-color: var(--ochre); }
+  .entry .status.labeling { color: var(--ink-warm); border-color: var(--ink-warm); }
+
+  .register-footnote {
+    margin-top: 28px; text-align: center;
+    font-style: italic; font-size: 13px; color: var(--stone);
+  }
+  .register-footnote .pilcrow { color: var(--ochre); margin-right: 6px; }
+
+  /* ─── Run detail ─── */
+  .run-header {
+    text-align: center; padding: 18px 0 24px;
+    border-top: 3px double var(--edge-deep);
+    border-bottom: 3px double var(--edge-deep);
+    position: relative;
+  }
+  .run-header .eyebrow {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36;
+    font-style: italic; font-size: 12px; letter-spacing: 0.32em;
+    color: var(--ochre); text-transform: uppercase;
+  }
+  .run-header h2 {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 1;
+    font-weight: 500; font-size: 54px; letter-spacing: -0.018em; color: var(--paper);
+    line-height: 1.0; margin-top: 8px;
+  }
+  .run-header .picker {
+    appearance: none; background: transparent; border: 1px solid var(--edge-strong);
+    border-radius: 2px; font-family: 'Fraunces', serif; font-style: italic;
+    font-size: 12px; color: var(--stone); padding: 4px 12px; cursor: pointer;
+    margin-top: 12px;
+  }
+  .run-header .when {
+    position: absolute; right: 0; bottom: 24px;
+    font-style: italic; font-size: 12px; color: var(--stone);
+    letter-spacing: 0.12em;
+  }
+  .readout {
+    margin-top: 18px; text-align: center; font-style: italic;
+    font-size: 15px; color: var(--paper-soft);
+  }
+  .readout .num { font-style: normal; color: var(--paper); font-variant-numeric: tabular-nums; }
+  .readout .sep { color: var(--ochre); margin: 0 10px; }
+
+  /* Section openers — drop cap + roman numeral */
+  .opener {
+    margin: 56px 0 32px;
+    display: grid; grid-template-columns: auto 1fr; column-gap: 32px;
+    align-items: baseline;
+  }
+  .opener .roman {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "WONK" 1;
+    font-style: italic; font-weight: 400;
+    font-size: 96px; line-height: 0.85; color: var(--ochre); letter-spacing: -0.04em;
+  }
+  .opener .title-side h3 {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 72, "SOFT" 30;
+    font-weight: 500; font-size: 38px; letter-spacing: -0.014em; color: var(--paper);
+    line-height: 1.0;
+  }
+  .opener .title-side .strap {
+    margin-top: 8px; font-style: italic; font-size: 14px; color: var(--paper-soft);
+    border-bottom: 1px solid var(--edge-strong);
+    padding-bottom: 14px;
+  }
+
+  /* Histogram */
+  .histogram { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px; align-items: end; height: 200px; margin-top: 8px; }
+  .hist-stack { display: flex; flex-direction: column; transform-origin: bottom; animation: barIn 600ms cubic-bezier(0.2,0.8,0.2,1) backwards; }
+  .hist-bin:nth-child(1) .hist-stack {animation-delay:0ms}
+  .hist-bin:nth-child(2) .hist-stack {animation-delay:30ms}
+  .hist-bin:nth-child(3) .hist-stack {animation-delay:60ms}
+  .hist-bin:nth-child(4) .hist-stack {animation-delay:90ms}
+  .hist-bin:nth-child(5) .hist-stack {animation-delay:120ms}
+  .hist-bin:nth-child(6) .hist-stack {animation-delay:150ms}
+  .hist-bin:nth-child(7) .hist-stack {animation-delay:180ms}
+  .hist-bin:nth-child(8) .hist-stack {animation-delay:210ms}
+  .hist-bin:nth-child(9) .hist-stack {animation-delay:240ms}
+  .hist-bin:nth-child(10) .hist-stack {animation-delay:270ms}
+  @keyframes barIn { from {transform: scaleY(0); opacity: 0;} to {transform: scaleY(1); opacity: 1;} }
+  .hist-no  { background: var(--brick); }
+  .hist-yes { background: var(--moss); }
+  .hist-axis {
+    margin-top: 12px;
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px;
+    border-top: 1px solid var(--edge-strong); padding-top: 8px;
+  }
+  .hist-axis span { font-size: 11px; color: var(--stone); text-align: center; font-variant-numeric: tabular-nums; }
+  .hist-caption {
+    margin-top: 18px; text-align: center;
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36;
+    font-style: italic; font-size: 16px; color: var(--ochre-dim);
+  }
+
+  /* Disagreement — display panel */
+  .disagreement {
+    margin-top: 38px;
+    border: 2px solid var(--edge-deep);
+    border-radius: 0;
+    background: rgba(243,233,201,0.5);
+    display: grid; grid-template-columns: 1.4fr 1fr 1fr;
+  }
+  .disagreement .cell { padding: 28px 26px; border-right: 1px solid var(--edge-strong); }
+  .disagreement .cell:last-child { border-right: none; }
+  .disagreement .label {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36;
+    font-style: italic; font-size: 11px; color: var(--ochre); letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .disagreement .big {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "WONK" 1;
+    font-weight: 500; font-size: 56px; line-height: 1; color: var(--paper);
+    margin-top: 10px; font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+  .disagreement .big .pct { font-size: 24px; color: var(--stone); margin-left: 2px; vertical-align: 14px; }
+  .disagreement .big .frac { display: block; margin-top: 4px; font-family: 'Source Serif 4', serif; font-size: 13px; font-weight: 400; color: var(--stone); font-style: italic; letter-spacing: 0; }
+  .disagreement .breakdown { margin-top: 10px; font-style: italic; font-size: 13.5px; color: var(--paper-soft); }
+  .disagreement .breakdown .num { font-style: normal; color: var(--paper); }
+
+  /* Bars — almanac-style with sample size as marginal note */
+  .bars { display: grid; grid-template-columns: 230px 1fr 80px; column-gap: 22px; row-gap: 14px; align-items: center; }
+  .bars .row-name { font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36; font-size: 17px; color: var(--paper); }
+  .bars .row-name em { color: var(--stone); font-size: 12px; margin-left: 4px; font-style: italic; }
+  .bars .row-bar { position: relative; height: 18px; background: var(--bg-warm-deep); border-top: 1px solid var(--edge-strong); border-bottom: 1px solid var(--edge-strong); }
+  .bars .row-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .bars .row-bar .fill.moss-dim { background: var(--moss-dim); }
+  .bars .row-bar .fill.moss-soft { background: rgba(107,132,86,0.55); }
+  @keyframes barFill { from {transform: scaleX(0);} to {transform: scaleX(1);} }
+  .bars .row-pct {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 72;
+    font-variant-numeric: tabular-nums; font-size: 22px; color: var(--paper);
+    text-align: right;
+  }
+  .bars .row-pct .pct { font-size: 13px; color: var(--stone); }
+  .bars .row-pct sup { margin-left: 4px; font-size: 10px; color: var(--ochre-dim); letter-spacing: 0.04em; font-family: 'Source Serif 4', serif; font-feature-settings: "smcp","tnum"; }
+
+  /* Position trio */
+  .position-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 8px; border-top: 1px solid var(--edge-strong); border-bottom: 1px solid var(--edge-strong); }
+  .pt-card { padding: 22px 24px; border-right: 1px solid var(--edge-strong); }
+  .pt-card:last-child { border-right: none; }
+  .pt-card .pt-label { font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36; font-style: italic; font-size: 12px; color: var(--ochre); letter-spacing: 0.16em; text-transform: uppercase; }
+  .pt-card .pt-pct { font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "WONK" 0; font-size: 48px; color: var(--paper); margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+  .pt-card .pt-pct span { font-size: 22px; color: var(--stone); }
+  .pt-card .pt-bar { margin-top: 12px; height: 4px; background: var(--bg-warm-deep); position: relative; }
+  .pt-card .pt-bar .fill { position: absolute; top: 0; left: 0; bottom: 0; background: var(--moss); animation: barFill 700ms cubic-bezier(0.2,0.8,0.2,1) backwards; transform-origin: left; }
+  .pt-card .pt-foot { margin-top: 10px; font-style: italic; font-size: 12px; color: var(--stone); }
+
+  /* Weekly */
+  .weekly { margin-top: 8px; border-top: 1px solid var(--edge-strong); border-bottom: 1px solid var(--edge-strong); padding: 26px 0 16px; }
+  .weekly svg { display: block; width: 100%; height: 170px; }
+  .weekly-axis { margin-top: 10px; display: grid; grid-template-columns: repeat(8, 1fr); font-size: 11px; color: var(--stone); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; text-align: center; font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36; font-style: italic; }
+  .weekly-caption { margin-top: 18px; text-align: center; font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36; font-style: italic; font-size: 15px; color: var(--ochre-dim); }
+  .legend { display: inline-flex; align-items: center; gap: 6px; font-style: normal; font-family: 'Source Serif 4'; font-size: 11px; color: var(--stone); letter-spacing: 0.08em; margin: 0 14px; font-feature-settings: "smcp", "tnum"; }
+  .legend-line { display: inline-block; width: 22px; height: 1.5px; background: var(--moss); }
+  .legend-line.dotted { background: none; border-top: 1.5px dotted var(--ochre); }
+
+  /* Examples — quoted passages with decorative drop quote */
+  .examples { display: flex; flex-direction: column; gap: 36px; }
+  .example-group .group-label {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36;
+    font-style: italic; font-size: 12px; color: var(--ochre);
+    text-align: center; padding: 8px 0; letter-spacing: 0.2em; text-transform: uppercase;
+    border-top: 1px solid var(--edge-strong); border-bottom: 1px solid var(--edge-strong);
+    background: rgba(243, 233, 201, 0.45);
+  }
+  .example-group .group-label .n { display: block; margin-top: 4px; color: var(--stone); font-size: 10.5px; letter-spacing: 0.18em; }
+  .example-group blockquote {
+    display: grid; grid-template-columns: 1fr 210px; column-gap: 36px;
+    padding: 22px 0 22px 56px;
+    border-bottom: 1px solid var(--edge-warm);
+    position: relative;
+  }
+  .example-group blockquote:last-child { border-bottom: none; }
+  .example-group blockquote::before {
+    content: "\201C";
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 144, "SOFT" 100, "WONK" 1;
+    position: absolute; left: 0; top: 4px;
+    font-size: 76px; line-height: 1; color: var(--ochre);
+    font-weight: 400;
+  }
+  .example-group blockquote p {
+    font-family: 'Fraunces', serif; font-variation-settings: "opsz" 36, "SOFT" 30;
+    font-size: 18px; line-height: 1.45; color: var(--paper);
+  }
+  .example-group blockquote p code {
+    font-family: ui-monospace, 'Cascadia Mono', monospace;
+    font-size: 0.9em; background: rgba(184,122,14,0.10); padding: 1px 4px; border-radius: 2px;
+  }
+  .example-group blockquote aside {
+    font-style: italic; font-size: 12.5px; color: var(--stone);
+    text-align: right; border-left: 1px solid var(--edge-strong); padding-left: 18px;
+    align-self: center;
+    font-feature-settings: "smcp","tnum"; letter-spacing: 0.04em;
+  }
+  .example-group blockquote aside .num { font-style: normal; color: var(--paper); }
+  .example-group blockquote aside.flag { color: var(--brick); }
+  .example-group.edge blockquote::before { color: var(--brick); }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; } }
+  @media (max-width: 760px) {
+    .page { padding: 32px 20px 80px; }
+    h1.title { font-size: 56px; }
+    .opener .roman { font-size: 64px; }
+    .opener .title-side h3 { font-size: 28px; }
+    .bars { grid-template-columns: 1fr; gap: 4px; }
+    .register .entry { grid-template-columns: auto 1fr; row-gap: 6px; }
+    .example-group blockquote { grid-template-columns: 1fr; }
+    .example-group blockquote aside { border-left: none; padding-left: 0; text-align: left; margin-top: 8px; }
+  }
+</style>
+</head>
+<body>
+  <div class="progress-strip" aria-hidden="true"></div>
+  <main class="page">
+    <header class="masthead">
+      <div class="stamp">CHATSIGHT <span class="ornament">❦</span> FINDINGS <span class="ornament">❦</span> AN ALMANAC OF RUNS</div>
+      <div class="vol">Volume I &nbsp;&middot;&nbsp; compiled May the Tenth, MMXXVI</div>
+    </header>
+
+    <div class="title-block">
+      <h1 class="title">A reading of the <em>single-label</em> runs</h1>
+      <p class="subtitle">how decisively the model marks a concept, where it disagrees with you, and what the data says when looked at sideways</p>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="cohort"><span class="roman">PART I</span>The Register</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="run"><span class="roman">PART II</span>A Run in Detail</button>
+    </nav>
+
+    <section id="panel-cohort" class="panel" role="tabpanel" aria-hidden="false">
+      <p class="register-intro">A register of the five single-label runs undertaken this term. <em>Yes&nbsp;%</em> reports the rate among messages the instructor has decided; <em>Disagree&nbsp;%</em> sits on the overlap where both a human decision and an AI prediction exist.</p>
+
+      <div class="register">
+        <div class="entry">
+          <div class="numeral">I.</div>
+          <div class="label-block"><div class="name">Help&ndash;Seeking</div><div class="desc">asking the tutor for an explanation, not just an answer</div></div>
+          <div class="leader"></div>
+          <div class="metric">62<span class="unit">%</span></div>
+          <div class="metric">8<span class="unit">%</span></div>
+          <div class="status reviewing">reviewing</div>
+        </div>
+        <div class="entry">
+          <div class="numeral">II.</div>
+          <div class="label-block"><div class="name">Confusion</div><div class="desc">student signals they are stuck or lost</div></div>
+          <div class="leader"></div>
+          <div class="metric">34<span class="unit">%</span></div>
+          <div class="metric warn">21<span class="unit">%</span></div>
+          <div class="status labeling">labeling</div>
+        </div>
+        <div class="entry">
+          <div class="numeral">III.</div>
+          <div class="label-block"><div class="name">Off&ndash;Topic</div><div class="desc">chat unrelated to the course</div></div>
+          <div class="leader"></div>
+          <div class="metric">18<span class="unit">%</span></div>
+          <div class="metric">4<span class="unit">%</span></div>
+          <div class="status complete">complete</div>
+        </div>
+        <div class="entry">
+          <div class="numeral">IV.</div>
+          <div class="label-block"><div class="name">Frustration</div><div class="desc">emotional signal &mdash; annoyance or giving up</div></div>
+          <div class="leader"></div>
+          <div class="metric">47<span class="unit">%</span></div>
+          <div class="metric">15<span class="unit">%</span></div>
+          <div class="status labeling">labeling</div>
+        </div>
+        <div class="entry">
+          <div class="numeral">V.</div>
+          <div class="label-block"><div class="name">Requests&nbsp;Explanation</div><div class="desc">asks the tutor to walk through reasoning</div></div>
+          <div class="leader"></div>
+          <div class="metric">71<span class="unit">%</span></div>
+          <div class="metric">6<span class="unit">%</span></div>
+          <div class="status reviewing">reviewing</div>
+        </div>
+      </div>
+
+      <p class="register-footnote"><span class="pilcrow">¶</span> Click any entry to read the run in detail. Disagreement above 15&nbsp;% is underlined &mdash; usually a sign the definition is drifting.</p>
+    </section>
+
+    <section id="panel-run" class="panel" role="tabpanel" aria-hidden="true">
+      <header class="run-header">
+        <div class="eyebrow">Run I &nbsp;&middot;&nbsp; in detail</div>
+        <h2>Help&ndash;Seeking</h2>
+        <button class="picker">↻ change run</button>
+        <span class="when">OCT &middot; MMXXVI</span>
+      </header>
+      <p class="readout">walked <span class="num">240/600</span><span class="sep">·</span><span class="num">62%</span> yes<span class="sep">·</span><span class="num">12</span> of <span class="num">150</span> overlap disagreed</p>
+
+      <div class="asterism" aria-hidden="true"><span class="rule"></span><span class="glyph">⁂</span><span class="rule"></span></div>
+
+      <div class="opener">
+        <div class="roman">I.</div>
+        <div class="title-side">
+          <h3>Of the model's conviction</h3>
+          <div class="strap">A histogram of AI confidence across this run, with a callout on the size and shape of the human–machine disagreement.</div>
+        </div>
+      </div>
+
+      <div class="histogram">
+        <div class="hist-bin"><div class="hist-stack" style="height:78%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:68%"><div class="hist-no" style="height:82%"></div><div class="hist-yes" style="height:18%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:51%"><div class="hist-no" style="height:81%"></div><div class="hist-yes" style="height:19%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:29%"><div class="hist-no" style="height:75%"></div><div class="hist-yes" style="height:25%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:20%"><div class="hist-no" style="height:50%"></div><div class="hist-yes" style="height:50%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:22%"><div class="hist-no" style="height:44%"></div><div class="hist-yes" style="height:56%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:34%"><div class="hist-no" style="height:29%"></div><div class="hist-yes" style="height:71%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:54%"><div class="hist-no" style="height:18%"></div><div class="hist-yes" style="height:82%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:85%"><div class="hist-no" style="height:9%"></div><div class="hist-yes" style="height:91%"></div></div></div>
+        <div class="hist-bin"><div class="hist-stack" style="height:100%"><div class="hist-no" style="height:2%"></div><div class="hist-yes" style="height:98%"></div></div></div>
+      </div>
+      <div class="hist-axis"><span>.0</span><span>.1</span><span>.2</span><span>.3</span><span>.4</span><span>.5</span><span>.6</span><span>.7</span><span>.8</span><span>.9</span></div>
+      <p class="hist-caption">— Bimodal. The model is decisive on this concept. —</p>
+
+      <div class="disagreement">
+        <div class="cell">
+          <div class="label">Disagreement</div>
+          <div class="big">8<span class="pct">%</span><span class="frac">12 of 150 overlap</span></div>
+          <div class="breakdown">Below the <span class="num">15%</span> drift threshold.</div>
+        </div>
+        <div class="cell">
+          <div class="label">AI Yes · Human No</div>
+          <div class="big">5<span class="frac">over-applied</span></div>
+          <div class="breakdown">Model claims help-seeking on edge cases.</div>
+        </div>
+        <div class="cell">
+          <div class="label">AI No · Human Yes</div>
+          <div class="big">7<span class="frac">missed</span></div>
+          <div class="breakdown">Model misses softer help-seeking.</div>
+        </div>
+      </div>
+
+      <div class="asterism" aria-hidden="true"><span class="rule"></span><span class="glyph">⁂</span><span class="rule"></span></div>
+
+      <div class="opener">
+        <div class="roman">II.</div>
+        <div class="title-side">
+          <h3>What the data says</h3>
+          <div class="strap">Yes-rate by assignment, by where in the conversation it appears, and across weeks. Then a small selection of messages to gut-check the label.</div>
+        </div>
+      </div>
+
+      <h4 style="font-family:'Fraunces',serif;font-variation-settings:'opsz' 36;font-style:italic;font-weight:400;font-size:18px;color:var(--ochre);text-align:center;letter-spacing:0.08em;margin-bottom:22px;text-transform:uppercase;">~ By Assignment ~</h4>
+      <div class="bars">
+        <div class="row-name">Lab&nbsp;1 <em>&mdash; Probability</em></div><div class="row-bar"><div class="fill" style="width:78%;animation-delay:0ms;"></div></div><div class="row-pct">78<span class="pct">%</span><sup>n42</sup></div>
+        <div class="row-name">Lab&nbsp;2 <em>&mdash; DataFrames</em></div><div class="row-bar"><div class="fill" style="width:71%;animation-delay:40ms;"></div></div><div class="row-pct">71<span class="pct">%</span><sup>n38</sup></div>
+        <div class="row-name">Final Project</div><div class="row-bar"><div class="fill" style="width:64%;animation-delay:80ms;"></div></div><div class="row-pct">64<span class="pct">%</span><sup>n28</sup></div>
+        <div class="row-name">Lab&nbsp;5 <em>&mdash; Hypothesis</em></div><div class="row-bar"><div class="fill" style="width:58%;animation-delay:120ms;"></div></div><div class="row-pct">58<span class="pct">%</span><sup>n31</sup></div>
+        <div class="row-name">Midterm</div><div class="row-bar"><div class="fill" style="width:52%;animation-delay:160ms;"></div></div><div class="row-pct">52<span class="pct">%</span><sup>n24</sup></div>
+        <div class="row-name">Lab&nbsp;3 <em>&mdash; Visualization</em></div><div class="row-bar"><div class="fill moss-dim" style="width:49%;animation-delay:200ms;"></div></div><div class="row-pct">49<span class="pct">%</span><sup>n27</sup></div>
+        <div class="row-name">Lab&nbsp;4 <em>&mdash; Regression</em></div><div class="row-bar"><div class="fill moss-dim" style="width:41%;animation-delay:240ms;"></div></div><div class="row-pct">41<span class="pct">%</span><sup>n22</sup></div>
+        <div class="row-name">Concept Check</div><div class="row-bar"><div class="fill moss-soft" style="width:23%;animation-delay:280ms;"></div></div><div class="row-pct">23<span class="pct">%</span><sup>n28</sup></div>
+      </div>
+
+      <h4 style="font-family:'Fraunces',serif;font-variation-settings:'opsz' 36;font-style:italic;font-weight:400;font-size:18px;color:var(--ochre);text-align:center;letter-spacing:0.08em;margin:56px 0 22px;text-transform:uppercase;">~ By Conversation Position ~</h4>
+      <div class="position-trio">
+        <div class="pt-card"><div class="pt-label">Early · msgs 0–2</div><div class="pt-pct">71<span>%</span></div><div class="pt-bar"><div class="fill" style="width:71%;"></div></div><div class="pt-foot">n = 108</div></div>
+        <div class="pt-card"><div class="pt-label">Mid · msgs 3–6</div><div class="pt-pct">64<span>%</span></div><div class="pt-bar"><div class="fill" style="width:64%;animation-delay:60ms;"></div></div><div class="pt-foot">n = 92</div></div>
+        <div class="pt-card"><div class="pt-label">Late · msgs 7+</div><div class="pt-pct">48<span>%</span></div><div class="pt-bar"><div class="fill" style="width:48%;animation-delay:120ms;"></div></div><div class="pt-foot">n = 40</div></div>
+      </div>
+
+      <h4 style="font-family:'Fraunces',serif;font-variation-settings:'opsz' 36;font-style:italic;font-weight:400;font-size:18px;color:var(--ochre);text-align:center;letter-spacing:0.08em;margin:56px 0 22px;text-transform:uppercase;">~ Across the Weeks ~</h4>
+      <div class="weekly">
+        <svg viewBox="0 0 800 170" preserveAspectRatio="none">
+          <line x1="0" y1="85" x2="800" y2="85" stroke="#d9c89b" stroke-width="1" stroke-dasharray="2 4"/>
+          <polyline fill="none" stroke="#6b8456" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="50,60 157,71 264,50 371,55 478,65 585,76 692,68 760,63"/>
+          <polyline fill="none" stroke="#b87a0e" stroke-width="1.4" stroke-dasharray="3 5" stroke-linejoin="round" stroke-linecap="round" points="50,112 157,100 264,92 371,81 478,75 585,79 692,84 760,88"/>
+          <circle cx="50" cy="60" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="157" cy="71" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="264" cy="50" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="371" cy="55" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="478" cy="65" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="585" cy="76" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="692" cy="68" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/><circle cx="760" cy="63" r="3" fill="#6b8456" stroke="#f3e9c9" stroke-width="1.5"/>
+        </svg>
+        <div class="weekly-axis"><span>W34</span><span>W35</span><span>W36</span><span>W37</span><span>W38</span><span>W39</span><span>W40</span><span>W41</span></div>
+      </div>
+      <p class="weekly-caption">~ Stable through midterm season — a small dip in W39 ~<br><span class="legend"><span class="legend-line"></span>YES RATE</span><span class="legend"><span class="legend-line dotted"></span>N PER WEEK</span></p>
+
+      <h4 style="font-family:'Fraunces',serif;font-variation-settings:'opsz' 36;font-style:italic;font-weight:400;font-size:18px;color:var(--ochre);text-align:center;letter-spacing:0.08em;margin:56px 0 22px;text-transform:uppercase;">~ A Sampling of Messages ~</h4>
+
+      <div class="examples">
+        <div class="example-group">
+          <div class="group-label">Yes &mdash; Sampled<span class="n">N = 3 of 149</span></div>
+          <blockquote><p>I'm not sure what bool_array does — can you explain again?</p><aside><span class="num">Lab 2</span> · mid · ai 0.91 · human yes</aside></blockquote>
+          <blockquote><p>Why does <code>.groupby()</code> return a different result for sum vs mean here?</p><aside><span class="num">Lab 5</span> · mid · ai 0.84 · human yes</aside></blockquote>
+          <blockquote><p>I keep getting a KeyError on this DataFrame — what am I doing wrong?</p><aside><span class="num">Lab 2</span> · early · ai 0.78 · human yes</aside></blockquote>
+        </div>
+        <div class="example-group">
+          <div class="group-label">No &mdash; Sampled<span class="n">N = 3 of 91</span></div>
+          <blockquote><p>Thanks, that worked!</p><aside><span class="num">Final</span> · late · ai 0.02 · human no</aside></blockquote>
+          <blockquote><p>Make this plot blue.</p><aside><span class="num">Lab 3</span> · early · ai 0.08 · human no</aside></blockquote>
+          <blockquote><p>Can you write the code for me?</p><aside><span class="num">Concept</span> · early · ai 0.12 · human no</aside></blockquote>
+        </div>
+        <div class="example-group edge">
+          <div class="group-label">Edge &mdash; Flagged for Review<span class="n">N = 2 of 12</span></div>
+          <blockquote><p>What does it mean when something is &lsquo;closed under&rsquo; an operation?</p><aside class="flag"><span class="num">Lab 1</span> · mid · <span class="num">ai 0.51 no</span> / <span class="num">human yes</span> — low confidence</aside></blockquote>
+          <blockquote><p>Should I use <code>.loc</code> or <code>.iloc</code> here?</p><aside class="flag"><span class="num">Lab 2</span> · early · <span class="num">ai 0.42 no</span> / <span class="num">human yes</span> — human overruled</aside></blockquote>
+        </div>
+      </div>
+    </section>
+  </main>
+<script>
+  const tabs = document.querySelectorAll('.tab');
+  const panels = { cohort: document.getElementById('panel-cohort'), run: document.getElementById('panel-run') };
+  tabs.forEach((t) => t.addEventListener('click', () => {
+    tabs.forEach((x) => x.setAttribute('aria-selected', 'false'));
+    t.setAttribute('aria-selected', 'true');
+    Object.entries(panels).forEach(([k, p]) => p.setAttribute('aria-hidden', k === t.dataset.tab ? 'false' : 'true'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+  document.querySelectorAll('.register .entry').forEach((row) => row.addEventListener('click', () => document.querySelector('.tab[data-tab="run"]').click()));
+</script>
+</body>
+</html>

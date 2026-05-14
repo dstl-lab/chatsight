@@ -23,6 +23,11 @@ class LabelDefinition(SQLModel, table=True):
     # Hybrid queue: fraction [0,1] of picks that bias toward richer conversations;
     # None → use CHATSIGHT_HYBRID_EXPLORE_FRACTION env (default 0.35).
     hybrid_explore_fraction: Optional[float] = Field(default=None)
+    # Sequential/composable: a mode='single' label promoted from a mode='multi' label
+    # carries a back-reference here. Populated by POST /api/labels/{multi_id}/promote.
+    paired_label_id: Optional[int] = Field(
+        default=None, foreign_key="labeldefinition.id", index=True
+    )
 
 
 class LabelApplication(SQLModel, table=True):
@@ -38,6 +43,12 @@ class LabelApplication(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Single-label pivot: explicit decision value (multi-label leaves NULL)
     value: Optional[str] = Field(default=None)  # "yes" | "no" | "skip" | None (multi)
+    # AI snapshot: captured by decision_service when a human reviews and overwrites
+    # an AI prediction. Lets analysis compute human-AI agreement/disagreement after
+    # review, since the live row's `value`/`applied_by` reflect the human decision.
+    # Both NULL when the row was never AI-predicted before being human-decided.
+    ai_value_at_review: Optional[str] = Field(default=None)       # "yes" | "no"
+    ai_confidence_at_review: Optional[float] = Field(default=None)  # 0.0–1.0
 
 
 class LabelPrediction(SQLModel, table=True):
@@ -98,6 +109,9 @@ class MessageCache(SQLModel, table=True):
     chatlog_id: int
     message_index: int
     message_text: str
+    # When the student sent the message (sourced from external events.created_at).
+    # Used by single-label /analysis to bucket decisions by hour-of-day.
+    created_at: Optional[datetime] = Field(default=None)
     context_before: Optional[str] = None
     context_after: Optional[str] = None
     # Single-label pivot: assignment metadata derived from external events.payload->notebook

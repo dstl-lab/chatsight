@@ -10,6 +10,7 @@ import type {
   SingleLabelSummary, HandoffResponse, ReviewItem,
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
   AssistResponse,
+  SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -19,8 +20,15 @@ import {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method ?? 'GET').toUpperCase()
   const res = await fetch(path, options)
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`${method} ${path} → ${res.status} ${body}`)
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T
+  }
   return res.json()
 }
 
@@ -190,6 +198,10 @@ export const api = {
     USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
              : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
 
+  promoteLabel: (labelId: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabel)
+             : req(`/api/labels/${labelId}/promote`, { method: 'POST' }),
+
   suggestLabel: (chatlog_id: number, message_index: number): Promise<SuggestResponse> =>
     USE_MOCK ? Promise.resolve({ label_name: '', evidence: '', rationale: '' })
              : req('/api/queue/suggest', { method: 'POST', ...json({ chatlog_id, message_index }) }),
@@ -215,6 +227,21 @@ export const api = {
     }
     const suffix = q.toString() ? `?${q.toString()}` : ''
     return req(`/api/analysis/temporal${suffix}`)
+  },
+
+  // ── Single-label analysis ──────────────────────────────────────
+  getSingleLabelCohort: (): Promise<SingleLabelCohortResponse> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabelCohort)
+             : req('/api/analysis/single-label/cohort'),
+
+  getSingleLabelRunDetail: (runId: number): Promise<SingleLabelRunDetail> =>
+    USE_MOCK ? Promise.resolve(mockApi.singleLabelRunDetail)
+             : req(`/api/analysis/single-label/runs/${runId}`),
+
+  getMilestones: (course?: string): Promise<AssignmentMilestone[]> => {
+    if (USE_MOCK) return Promise.resolve([])
+    const suffix = course ? `?course=${encodeURIComponent(course)}` : ''
+    return req(`/api/analysis/milestones${suffix}`)
   },
 
   exportCsv: async (): Promise<Blob> => {
@@ -338,24 +365,30 @@ export const api = {
     labelId: number,
     chatlogId: number,
     messageIndex: number,
-  ): Promise<AssistResponse> =>
-    USE_MOCK
-      ? Promise.resolve({
-          neighbors: [
-            { chatlog_id: 100, message_index: 0, value: 'yes',
-              similarity: 0.84,
-              message_text: "i'm stuck on q3, can you walk me through how to compute the standard deviation" },
-            { chatlog_id: 101, message_index: 0, value: 'yes',
-              similarity: 0.79,
-              message_text: 'how do i actually solve part 2 — i tried mean(arr) but the autograder says wrong' },
-            { chatlog_id: 102, message_index: 0, value: 'no',
-              similarity: 0.71,
-              message_text: 'why does numpy default to dividing by n instead of n minus 1' },
-          ],
-        })
-      : req(
-          `/api/single-labels/${labelId}/assist?chatlog_id=${chatlogId}&message_index=${messageIndex}`,
-        ),
+    assignmentId?: number,
+  ): Promise<AssistResponse> => {
+    if (USE_MOCK) {
+      return Promise.resolve({
+        neighbors: [
+          { chatlog_id: 100, message_index: 0, value: 'yes',
+            similarity: 0.84,
+            message_text: "i'm stuck on q3, can you walk me through how to compute the standard deviation" },
+          { chatlog_id: 101, message_index: 0, value: 'yes',
+            similarity: 0.79,
+            message_text: 'how do i actually solve part 2 — i tried mean(arr) but the autograder says wrong' },
+          { chatlog_id: 102, message_index: 0, value: 'no',
+            similarity: 0.71,
+            message_text: 'why does numpy default to dividing by n instead of n minus 1' },
+        ],
+      })
+    }
+    const q = new URLSearchParams({
+      chatlog_id: String(chatlogId),
+      message_index: String(messageIndex),
+    })
+    if (assignmentId !== undefined) q.set('assignment_id', String(assignmentId))
+    return req(`/api/single-labels/${labelId}/assist?${q.toString()}`)
+  },
 
   handoffSingleLabel: (id: number, sampleSize?: number): Promise<HandoffResponse> => {
     const qs = sampleSize !== undefined ? `?sample_size=${sampleSize}` : ''

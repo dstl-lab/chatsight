@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../services/api'
+import { useMode } from '../hooks/useMode'
 import type { LabelDefinition, LabelExample, SuggestResponse } from '../types'
 
 // ── Components ───────────────────────────────────────────────────────────────
@@ -420,6 +422,40 @@ function DeleteConfirmModal({ label, onClose, onConfirm }: { label: LabelDefinit
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2 text-xs font-bold text-faint hover:text-tertiary">Cancel</button>
           <button onClick={onConfirm} className="flex-1 py-2 bg-danger text-white text-xs font-bold rounded hover:bg-danger-hover transition-colors">Delete Label</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * PromoteConfirmModal: confirms promotion of a multi-label to a paired /run pass.
+ * Pre-seeds the new single label with "yes" decisions for every existing
+ * multi-label application — explained up front so the instructor knows.
+ */
+function PromoteConfirmModal({
+  label, onClose, onConfirm,
+}: { label: LabelDefinition; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="bg-surface border border-edge-subtle rounded-lg p-8 max-w-sm w-full text-center shadow-2xl">
+        <div className="w-16 h-16 bg-elevated text-accent-text border border-edge rounded-full flex items-center justify-center mx-auto mb-6">
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-bold text-on-canvas mb-2">Promote "{label.name}" to /run?</h3>
+        <p className="text-sm text-faint mb-2 leading-relaxed">
+          A new single-label run will be queued for this label.
+        </p>
+        <p className="text-xs text-muted mb-8 leading-relaxed">
+          {label.count > 0
+            ? `${label.count} existing multi-label application${label.count === 1 ? '' : 's'} will be pre-seeded as "yes" decisions on the new run, so you only need to validate the rest.`
+            : `No existing applications to pre-seed; you'll start the run from scratch.`}
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2 text-xs font-bold text-faint hover:text-tertiary">Cancel</button>
+          <button onClick={onConfirm} className="flex-1 py-2 bg-accent text-white text-xs font-bold rounded hover:bg-accent-hover transition-colors">Promote</button>
         </div>
       </div>
     </div>
@@ -956,6 +992,8 @@ export function LabelsPage() {
   const [splittingLabel, setSplittingLabel] = useState<LabelDefinition | null>(null)
   const [mergeState, setMergeState] = useState<{ source: LabelDefinition, target: LabelDefinition } | null>(null)
   const [deletingLabel, setDeletingLabel] = useState<LabelDefinition | null>(null)
+  const [promotingLabel, setPromotingLabel] = useState<LabelDefinition | null>(null)
+  const { setMode } = useMode()
   
   const [draggedId, setDraggedId] = useState<number | null>(null)
 
@@ -1012,6 +1050,17 @@ export function LabelsPage() {
     try {
       await api.deleteLabel(deletingLabel.id, true)
       setDeletingLabel(null)
+      fetchLabels()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handlePromote = async () => {
+    if (!promotingLabel) return
+    try {
+      await api.promoteLabel(promotingLabel.id)
+      setPromotingLabel(null)
       fetchLabels()
     } catch (err) {
       console.error(err)
@@ -1113,29 +1162,51 @@ export function LabelsPage() {
 
               <div className="flex justify-between items-start mb-5">
                 <span className="text-2xl font-black text-disabled group-hover:text-disabled transition-colors">#{label.id}</span>
-                <span className="px-2 py-0.5 bg-canvas text-accent-text border border-edge-subtle rounded text-[10px] font-bold tracking-wider">
-                  {label.count}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className="px-2 py-0.5 bg-canvas text-accent-text border border-edge-subtle rounded text-[10px] font-bold tracking-wider" title="Multi-label discovery applications">
+                    {label.count} <span className="text-disabled font-normal">discovery</span>
+                  </span>
+                  {label.paired_summary && (
+                    <Link
+                      to="/run"
+                      onClick={() => setMode('single')}
+                      className="px-2 py-0.5 bg-amber-950/40 text-amber-300 border border-amber-900/60 rounded text-[10px] font-bold tracking-wider hover:bg-amber-900/40 transition-colors flex items-center gap-1"
+                      title={`Paired /run pass — phase: ${label.paired_summary.phase}`}
+                    >
+                      {label.paired_summary.yes_count} <span className="text-amber-500/80 font-normal">validated</span>
+                      <span className="text-[8px] uppercase tracking-tighter text-amber-500/60 ml-0.5">· {label.paired_summary.phase.replace('_', ' ')}</span>
+                    </Link>
+                  )}
+                </div>
               </div>
-              
+
               <h3 className="text-base font-bold text-on-surface mb-2 leading-tight group-hover:text-white transition-colors">{label.name}</h3>
               <p className="text-xs text-faint line-clamp-2 min-h-[3em] leading-relaxed italic">
                 {label.description || 'No description provided.'}
               </p>
 
               <div className="mt-8 flex gap-3 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
-                <button 
+                <button
                   onClick={() => setRefiningLabel(label)}
                   className="flex-1 py-1.5 bg-accent text-white text-[10px] font-black uppercase tracking-widest rounded hover:bg-accent-hover transition-colors shadow-lg shadow-blue-900/20"
                 >
                   Refine
                 </button>
-                <button 
+                <button
                   onClick={() => setSplittingLabel(label)}
                   className="px-3 py-1.5 bg-elevated text-tertiary text-[10px] font-black uppercase tracking-widest rounded border border-edge hover:bg-elevated-hl transition-colors"
                 >
                   Split
                 </button>
+                {!label.paired_label_id && (
+                  <button
+                    onClick={() => setPromotingLabel(label)}
+                    className="px-3 py-1.5 bg-elevated text-amber-300 text-[10px] font-black uppercase tracking-widest rounded border border-amber-900/60 hover:bg-amber-950/40 transition-colors"
+                    title="Promote to /run for deep validation"
+                  >
+                    Promote
+                  </button>
+                )}
                 <div className="relative group/tooltip">
                   <div className="p-1.5 bg-elevated text-muted rounded hover:bg-elevated-hl hover:text-accent-text transition-colors cursor-help border border-edge">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
@@ -1182,6 +1253,14 @@ export function LabelsPage() {
           label={deletingLabel}
           onClose={() => setDeletingLabel(null)}
           onConfirm={handleDelete}
+        />
+      )}
+
+      {promotingLabel && (
+        <PromoteConfirmModal
+          label={promotingLabel}
+          onClose={() => setPromotingLabel(null)}
+          onConfirm={handlePromote}
         />
       )}
 
