@@ -327,3 +327,78 @@ def test_flip_verdict_404_when_label_is_multi_mode(client, session):
         json={"verdict": "no"},
     )
     assert r.status_code == 404
+
+
+def test_upsert_note_sets_field(client, session):
+    from models import LabelDefinition, LabelApplication
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.8,
+    ))
+    session.commit()
+
+    r = client.put(
+        f"/api/single-labels/{label.id}/applications/42/note",
+        params={"message_index": 0},
+        json={"text": "not really self-correction"},
+    )
+    assert r.status_code == 200, r.text
+
+    row = session.exec(
+        select(LabelApplication).where(LabelApplication.chatlog_id == 42)
+    ).one()
+    assert row.note == "not really self-correction"
+
+
+def test_upsert_note_empty_string_clears(client, session):
+    from models import LabelDefinition, LabelApplication
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.8,
+        note="existing note",
+    ))
+    session.commit()
+
+    client.put(
+        f"/api/single-labels/{label.id}/applications/42/note",
+        params={"message_index": 0},
+        json={"text": ""},
+    )
+
+    row = session.exec(
+        select(LabelApplication).where(LabelApplication.chatlog_id == 42)
+    ).one()
+    assert row.note is None
+
+
+def test_upsert_note_404_when_no_row(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    r = client.put(
+        f"/api/single-labels/{label.id}/applications/999/note",
+        params={"message_index": 0},
+        json={"text": "hi"},
+    )
+    assert r.status_code == 404
+
+
+def test_upsert_note_404_when_label_is_multi_mode(client, session):
+    from models import LabelDefinition, LabelApplication
+    multi = LabelDefinition(name="multi", mode="multi", phase="labeling")
+    session.add(multi); session.commit(); session.refresh(multi)
+    session.add(LabelApplication(
+        label_id=multi.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.8,
+    ))
+    session.commit()
+    r = client.put(
+        f"/api/single-labels/{multi.id}/applications/42/note",
+        params={"message_index": 0},
+        json={"text": "hi"},
+    )
+    assert r.status_code == 404

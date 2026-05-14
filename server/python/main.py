@@ -4359,6 +4359,33 @@ def flip_single_label_verdict(
     )
 
 
+@app.put("/api/single-labels/{label_id}/applications/{chatlog_id}/note")
+def upsert_single_label_note(
+    label_id: int,
+    chatlog_id: int,
+    body: NoteRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    app_row.note = body.text or None
+    db.add(app_row)
+    db.commit()
+    return {"ok": True}
+
+
 @app.delete("/api/single-labels/{label_id}", response_model=DeleteLabelResponse)
 def delete_single_label(label_id: int, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, label_id)
