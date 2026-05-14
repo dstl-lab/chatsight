@@ -75,6 +75,18 @@ def _migrate_label_definition(conn, inspect, text):
             "CREATE INDEX IF NOT EXISTS idx_labeldef_paired "
             "ON labeldefinition(paired_label_id)"
         ))
+    if "batch_job_name" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_job_name VARCHAR"))
+    if "batch_state" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_state VARCHAR"))
+    if "batch_submitted_at" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_submitted_at DATETIME"))
+    if "batch_polled_at" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_polled_at DATETIME"))
+    if "batch_total_count" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_total_count INTEGER"))
+    if "batch_completed_count" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_completed_count INTEGER"))
 
 
 def _migrate_label_application(conn, inspect, text):

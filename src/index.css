@@ -251,9 +251,20 @@
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); opacity: 0; }
 }
+/* Indeterminate progress strip used by SummariesPage while a Gemini Batch
+   job is in flight (no per-request progress is available from Google during
+   that window, so we sweep a narrow highlight across the bar instead). */
+@keyframes batchSweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.batch-indeterminate-strip {
+  animation: batchSweep 1.6s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .chart-card *,
-  [class*="rail-"] {
+  [class*="rail-"],
+  .batch-indeterminate-strip {
     animation-duration: 0ms !important;
     transition-duration: 0ms !important;
   }

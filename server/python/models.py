@@ -25,6 +25,20 @@ class LabelDefinition(SQLModel, table=True):
     paired_label_id: Optional[int] = Field(
         default=None, foreign_key="labeldefinition.id", index=True
     )
+    # Batch API instrumentation: populated only while a Gemini Batch job is in
+    # flight for this label. The poll loop in _classify_via_batch_api writes
+    # `batch_state` + `batch_polled_at` on every tick; all three "live" fields
+    # are nulled out once the job terminates. `batch_submitted_at` is kept as a
+    # historical record for postmortems.
+    batch_job_name: Optional[str] = Field(default=None)
+    batch_state: Optional[str] = Field(default=None)
+    batch_submitted_at: Optional[datetime] = Field(default=None)
+    batch_polled_at: Optional[datetime] = Field(default=None)
+    # Multi-batch splitting (set when the batch path runs N > 1 sub-batches for
+    # large jobs so the UI can show "X of N batches done"). Both fields are
+    # nulled out at terminal alongside the other in-flight handles.
+    batch_total_count: Optional[int] = Field(default=None)
+    batch_completed_count: Optional[int] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):

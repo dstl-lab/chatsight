@@ -389,6 +389,18 @@ class HandoffSummaryListItem(BaseModel):
     classification_total: Optional[int] = None
     error: Optional[str] = None
     error_kind: Optional[str] = None  # "rate_limited" | "error" | None
+    # Gemini Batch API instrumentation. `batch_state` is non-null only while a
+    # batch job is in flight; the UI uses its presence to switch from the
+    # `classified_count / classification_total` % bar to an indeterminate
+    # state-aware display. `batch_submitted_at` powers an elapsed-time label;
+    # `batch_polled_at` powers a liveness hint (stale = task may be dead).
+    # When work is split across multiple sub-batches, `batch_total_count` and
+    # `batch_completed_count` let the UI render "X of N batches done".
+    batch_state: Optional[str] = None
+    batch_submitted_at: Optional[datetime] = None
+    batch_polled_at: Optional[datetime] = None
+    batch_total_count: Optional[int] = None
+    batch_completed_count: Optional[int] = None
 
 
 class MergeAssignmentsRequest(BaseModel):
