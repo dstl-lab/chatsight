@@ -46,6 +46,7 @@ from schemas import (
     ConfidenceHistogramBin, SingleLabelDetailResponse,
     MessageListItem, MessageListResponse,
     ConversationTurn, MessageDetailResponse,
+    FlipRequest, NoteRequest, LabelUpdateRequest,
 )
 import decision_service
 import queue_service
@@ -4299,6 +4300,58 @@ def post_review(
         notebook=mc.notebook if mc else None,
         ai_value=req.value,
         ai_confidence=1.0,
+    )
+
+
+@app.patch(
+    "/api/single-labels/{label_id}/applications/{chatlog_id}",
+    response_model=MessageListItem,
+)
+def flip_single_label_verdict(
+    label_id: int,
+    chatlog_id: int,
+    body: FlipRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    # Snapshot AI verdict on first human override only (do NOT overwrite an
+    # existing snapshot — the original AI prediction is the source of truth
+    # for agreement metrics).
+    if app_row.applied_by == "ai" and app_row.ai_value_at_review is None:
+        app_row.ai_value_at_review = app_row.value
+        app_row.ai_confidence_at_review = app_row.confidence
+
+    app_row.value = body.verdict
+    app_row.applied_by = "human"
+    db.add(app_row)
+    db.commit()
+    db.refresh(app_row)
+
+    msg = db.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+
+    return MessageListItem(
+        chatlog_id=chatlog_id,
+        message_index=message_index,
+        text=msg.message_text if msg else "",
+        confidence=app_row.confidence,
+        verdict=app_row.value,
+        applied_by=app_row.applied_by,
+        flagged=app_row.flagged,
+        has_note=bool(app_row.note),
+        notebook=msg.notebook if msg else None,
     )
 
 

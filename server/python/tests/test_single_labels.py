@@ -225,3 +225,88 @@ def test_message_detail_404_when_label_is_multi_mode(client, session):
     session.add(multi_label); session.commit(); session.refresh(multi_label)
     r = client.get(f"/api/single-labels/{multi_label.id}/messages/1")
     assert r.status_code == 404
+
+
+def test_flip_verdict_snapshots_prior_ai_value(client, session):
+    from models import LabelDefinition, LabelApplication
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.58,
+    ))
+    session.commit()
+
+    r = client.patch(
+        f"/api/single-labels/{label.id}/applications/42",
+        params={"message_index": 0},
+        json={"verdict": "no"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["verdict"] == "no"
+    assert body["applied_by"] == "human"
+
+    row = session.exec(
+        select(LabelApplication).where(LabelApplication.chatlog_id == 42)
+    ).one()
+    assert row.value == "no"
+    assert row.applied_by == "human"
+    assert row.ai_value_at_review == "yes"
+    assert row.ai_confidence_at_review == 0.58
+
+
+def test_flip_verdict_does_not_overwrite_existing_snapshot(client, session):
+    """Re-flipping shouldn't lose the original AI verdict snapshot."""
+    from models import LabelDefinition, LabelApplication
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="human", value="no", confidence=None,
+        ai_value_at_review="yes", ai_confidence_at_review=0.58,
+    ))
+    session.commit()
+
+    r = client.patch(
+        f"/api/single-labels/{label.id}/applications/42",
+        params={"message_index": 0},
+        json={"verdict": "yes"},
+    )
+    assert r.status_code == 200
+
+    row = session.exec(
+        select(LabelApplication).where(LabelApplication.chatlog_id == 42)
+    ).one()
+    assert row.value == "yes"
+    assert row.ai_value_at_review == "yes"  # unchanged
+    assert row.ai_confidence_at_review == 0.58  # unchanged
+
+
+def test_flip_verdict_404_when_no_application_row(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    r = client.patch(
+        f"/api/single-labels/{label.id}/applications/999",
+        params={"message_index": 0},
+        json={"verdict": "no"},
+    )
+    assert r.status_code == 404
+
+
+def test_flip_verdict_422_for_invalid_value(client, session):
+    from models import LabelDefinition, LabelApplication
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.58,
+    ))
+    session.commit()
+    r = client.patch(
+        f"/api/single-labels/{label.id}/applications/42",
+        params={"message_index": 0},
+        json={"verdict": "maybe"},
+    )
+    assert r.status_code == 422
