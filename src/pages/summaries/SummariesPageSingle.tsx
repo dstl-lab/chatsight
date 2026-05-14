@@ -10,6 +10,7 @@ import type { HandoffSummaryItem, SingleLabelDetail } from '../../types'
 
 export function SummariesPageSingle() {
   const [items, setItems] = useState<HandoffSummaryItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeId, setActiveId] = useState<number | null>(() => {
     const stored = localStorage.getItem('summaries.active_label_id')
     return stored ? Number(stored) : null
@@ -31,11 +32,24 @@ export function SummariesPageSingle() {
     api.getSingleLabelDetail(activeId).then(setDetail)
   }, [activeId])
 
-  useEffect(() => { refreshList() }, [refreshList])
+  useEffect(() => {
+    api.listHandoffSummaries().then((s) => {
+      setItems(s)
+      setLoading(false)
+    })
+  }, [])
   useEffect(() => { refreshDetail() }, [refreshDetail])
   useEffect(() => {
     if (activeId !== null) localStorage.setItem('summaries.active_label_id', String(activeId))
   }, [activeId])
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-faint font-mono text-[10px] tracking-[0.18em] uppercase animate-pulse">
+        Loading…
+      </div>
+    )
+  }
 
   if (items.length === 0) {
     return (

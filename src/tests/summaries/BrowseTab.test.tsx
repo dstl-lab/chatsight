@@ -70,3 +70,14 @@ test('flip is optimistic and rolls back on failure', async () => {
   await waitFor(() => expect(screen.getByText('YES')).toBeInTheDocument())
   expect(onChanged).not.toHaveBeenCalled()
 })
+
+test('shows an error toast when flip fails', async () => {
+  mockFlip.mockRejectedValueOnce(new Error('boom'))
+  render(<BrowseTab label={label} onLabelChanged={vi.fn()} />)
+  await waitFor(() => expect(screen.getByText('first message')).toBeInTheDocument())
+  fireEvent.click(screen.getByText('first message'))
+  await waitFor(() => expect(screen.getByText('YES')).toBeInTheDocument())
+  fireEvent.click(screen.getByText('↺ flip'))
+  await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+  expect(screen.getByRole('alert').textContent ?? '').toMatch(/flip failed/i)
+})

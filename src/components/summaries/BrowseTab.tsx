@@ -24,6 +24,7 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
   const [items, setItems] = useState<MessageListItem[]>([])
   const [activeKey, setActiveKey] = useState<{ chatlog_id: number; message_index: number } | null>(null)
   const [detail, setDetail] = useState<MessageDetail | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const contextDepth: ContextDepth = (localStorage.getItem('summaries.context_depth') as ContextDepth) || '1'
 
   useEffect(() => {
@@ -70,6 +71,8 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
         )
         onLabelChanged()
       } catch (e) {
+        setError('Flip failed — retry?')
+        setTimeout(() => setError(null), 4000)
         setDetail(prev)
         setItems((cur) =>
           cur.map((it) =>
@@ -104,38 +107,48 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
   )
 
   return (
-    <div className="flex-1 grid grid-cols-[5fr_6fr] min-h-0">
-      <div className="flex flex-col border-r border-edge min-h-0">
-        <FilterBar
-          bucket={bucket}
-          sort={sort}
-          search={search}
-          onChange={(p) => {
-            if (p.bucket !== undefined) setBucket(p.bucket)
-            if (p.sort !== undefined) setSort(p.sort)
-            if (p.search !== undefined) setSearch(p.search)
-          }}
-        />
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <MessageList items={items} activeKey={activeKey} onSelect={setActiveKey} />
+    <>
+      <div className="flex-1 grid grid-cols-[5fr_6fr] min-h-0">
+        <div className="flex flex-col border-r border-edge min-h-0">
+          <FilterBar
+            bucket={bucket}
+            sort={sort}
+            search={search}
+            onChange={(p) => {
+              if (p.bucket !== undefined) setBucket(p.bucket)
+              if (p.sort !== undefined) setSort(p.sort)
+              if (p.search !== undefined) setSearch(p.search)
+            }}
+          />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <MessageList items={items} activeKey={activeKey} onSelect={setActiveKey} />
+          </div>
+        </div>
+        <div className="flex flex-col min-h-0">
+          {detail ? (
+            <FocusedMessage
+              detail={detail}
+              reviewThreshold={label.review_threshold}
+              onAccept={accept}
+              onFlip={flip}
+              onFlag={() => { /* Phase 2 */ }}
+              onSaveNote={saveNote}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted font-mono text-[11px] tracking-[0.16em] uppercase">
+              select a message →
+            </div>
+          )}
         </div>
       </div>
-      <div className="flex flex-col min-h-0">
-        {detail ? (
-          <FocusedMessage
-            detail={detail}
-            reviewThreshold={label.review_threshold}
-            onAccept={accept}
-            onFlip={flip}
-            onFlag={() => { /* Phase 2 */ }}
-            onSaveNote={saveNote}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-muted font-mono text-[11px] tracking-[0.16em] uppercase">
-            select a message →
-          </div>
-        )}
-      </div>
-    </div>
+      {error && (
+        <div
+          role="alert"
+          className="fixed bottom-4 right-4 bg-brick-dim border border-brick text-paper px-3 py-2 rounded-sm font-mono text-[11px] z-50"
+        >
+          {error}
+        </div>
+      )}
+    </>
   )
 }
