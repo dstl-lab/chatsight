@@ -514,3 +514,77 @@ export interface AssignmentMilestone {
   kind: 'due' | 'late' | 'release'
   note?: string
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Summaries page (Phase 1) — single-label master-detail UI
+// See docs/superpowers/specs/2026-05-14-summaries-page-revamp-design.md
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface ConfidenceHistogramBin {
+  range_lo: number
+  range_hi: number
+  count: number
+}
+
+export interface SingleLabelDetail {
+  id: number
+  name: string
+  description: string | null
+  phase: string
+  yes_count: number
+  no_count: number
+  review_count: number
+  review_threshold: number
+  agreement_vs_gold: number | null
+  confidence_histogram: ConfidenceHistogramBin[]
+}
+
+export type MessageVerdict = 'yes' | 'no' | 'review'
+
+export interface MessageListItem {
+  chatlog_id: number
+  message_index: number
+  text: string
+  confidence: number | null
+  verdict: MessageVerdict | null
+  applied_by: 'ai' | 'human' | null
+  flagged: boolean
+  has_note: boolean
+  notebook: string | null
+}
+
+export interface MessageListResponse {
+  items: MessageListItem[]
+  total: number
+  offset: number
+  limit: number
+}
+
+// NOTE: ConversationTurn already exists (different shape). Summaries version uses turn_index.
+export interface SummariesConversationTurn {
+  role: 'tutor' | 'student'
+  turn_index: number
+  text: string
+}
+
+export interface MessageDetail {
+  chatlog_id: number
+  message_index: number
+  text: string
+  confidence: number | null
+  verdict: MessageVerdict | null
+  applied_by: 'ai' | 'human' | null
+  matched_pattern: string | null
+  rationale: string | null
+  flagged: boolean
+  note: string | null
+  context_before: SummariesConversationTurn[]
+  context_after: SummariesConversationTurn[]
+  notebook: string | null
+  turn_index: number
+  total_turns: number
+}
+
+export type ContextDepth = '1' | '2' | '3' | 'full'
+export type BrowseSort = 'confidence_asc' | 'confidence_desc' | 'recently_flipped'
+export type BrowseBucket = 'all' | 'yes' | 'no' | 'review' | 'flagged' | 'notes' | `pattern=${string}`
