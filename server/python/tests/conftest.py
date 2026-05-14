@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
 from sqlmodel.pool import StaticPool
 
-from main import app
+from main import app, get_ext_conn
 from database import get_session
 
 
@@ -36,10 +36,17 @@ def session_fixture(engine):
 
 @pytest.fixture(name="client")
 def client_fixture(session):
-    def override():
+    def override_session():
         yield session
 
-    app.dependency_overrides[get_session] = override
+    def override_ext_conn():
+        # Tests that need the external DB either monkeypatch _fetch_conversation_events
+        # or use app.dependency_overrides[get_ext_conn] directly. Yield None so
+        # FastAPI can resolve the dependency without a real Postgres connection.
+        yield None
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_ext_conn] = override_ext_conn
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()

@@ -157,3 +157,58 @@ def test_list_messages_rejects_oversized_limit(client, session):
     label = _seed_label_with_rows(session)
     r = client.get(f"/api/single-labels/{label.id}/messages?limit=10000")
     assert r.status_code == 422  # FastAPI Query(le=500) rejects this
+
+
+def test_message_detail_returns_focused_message_and_surrounding_turns(client, session, monkeypatch):
+    from models import LabelDefinition, LabelApplication, MessageCache
+
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+
+    session.add(MessageCache(
+        chatlog_id=42, message_index=0, message_text="focused student message",
+    ))
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=42, message_index=0,
+        applied_by="ai", value="yes", confidence=0.58,
+        matched_pattern="questioning own work",
+        rationale="Student explicitly recognizes a misread.",
+    ))
+    session.commit()
+
+    # Stub the external-DB conversation fetcher: mimics _fetch_conversation_events shape
+    def fake_fetch(conn, chatlog_id):
+        return [
+            {"event_type": "tutor_query", "question": "previous student turn",
+             "response": None, "notebook": "lab02"},
+            {"event_type": "tutor_response", "question": None,
+             "response": "Try aggfunc='median' instead.", "notebook": "lab02"},
+            {"event_type": "tutor_query", "question": "focused student message",
+             "response": None, "notebook": "lab02"},
+            {"event_type": "tutor_response", "question": None,
+             "response": "Great — re-run and check.", "notebook": "lab02"},
+        ]
+
+    monkeypatch.setattr("main._fetch_conversation_events", fake_fetch)
+
+    r = client.get(f"/api/single-labels/{label.id}/messages/42?context=1")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["text"] == "focused student message"
+    assert body["matched_pattern"] == "questioning own work"
+    assert body["rationale"].startswith("Student explicitly")
+    assert body["confidence"] == 0.58
+    # ±1 tutor turn — one before, one after
+    assert len(body["context_before"]) == 1
+    assert body["context_before"][0]["role"] == "tutor"
+    assert "median" in body["context_before"][0]["text"]
+    assert len(body["context_after"]) == 1
+    assert body["context_after"][0]["text"].startswith("Great")
+
+
+def test_message_detail_404_when_no_application_row(client, session):
+    from models import LabelDefinition
+    label = LabelDefinition(name="x", mode="single", phase="handed_off")
+    session.add(label); session.commit(); session.refresh(label)
+    r = client.get(f"/api/single-labels/{label.id}/messages/999")
+    assert r.status_code == 404

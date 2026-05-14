@@ -45,6 +45,7 @@ from schemas import (
     AssistNeighbor, AssistResponse,
     ConfidenceHistogramBin, SingleLabelDetailResponse,
     MessageListItem, MessageListResponse,
+    ConversationTurn, MessageDetailResponse,
 )
 import decision_service
 import queue_service
@@ -3107,6 +3108,101 @@ def list_single_label_messages(
         )
 
     return MessageListResponse(items=items, total=total, offset=offset, limit=limit)
+
+
+@app.get("/api/single-labels/{label_id}/messages/{chatlog_id}",
+         response_model=MessageDetailResponse)
+def get_single_label_message_detail(
+    label_id: int,
+    chatlog_id: int,
+    message_index: int = Query(0, ge=0),
+    context: str = Query("1"),  # "1" | "2" | "3" | "full"
+    db: Session = Depends(get_session),
+    ext_conn: Connection = Depends(get_ext_conn),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    if context not in {"1", "2", "3", "full"}:
+        raise HTTPException(status_code=422, detail=f"invalid context: {context!r}")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    msg = db.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+    text = msg.message_text if msg else ""
+    notebook = msg.notebook if msg else None
+
+    # Reuse the existing external-DB fetcher.
+    rows = _fetch_conversation_events(ext_conn, chatlog_id)
+
+    # Build a flat list of turns in event order.
+    turns: list[dict] = []
+    turn_index = 0
+    for row in rows:
+        et = row["event_type"]
+        if et == "tutor_query" and row["question"]:
+            turns.append({"role": "student", "turn_index": turn_index, "text": row["question"]})
+            turn_index += 1
+        elif et == "tutor_response" and row["response"]:
+            turns.append({"role": "tutor", "turn_index": turn_index, "text": row["response"]})
+            turn_index += 1
+
+    # Find the focused student turn by text match; fall back to first student turn.
+    focused_idx = next(
+        (i for i, t in enumerate(turns) if t["role"] == "student" and t["text"] == text),
+        None,
+    )
+    if focused_idx is None:
+        focused_idx = next(
+            (i for i, t in enumerate(turns) if t["role"] == "student"),
+            0,
+        )
+
+    depth = len(turns) if context == "full" else int(context)
+    context_before = [
+        ConversationTurn(role=t["role"], turn_index=t["turn_index"], text=t["text"])
+        for t in turns[max(0, focused_idx - depth):focused_idx]
+        if t["role"] == "tutor"
+    ]
+    context_after = [
+        ConversationTurn(role=t["role"], turn_index=t["turn_index"], text=t["text"])
+        for t in turns[focused_idx + 1:focused_idx + 1 + depth]
+        if t["role"] == "tutor"
+    ]
+
+    threshold = label.review_threshold
+    is_review = app_row.applied_by == "ai" and (app_row.confidence or 0) < threshold
+    verdict = "review" if is_review else app_row.value
+
+    return MessageDetailResponse(
+        chatlog_id=chatlog_id,
+        message_index=message_index,
+        text=text,
+        confidence=app_row.confidence,
+        verdict=verdict,
+        applied_by=app_row.applied_by,
+        matched_pattern=app_row.matched_pattern,
+        rationale=app_row.rationale,
+        flagged=app_row.flagged,
+        note=app_row.note,
+        context_before=context_before,
+        context_after=context_after,
+        notebook=notebook,
+        turn_index=focused_idx,
+        total_turns=len(turns),
+    )
 
 
 @app.post("/api/single-labels", response_model=SingleLabelResponse)
