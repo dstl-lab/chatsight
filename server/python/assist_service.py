@@ -9,6 +9,7 @@ import numpy as np
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from concept_service import EMBED_MODEL
 from models import LabelApplication, MessageCache, MessageEmbedding
 
 
@@ -22,6 +23,7 @@ def _build_cache(db: Session, fingerprint: tuple[int, int, int]) -> dict:
             MessageEmbedding.message_index,
             MessageEmbedding.embedding,
         )
+        .where(MessageEmbedding.model_version == EMBED_MODEL)
     ).all()
     if not rows:
         return {"matrix": None, "keys_idx": {}, "fingerprint": fingerprint}
@@ -48,6 +50,7 @@ def _embedding_fingerprint(db: Session) -> tuple[int, int, int]:
             func.coalesce(func.max(MessageEmbedding.id), 0),
             func.coalesce(func.sum(MessageEmbedding.id), 0),
         )
+        .where(MessageEmbedding.model_version == EMBED_MODEL)
     ).one()
     return (int(row[0]), int(row[1]), int(row[2]))
 

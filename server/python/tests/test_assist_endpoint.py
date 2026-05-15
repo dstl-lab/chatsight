@@ -1,6 +1,7 @@
 """Integration tests for GET /api/single-labels/{id}/assist."""
 import numpy as np
 
+from concept_service import EMBED_MODEL
 from models import LabelApplication, LabelDefinition, MessageCache, MessageEmbedding
 
 
@@ -21,11 +22,11 @@ def test_assist_endpoint_returns_nearest_labeled_neighbors(client, session):
     # Focused message + two labeled candidates with controlled embeddings.
     # Cosine ranks by closeness to focused vector.
     session.add(MessageCache(chatlog_id=200, message_index=0, message_text="focus"))
-    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0])))
+    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0]), model_version=EMBED_MODEL))
     session.add(MessageCache(chatlog_id=100, message_index=0, message_text="i'm stuck on q3"))
-    session.add(MessageEmbedding(chatlog_id=100, message_index=0, embedding=_emb([0.95, 0.31])))
+    session.add(MessageEmbedding(chatlog_id=100, message_index=0, embedding=_emb([0.95, 0.31]), model_version=EMBED_MODEL))
     session.add(MessageCache(chatlog_id=101, message_index=0, message_text="what is variance"))
-    session.add(MessageEmbedding(chatlog_id=101, message_index=0, embedding=_emb([0.31, 0.95])))
+    session.add(MessageEmbedding(chatlog_id=101, message_index=0, embedding=_emb([0.31, 0.95]), model_version=EMBED_MODEL))
     session.add(LabelApplication(
         label_id=label.id, chatlog_id=100, message_index=0,
         applied_by="human", confidence=1.0, value="yes",
@@ -64,7 +65,7 @@ def test_assist_endpoint_returns_empty_when_focus_has_no_embedding(client, sessi
 def test_assist_endpoint_returns_empty_when_no_labeled_neighbors(client, session):
     label = _seed_label(session)
     session.add(MessageCache(chatlog_id=200, message_index=0, message_text="focus"))
-    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0])))
+    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0]), model_version=EMBED_MODEL))
     session.commit()
     r = client.get(
         f"/api/single-labels/{label.id}/assist",
@@ -79,7 +80,7 @@ def test_assist_endpoint_excludes_focused_message_from_its_own_neighbors(client,
     must not appear in its own neighbor list."""
     label = _seed_label(session)
     session.add(MessageCache(chatlog_id=200, message_index=0, message_text="focus"))
-    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0])))
+    session.add(MessageEmbedding(chatlog_id=200, message_index=0, embedding=_emb([1.0, 0.0]), model_version=EMBED_MODEL))
     session.add(LabelApplication(
         label_id=label.id, chatlog_id=200, message_index=0,
         applied_by="human", confidence=1.0, value="yes",

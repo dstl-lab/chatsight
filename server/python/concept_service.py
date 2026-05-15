@@ -12,18 +12,46 @@ from models import MessageEmbedding, ConceptCandidate, LabelDefinition
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
-EMBED_MODEL = "gemini-embedding-001"
+EMBED_API_MODEL = "gemini-embedding-001"  # passed to the Gemini API
+EMBED_MODEL = "gemini-embedding-001:pair-v1"  # stored as MessageEmbedding.model_version (cache key)
 EMBED_DIM = 3072
 EMBED_BATCH_SIZE = 100  # Gemini API limit per call
+CONTEXT_CHAR_LIMIT = 500
+
+
+def _build_pair_text(msg: Dict[str, Any]) -> str:
+    """Build the text that gets embedded for one student message.
+
+    Pair format:
+        Tutor: <last CONTEXT_CHAR_LIMIT chars of preceding tutor turn>
+        Student: <message_text>
+
+    When there is no preceding tutor turn (first student message in a conversation,
+    or context not provided by the caller), fall back to a consistent prefix that
+    keeps the embedding distribution roughly aligned with the pair format:
+
+        [Conversation start]
+        Student: <message_text>
+    """
+    student = msg["message_text"]
+    ctx = msg.get("context_before")
+    if not ctx or not ctx.strip():
+        return f"[Conversation start]\nStudent: {student}"
+    truncated = ctx[-CONTEXT_CHAR_LIMIT:] if len(ctx) > CONTEXT_CHAR_LIMIT else ctx
+    return f"Tutor: {truncated}\nStudent: {student}"
 
 
 def embed_messages(
     messages: List[Dict[str, Any]], db: Session
 ) -> np.ndarray:
-    """Embed messages, using cached embeddings where available.
+    """Embed messages using context-aware pair text, caching results by model_version.
 
     Each message dict must have: chatlog_id, message_index, message_text.
-    Returns numpy array of shape (len(messages), 768).
+    Optional key ``context_before`` (str | None) — the preceding tutor turn.
+    When present it is prepended as ``Tutor: …\\nStudent: …``; when absent the
+    fallback ``[Conversation start]\\nStudent: …`` is used.
+
+    Returns numpy array of shape (len(messages), EMBED_DIM).
     """
     vectors = np.zeros((len(messages), EMBED_DIM), dtype=np.float32)
     uncached_indices: List[int] = []
@@ -48,10 +76,10 @@ def embed_messages(
     # Embed uncached in batches
     for batch_start in range(0, len(uncached_indices), EMBED_BATCH_SIZE):
         batch_idx = uncached_indices[batch_start : batch_start + EMBED_BATCH_SIZE]
-        texts = [messages[i]["message_text"] for i in batch_idx]
+        texts = [_build_pair_text(messages[i]) for i in batch_idx]
 
         result = client.models.embed_content(
-            model=EMBED_MODEL,
+            model=EMBED_API_MODEL,
             contents=texts,
         )
 
@@ -153,7 +181,15 @@ def _build_discovery_prompt(
         parts.append(f"### Cluster {cluster_id}")
         for s in samples:
             text = s["message_text"][:300]
-            parts.append(f'- "{text}"')
+            ctx = (s.get("context_before") or "").strip()
+            if ctx:
+                # Show last 200 chars of tutor context (where the prompt usually is)
+                # to keep the discovery prompt size manageable across N×K samples.
+                ctx_short = (ctx[-200:] if len(ctx) > 200 else ctx).replace("\n", " ")
+                parts.append(f'- Tutor asked: "{ctx_short}"')
+                parts.append(f'  Student replied: "{text}"')
+            else:
+                parts.append(f'- (start of conversation) Student: "{text}"')
         parts.append("")
 
     parts.append(
@@ -190,7 +226,7 @@ def _deduplicate_concepts(
         return concepts
 
     texts = [f"{c['name']}: {c['description']}" for c in concepts]
-    result = client.models.embed_content(model=EMBED_MODEL, contents=texts)
+    result = client.models.embed_content(model=EMBED_API_MODEL, contents=texts)
     vectors = np.array([e.values for e in result.embeddings], dtype=np.float32)
 
     norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-9
@@ -279,7 +315,7 @@ def discover_concepts(
     if existing:
         label_texts = [f"{ld['name']}: {ld['description']}" for ld in existing]
         label_embed_result = client.models.embed_content(
-            model=EMBED_MODEL,
+            model=EMBED_API_MODEL,
             contents=label_texts,
         )
         label_vectors = np.array(
