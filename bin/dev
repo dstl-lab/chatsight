@@ -23,6 +23,21 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# 0) Free ports we're about to bind (kubectl 5432, uvicorn 8000, vite 5173)
+free_port() {
+  local port="$1"
+  local pids
+  pids=$(lsof -ti:"$port" 2>/dev/null || true)
+  if [[ -n "$pids" ]]; then
+    echo -e "\033[33m[dev     ]\033[0m Freeing port $port (killing: $(echo $pids | tr '\n' ' '))"
+    kill -9 $pids 2>/dev/null || true
+  fi
+}
+
+for port in 5432 8000 5173; do
+  free_port "$port"
+done
+
 # 1) kubectl port-forward (auto-reconnect on drop)
 (
   while true; do

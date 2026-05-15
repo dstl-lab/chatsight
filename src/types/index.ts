@@ -298,6 +298,13 @@ export interface ReadinessState {
   hint: string | null
 }
 
+/** Combined response from decide/undo/skip-conversation: avoids a separate
+ *  getReadiness round-trip per cycle. */
+export interface DecideResult {
+  next: FocusedMessage | null
+  readiness: ReadinessState
+}
+
 export interface SummaryPattern {
   excerpt: string
   frequency: string

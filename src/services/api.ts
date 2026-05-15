@@ -6,7 +6,7 @@ import type {
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
-  SingleLabel, FocusedMessage, ReadinessState, DecisionValue,
+  SingleLabel, FocusedMessage, ReadinessState, DecideResult, DecisionValue,
   SingleLabelSummary, HandoffResponse, ReviewItem,
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
   AssistResponse,
@@ -317,20 +317,25 @@ export const api = {
     id: number,
     body: { chatlog_id: number; message_index: number; value: DecisionValue },
     assignmentId?: number,
-  ): Promise<FocusedMessage | null> =>
-    USE_MOCK ? Promise.resolve(mockFocusedMessage)
-             : req(
-                 `/api/single-labels/${id}/decide${assignmentId ? `?assignment_id=${assignmentId}` : ''}`,
-                 { method: 'POST', ...json(body) }
-               ),
-
-  undoLastDecision: (id: number): Promise<FocusedMessage | null> =>
-    USE_MOCK ? Promise.resolve(mockFocusedMessage)
-             : req(`/api/single-labels/${id}/undo`, { method: 'POST' }),
-
-  skipConversation: (id: number, chatlogId: number): Promise<FocusedMessage | null> =>
+  ): Promise<DecideResult> =>
     USE_MOCK
-      ? Promise.resolve(mockFocusedMessage)
+      ? Promise.resolve({ next: mockFocusedMessage, readiness: mockReadiness })
+      : req(
+          `/api/single-labels/${id}/decide${assignmentId ? `?assignment_id=${assignmentId}` : ''}`,
+          { method: 'POST', ...json(body) }
+        ),
+
+  undoLastDecision: (id: number, assignmentId?: number): Promise<DecideResult> =>
+    USE_MOCK
+      ? Promise.resolve({ next: mockFocusedMessage, readiness: mockReadiness })
+      : req(
+          `/api/single-labels/${id}/undo${assignmentId ? `?assignment_id=${assignmentId}` : ''}`,
+          { method: 'POST' }
+        ),
+
+  skipConversation: (id: number, chatlogId: number): Promise<DecideResult> =>
+    USE_MOCK
+      ? Promise.resolve({ next: mockFocusedMessage, readiness: mockReadiness })
       : req(`/api/single-labels/${id}/skip-conversation`, {
           method: 'POST',
           ...json({ chatlog_id: chatlogId }),
@@ -549,7 +554,7 @@ export const api = {
     })
              : req(
                  `/api/single-labels/${id}/applications/${chatlog_id}?message_index=${message_index}`,
-                 { method: 'PATCH', body: JSON.stringify({ verdict }) },
+                 { method: 'PATCH', ...json({ verdict }) },
                ),
 
   upsertSingleLabelNote: (
@@ -561,7 +566,7 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ok: true as const })
              : req(
                  `/api/single-labels/${id}/applications/${chatlog_id}/note?message_index=${message_index}`,
-                 { method: 'PUT', body: JSON.stringify({ text }) },
+                 { method: 'PUT', ...json({ text }) },
                ),
 
   patchSingleLabel: (
@@ -574,7 +579,7 @@ export const api = {
       review_threshold: patch.review_threshold ?? 0.75, agreement_vs_gold: null,
       confidence_histogram: [],
     })
-             : req(`/api/single-labels/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+             : req(`/api/single-labels/${id}`, { method: 'PATCH', ...json(patch) }),
 
   // ─── Handoff summaries ───
   listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>

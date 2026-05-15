@@ -36,7 +36,7 @@ from schemas import (
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
     CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
     SkipConversationRequest, SkipConversationResponse,
-    SingleLabelResponse, FocusedMessageResponse, ReadinessResponse,
+    SingleLabelResponse, FocusedMessageResponse, ReadinessResponse, DecideResponse,
     SummaryResponse, SummaryPattern, HandoffResponse,
     ReviewItemResponse, ReviewRequest,
     CreateAssignmentRequest, AssignmentResponse, UnmappedCountResponse,
@@ -3357,7 +3357,17 @@ def get_assist(
     )
 
 
-@app.post("/api/single-labels/{label_id}/decide", response_model=Optional[FocusedMessageResponse])
+def _decide_response(
+    db: Session, label_id: int, assignment_id: Optional[int] = None
+) -> DecideResponse:
+    """Build the combined next-message + readiness payload for the /run hot path."""
+    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    nxt = FocusedMessageResponse(**payload) if payload else None
+    readiness = ReadinessResponse(**decision_service.compute_readiness(db, label_id))
+    return DecideResponse(next=nxt, readiness=readiness)
+
+
+@app.post("/api/single-labels/{label_id}/decide", response_model=DecideResponse)
 def post_decide(
     label_id: int,
     req: DecideRequest,
@@ -3383,15 +3393,12 @@ def post_decide(
         message_index=req.message_index,
         value=req.value,
     )
-    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
-    if not payload:
-        return None
-    return FocusedMessageResponse(**payload)
+    return _decide_response(db, label_id, assignment_id)
 
 
 @app.post(
     "/api/single-labels/{label_id}/skip-conversation",
-    response_model=Optional[FocusedMessageResponse],
+    response_model=DecideResponse,
 )
 def post_skip_conversation(
     label_id: int,
@@ -3401,7 +3408,7 @@ def post_skip_conversation(
     """Skip every still-undecided student message in `chatlog_id` for this label so
     the queue jumps to the next conversation. Already-decided messages are untouched.
     Returns the next focused message (next conversation in the per-label walk order)
-    or None when nothing remains."""
+    or None when nothing remains, plus refreshed readiness."""
     label = db.get(LabelDefinition, label_id)
     if not label:
         raise HTTPException(status_code=404, detail=f"No label with id={label_id}")
@@ -3411,22 +3418,20 @@ def post_skip_conversation(
             detail=f"Label {label_id} ({label.name!r}) is mode={label.mode!r}, not 'single'",
         )
     decision_service.skip_conversation(db, label_id, req.chatlog_id)
-    payload = queue_service.next_message_for_label(db, label_id)
-    if not payload:
-        return None
-    return FocusedMessageResponse(**payload)
+    return _decide_response(db, label_id)
 
 
-@app.post("/api/single-labels/{label_id}/undo", response_model=Optional[FocusedMessageResponse])
-def post_undo(label_id: int, db: Session = Depends(get_session)):
+@app.post("/api/single-labels/{label_id}/undo", response_model=DecideResponse)
+def post_undo(
+    label_id: int,
+    assignment_id: Optional[int] = None,
+    db: Session = Depends(get_session),
+):
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
     decision_service.undo_last_decision(db, label_id)
-    payload = queue_service.next_message_for_label(db, label_id)
-    if not payload:
-        return None
-    return FocusedMessageResponse(**payload)
+    return _decide_response(db, label_id, assignment_id)
 
 
 @app.get("/api/single-labels/{label_id}/readiness", response_model=ReadinessResponse)
@@ -4540,6 +4545,7 @@ def list_handoff_summaries(db: Session = Depends(get_session)):
     labels = db.exec(
         select(LabelDefinition)
         .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
         .where(LabelDefinition.phase.in_(  # type: ignore[attr-defined]
             ["classifying", "handed_off", "reviewing", "complete", "failed"]
         ))
