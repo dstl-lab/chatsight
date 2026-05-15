@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
-import { SummariesPage } from '../pages/SummariesPage'
+import { SummariesPageMulti } from '../pages/summaries/SummariesPageMulti'
 import type { HandoffSummaryItem } from '../types'
 
 const inflight: HandoffSummaryItem = {
@@ -93,7 +93,7 @@ beforeEach(() => {
 
 test('renders the batch-in-flight UI (state + elapsed) for a batch job', async () => {
   mockListHandoffSummaries.mockResolvedValue([inflight])
-  render(<SummariesPage />)
+  render(<SummariesPageMulti />)
 
   await waitFor(() => {
     expect(screen.getByText(/Classifying · Gemini batch · Running/i)).toBeInTheDocument()
@@ -117,7 +117,7 @@ test('renders the batch-in-flight UI (state + elapsed) for a batch job', async (
 
 test('shows a stale-poll hint when the backend has not polled recently', async () => {
   mockListHandoffSummaries.mockResolvedValue([inflightStale])
-  render(<SummariesPage />)
+  render(<SummariesPageMulti />)
 
   await waitFor(() => {
     expect(screen.getByTestId('batch-stale-hint')).toBeInTheDocument()
@@ -129,7 +129,7 @@ test('shows a stale-poll hint when the backend has not polled recently', async (
 
 test('parallel-path classifying still renders the % bar (no batch UI)', async () => {
   mockListHandoffSummaries.mockResolvedValue([parallel])
-  render(<SummariesPage />)
+  render(<SummariesPageMulti />)
 
   await waitFor(() => {
     expect(screen.getByText('24%')).toBeInTheDocument()
@@ -142,7 +142,7 @@ test('parallel-path classifying still renders the % bar (no batch UI)', async ()
 
 test('multi-batch handoff: real % bar + "X of N batches" once first sub-batch lands', async () => {
   mockListHandoffSummaries.mockResolvedValue([multiBatchPartial])
-  render(<SummariesPage />)
+  render(<SummariesPageMulti />)
 
   await waitFor(() => {
     expect(screen.getByTestId('batch-counts')).toBeInTheDocument()
@@ -161,7 +161,7 @@ test('multi-batch handoff: real % bar + "X of N batches" once first sub-batch la
 
 test('multi-batch handoff: indeterminate strip before any sub-batch lands', async () => {
   mockListHandoffSummaries.mockResolvedValue([multiBatchPreLand])
-  render(<SummariesPage />)
+  render(<SummariesPageMulti />)
 
   await waitFor(() => {
     expect(screen.getByTestId('batch-counts')).toBeInTheDocument()

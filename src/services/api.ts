@@ -11,6 +11,8 @@ import type {
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
   AssistResponse,
   SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
+  SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
+  BrowseBucket,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -496,6 +498,83 @@ export const api = {
     USE_MOCK
       ? Promise.resolve({ merged: body.source_ids.length, moved_messages: 0, target_id: body.target_id })
       : req('/api/assignments/merge', { method: 'POST', ...json(body) }),
+
+  // ── Single-label Summaries (Phase 1) ────────────────────────────────────
+  getSingleLabelDetail: (id: number): Promise<SingleLabelDetail> =>
+    USE_MOCK ? Promise.resolve({
+      id, name: 'Mock Label', description: null, phase: 'complete',
+      yes_count: 0, no_count: 0, review_count: 0, review_threshold: 0.75,
+      agreement_vs_gold: null, confidence_histogram: [],
+    })
+             : req(`/api/single-labels/${id}`),
+
+  listSingleLabelMessages: (
+    id: number,
+    opts: { bucket?: BrowseBucket; sort?: string; search?: string; offset?: number; limit?: number } = {},
+  ): Promise<MessageListResponse> => {
+    if (USE_MOCK) return Promise.resolve({ items: [], total: 0, offset: 0, limit: 50 })
+    const params = new URLSearchParams()
+    if (opts.bucket) params.set('bucket', opts.bucket)
+    if (opts.sort) params.set('sort', opts.sort)
+    if (opts.search) params.set('search', opts.search)
+    if (opts.offset !== undefined) params.set('offset', String(opts.offset))
+    if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+    const qs = params.toString()
+    return req(`/api/single-labels/${id}/messages${qs ? '?' + qs : ''}`)
+  },
+
+  getSingleLabelMessageDetail: (
+    id: number,
+    chatlog_id: number,
+    message_index: number,
+    context: ContextDepth = '1',
+  ): Promise<MessageDetail> =>
+    USE_MOCK ? Promise.resolve({
+      chatlog_id, message_index, text: '', confidence: null, verdict: null,
+      applied_by: null, matched_pattern: null, rationale: null, flagged: false,
+      note: null, context_before: [], context_after: [], notebook: null,
+      turn_index: 0, total_turns: 1,
+    })
+             : req(`/api/single-labels/${id}/messages/${chatlog_id}?message_index=${message_index}&context=${context}`),
+
+  flipSingleLabelVerdict: (
+    id: number,
+    chatlog_id: number,
+    message_index: number,
+    verdict: 'yes' | 'no',
+  ): Promise<MessageListItem> =>
+    USE_MOCK ? Promise.resolve({
+      chatlog_id, message_index, text: '', confidence: null,
+      verdict, applied_by: 'human', flagged: false, has_note: false, notebook: null,
+    })
+             : req(
+                 `/api/single-labels/${id}/applications/${chatlog_id}?message_index=${message_index}`,
+                 { method: 'PATCH', body: JSON.stringify({ verdict }) },
+               ),
+
+  upsertSingleLabelNote: (
+    id: number,
+    chatlog_id: number,
+    message_index: number,
+    text: string,
+  ): Promise<{ ok: true }> =>
+    USE_MOCK ? Promise.resolve({ ok: true as const })
+             : req(
+                 `/api/single-labels/${id}/applications/${chatlog_id}/note?message_index=${message_index}`,
+                 { method: 'PUT', body: JSON.stringify({ text }) },
+               ),
+
+  patchSingleLabel: (
+    id: number,
+    patch: { name?: string; description?: string; review_threshold?: number },
+  ): Promise<SingleLabelDetail> =>
+    USE_MOCK ? Promise.resolve({
+      id, name: patch.name ?? 'Mock Label', description: patch.description ?? null,
+      phase: 'complete', yes_count: 0, no_count: 0, review_count: 0,
+      review_threshold: patch.review_threshold ?? 0.75, agreement_vs_gold: null,
+      confidence_histogram: [],
+    })
+             : req(`/api/single-labels/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
 
   // ─── Handoff summaries ───
   listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>

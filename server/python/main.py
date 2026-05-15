@@ -4,7 +4,7 @@ from typing import List, Optional
 import hashlib
 from collections import defaultdict
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 import csv
 import os
 import io
@@ -43,6 +43,10 @@ from schemas import (
     InferAssignmentsResponse, HandoffSummaryListItem,
     MergeAssignmentsRequest, MergeAssignmentsResponse,
     AssistNeighbor, AssistResponse,
+    ConfidenceHistogramBin, SingleLabelDetailResponse,
+    MessageListItem, MessageListResponse,
+    ConversationTurn, MessageDetailResponse,
+    FlipRequest, NoteRequest, LabelUpdateRequest,
 )
 import decision_service
 import queue_service
@@ -2958,6 +2962,247 @@ def get_active_single_label(db: Session = Depends(get_session)):
     return _label_to_response(db, label)
 
 
+@app.get("/api/single-labels/{label_id}", response_model=SingleLabelDetailResponse)
+def get_single_label_detail(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    threshold = label.review_threshold
+
+    rows = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == label_id)
+    ).all()
+
+    yes_count = sum(
+        1 for r in rows
+        if r.value == "yes"
+        and (r.applied_by == "human" or (r.confidence or 0) >= threshold)
+    )
+    no_count = sum(
+        1 for r in rows
+        if r.value == "no"
+        and (r.applied_by == "human" or (r.confidence or 0) >= threshold)
+    )
+    review_count = sum(
+        1 for r in rows
+        if r.applied_by == "ai" and (r.confidence or 0) < threshold
+    )
+
+    # Agreement vs gold set: among human rows with an AI snapshot, fraction
+    # where they agree. Suppressed when fewer than 20 rows (unstable).
+    gold = [r for r in rows if r.applied_by == "human" and r.ai_value_at_review is not None]
+    if len(gold) >= 20:
+        agree = sum(1 for r in gold if r.value == r.ai_value_at_review)
+        agreement = agree / len(gold)
+    else:
+        agreement = None
+
+    # Confidence histogram: 10 equal-width bins over [0, 1] for AI rows only.
+    bins = [0] * 10
+    for r in rows:
+        if r.applied_by == "ai" and r.confidence is not None:
+            idx = min(int(r.confidence * 10), 9)
+            bins[idx] += 1
+    histogram = [
+        ConfidenceHistogramBin(range_lo=i / 10, range_hi=(i + 1) / 10, count=bins[i])
+        for i in range(10)
+    ]
+
+    return SingleLabelDetailResponse(
+        id=label.id,
+        name=label.name,
+        description=label.description,
+        phase=label.phase,
+        yes_count=yes_count,
+        no_count=no_count,
+        review_count=review_count,
+        review_threshold=threshold,
+        agreement_vs_gold=agreement,
+        confidence_histogram=histogram,
+    )
+
+
+@app.get("/api/single-labels/{label_id}/messages", response_model=MessageListResponse)
+def list_single_label_messages(
+    label_id: int,
+    bucket: Optional[str] = Query(
+        None,
+        description="Filter chip: 'yes' | 'no' | 'review' | 'flagged' | 'notes' | 'pattern=<excerpt>'",
+    ),
+    sort: Literal["confidence_asc", "confidence_desc", "recently_flipped"] = "confidence_asc",
+    search: Optional[str] = Query(None, max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    ALLOWED_BUCKETS = {"yes", "no", "review", "flagged", "notes"}
+    if bucket is not None and bucket not in ALLOWED_BUCKETS and not bucket.startswith("pattern="):
+        raise HTTPException(status_code=422, detail=f"unknown bucket: {bucket!r}")
+
+    threshold = label.review_threshold
+
+    def is_review(row: LabelApplication) -> bool:
+        return row.applied_by == "ai" and (row.confidence or 0) < threshold
+
+    # Outer join so rows without a MessageCache entry still appear (with empty text).
+    q = (
+        select(LabelApplication, MessageCache)
+        .join(
+            MessageCache,
+            (MessageCache.chatlog_id == LabelApplication.chatlog_id)
+            & (MessageCache.message_index == LabelApplication.message_index),
+            isouter=True,
+        )
+        .where(LabelApplication.label_id == label_id)
+    )
+    if search:
+        q = q.where(MessageCache.message_text.ilike(f"%{search}%"))
+
+    pairs = db.exec(q).all()
+
+    # Apply bucket filter
+    if bucket == "yes":
+        pairs = [p for p in pairs if p[0].value == "yes" and not is_review(p[0])]
+    elif bucket == "no":
+        pairs = [p for p in pairs if p[0].value == "no" and not is_review(p[0])]
+    elif bucket == "review":
+        pairs = [p for p in pairs if is_review(p[0])]
+    elif bucket == "flagged":
+        pairs = [p for p in pairs if p[0].flagged]
+    elif bucket == "notes":
+        pairs = [p for p in pairs if p[0].note]
+    elif bucket and bucket.startswith("pattern="):
+        pat = bucket[len("pattern="):]
+        pairs = [p for p in pairs if p[0].matched_pattern == pat]
+
+    # Sort
+    if sort == "confidence_asc":
+        pairs.sort(key=lambda p: (p[0].confidence is None, p[0].confidence or 0))
+    elif sort == "confidence_desc":
+        pairs.sort(key=lambda p: (p[0].confidence is None, -(p[0].confidence or 0)))
+    elif sort == "recently_flipped":
+        pairs.sort(key=lambda p: p[0].created_at or datetime.min, reverse=True)
+
+    total = len(pairs)
+    page = pairs[offset:offset + limit]
+
+    items = []
+    for app_row, msg in page:
+        verdict_bucket = "review" if is_review(app_row) else app_row.value
+        items.append(
+            MessageListItem(
+                chatlog_id=app_row.chatlog_id,
+                message_index=app_row.message_index,
+                text=msg.message_text if msg else "",
+                confidence=app_row.confidence,
+                verdict=verdict_bucket,
+                applied_by=app_row.applied_by,
+                flagged=app_row.flagged,
+                has_note=bool(app_row.note),
+                notebook=msg.notebook if msg else None,
+            )
+        )
+
+    return MessageListResponse(items=items, total=total, offset=offset, limit=limit)
+
+
+@app.get("/api/single-labels/{label_id}/messages/{chatlog_id}",
+         response_model=MessageDetailResponse)
+def get_single_label_message_detail(
+    label_id: int,
+    chatlog_id: int,
+    message_index: int = Query(0, ge=0),
+    context: Literal["1", "2", "3", "full"] = Query("1"),
+    db: Session = Depends(get_session),
+    ext_conn: Connection = Depends(get_ext_conn),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    msg = db.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+    text = msg.message_text if msg else ""
+    notebook = msg.notebook if msg else None
+
+    # Reuse the existing external-DB fetcher.
+    rows = _fetch_conversation_events(ext_conn, chatlog_id)
+
+    # Build a flat list of turns in event order.
+    turns: list[dict] = []
+    turn_index = 0
+    for row in rows:
+        et = row["event_type"]
+        if et == "tutor_query" and row["question"]:
+            turns.append({"role": "student", "turn_index": turn_index, "text": row["question"]})
+            turn_index += 1
+        elif et == "tutor_response" and row["response"]:
+            turns.append({"role": "tutor", "turn_index": turn_index, "text": row["response"]})
+            turn_index += 1
+
+    # Find the focused student turn by text match; fall back to first student turn.
+    focused_idx = next(
+        (i for i, t in enumerate(turns) if t["role"] == "student" and t["text"] == text),
+        None,
+    )
+    if focused_idx is None:
+        focused_idx = next(
+            (i for i, t in enumerate(turns) if t["role"] == "student"),
+            0,
+        )
+
+    depth = len(turns) if context == "full" else int(context)
+    context_before = [
+        ConversationTurn(role=t["role"], turn_index=t["turn_index"], text=t["text"])
+        for t in turns[max(0, focused_idx - depth):focused_idx]
+        if t["role"] == "tutor"
+    ]
+    context_after = [
+        ConversationTurn(role=t["role"], turn_index=t["turn_index"], text=t["text"])
+        for t in turns[focused_idx + 1:focused_idx + 1 + depth]
+        if t["role"] == "tutor"
+    ]
+
+    threshold = label.review_threshold
+    is_review = app_row.applied_by == "ai" and (app_row.confidence or 0) < threshold
+    verdict = "review" if is_review else app_row.value
+
+    return MessageDetailResponse(
+        chatlog_id=chatlog_id,
+        message_index=message_index,
+        text=text,
+        confidence=app_row.confidence,
+        verdict=verdict,
+        applied_by=app_row.applied_by,
+        matched_pattern=app_row.matched_pattern,
+        rationale=app_row.rationale,
+        flagged=app_row.flagged,
+        note=app_row.note,
+        context_before=context_before,
+        context_after=context_after,
+        notebook=notebook,
+        turn_index=focused_idx,
+        total_turns=len(turns),
+    )
+
+
 @app.post("/api/single-labels", response_model=SingleLabelResponse)
 def create_single_label(
     req: CreateSingleLabelRequest,
@@ -3398,6 +3643,8 @@ def _classify_in_parallel(
                         applied_by="ai",
                         confidence=confidence,
                         value=value,
+                        matched_pattern=cls.get("matched_pattern"),
+                        rationale=cls.get("rationale"),
                     ))
                     if value == "yes":
                         yes_msgs.append(text)
@@ -3541,6 +3788,8 @@ def _parse_and_write_sub_batch(db, label, job, entry, bas) -> tuple[list[str], l
                 applied_by="ai",
                 confidence=confidence,
                 value=value,
+                matched_pattern=cls.get("matched_pattern"),
+                rationale=cls.get("rationale"),
             ))
             if value == "yes":
                 yes_msgs.append(text)
@@ -4054,21 +4303,131 @@ def post_review(
     )
 
 
-@app.delete("/api/single-labels/{label_id}", response_model=DeleteLabelResponse)
-def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+@app.patch(
+    "/api/single-labels/{label_id}/applications/{chatlog_id}",
+    response_model=MessageListItem,
+)
+def flip_single_label_verdict(
+    label_id: int,
+    chatlog_id: int,
+    body: FlipRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
-        raise HTTPException(status_code=404, detail="Single-label not found")
-    # Drop all decisions + cursors for this label
-    apps = db.exec(select(LabelApplication).where(LabelApplication.label_id == label_id)).all()
-    for a in apps:
-        db.delete(a)
-    cursors = db.exec(select(ConversationCursor).where(ConversationCursor.label_id == label_id)).all()
-    for c in cursors:
-        db.delete(c)
-    db.delete(label)
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    # Snapshot AI verdict on first human override only (do NOT overwrite an
+    # existing snapshot — the original AI prediction is the source of truth
+    # for agreement metrics).
+    if app_row.applied_by == "ai" and app_row.ai_value_at_review is None:
+        app_row.ai_value_at_review = app_row.value
+        app_row.ai_confidence_at_review = app_row.confidence
+
+    app_row.value = body.verdict
+    app_row.applied_by = "human"
+    db.add(app_row)
     db.commit()
-    return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
+    db.refresh(app_row)
+
+    msg = db.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+
+    return MessageListItem(
+        chatlog_id=chatlog_id,
+        message_index=message_index,
+        text=msg.message_text if msg else "",
+        confidence=app_row.confidence,
+        verdict=app_row.value,
+        applied_by=app_row.applied_by,
+        flagged=app_row.flagged,
+        has_note=bool(app_row.note),
+        notebook=msg.notebook if msg else None,
+    )
+
+
+@app.put("/api/single-labels/{label_id}/applications/{chatlog_id}/note")
+def upsert_single_label_note(
+    label_id: int,
+    chatlog_id: int,
+    body: NoteRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    app_row.note = body.text or None
+    db.add(app_row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.patch(
+    "/api/single-labels/{label_id}",
+    response_model=SingleLabelDetailResponse,
+)
+def patch_single_label(
+    label_id: int,
+    body: LabelUpdateRequest,
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    if body.name is not None:
+        label.name = body.name
+    if body.description is not None:
+        label.description = body.description
+    if body.review_threshold is not None:
+        if not (0.0 <= body.review_threshold <= 1.0):
+            raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
+        label.review_threshold = body.review_threshold
+
+    db.add(label)
+    db.commit()
+
+    # Return the freshly-computed detail by reusing the existing handler.
+    return get_single_label_detail(label_id, db=db)
+
+
+@app.delete("/api/single-labels/{label_id}")
+def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Archives the label (matches the existing label-archive behavior).
+    Returns orphaned messages to the unlabeled pool implicitly via the
+    `archived_at` filter applied by other queries."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    label.archived_at = datetime.utcnow()
+    db.add(label)
+    db.commit()
+    return {"ok": True}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

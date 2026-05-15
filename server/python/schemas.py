@@ -1,6 +1,6 @@
 # server/python/schemas.py
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 
@@ -422,3 +422,85 @@ class SkipConversationRequest(BaseModel):
 class SkipConversationResponse(BaseModel):
     skipped: int
     chatlog_id: int
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Summaries page (Phase 1) — single-label master-detail UI
+# See docs/superpowers/specs/2026-05-14-summaries-page-revamp-design.md
+# ──────────────────────────────────────────────────────────────────────────
+
+
+class ConfidenceHistogramBin(BaseModel):
+    range_lo: float
+    range_hi: float
+    count: int
+
+
+class SingleLabelDetailResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    phase: str
+    yes_count: int
+    no_count: int
+    review_count: int
+    review_threshold: float
+    agreement_vs_gold: Optional[float]  # null when gold set < 20 rows
+    confidence_histogram: List[ConfidenceHistogramBin]
+
+
+class MessageListItem(BaseModel):
+    chatlog_id: int
+    message_index: int
+    text: str
+    confidence: Optional[float]
+    verdict: Optional[Literal["yes", "no", "review"]]
+    applied_by: Optional[Literal["ai", "human"]]
+    flagged: bool
+    has_note: bool
+    notebook: Optional[str]
+
+
+class MessageListResponse(BaseModel):
+    items: List[MessageListItem]
+    total: int
+    offset: int
+    limit: int
+
+
+class ConversationTurn(BaseModel):
+    role: Literal["tutor", "student"]
+    turn_index: int
+    text: str
+
+
+class MessageDetailResponse(BaseModel):
+    chatlog_id: int
+    message_index: int
+    text: str
+    confidence: Optional[float]
+    verdict: Optional[Literal["yes", "no", "review"]]
+    applied_by: Optional[Literal["ai", "human"]]
+    matched_pattern: Optional[str]
+    rationale: Optional[str]
+    flagged: bool
+    note: Optional[str]
+    context_before: List[ConversationTurn]
+    context_after: List[ConversationTurn]
+    notebook: Optional[str]
+    turn_index: int
+    total_turns: int
+
+
+class FlipRequest(BaseModel):
+    verdict: Literal["yes", "no"]
+
+
+class NoteRequest(BaseModel):
+    text: str  # empty string deletes the note
+
+
+class LabelUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    review_threshold: Optional[float] = None

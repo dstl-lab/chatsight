@@ -87,6 +87,10 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_total_count INTEGER"))
     if "batch_completed_count" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN batch_completed_count INTEGER"))
+    if "review_threshold" not in cols:
+        conn.execute(text(
+            "ALTER TABLE labeldefinition ADD COLUMN review_threshold FLOAT NOT NULL DEFAULT 0.7"
+        ))
 
 
 def _migrate_label_application(conn, inspect, text):
@@ -99,6 +103,14 @@ def _migrate_label_application(conn, inspect, text):
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_value_at_review VARCHAR DEFAULT NULL"))
     if "ai_confidence_at_review" not in cols:
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN ai_confidence_at_review FLOAT DEFAULT NULL"))
+    if "matched_pattern" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN matched_pattern VARCHAR DEFAULT NULL"))
+    if "rationale" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN rationale TEXT DEFAULT NULL"))
+    if "flagged" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN flagged BOOLEAN NOT NULL DEFAULT 0"))
+    if "note" not in cols:
+        conn.execute(text("ALTER TABLE labelapplication ADD COLUMN note TEXT DEFAULT NULL"))
 
 
 def _migrate_labeling_session(conn, inspect, text):

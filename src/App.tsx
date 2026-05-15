@@ -15,6 +15,12 @@ function ModeAwareRedirect() {
   return <Navigate to={mode === 'single' ? '/run' : '/queue'} replace />
 }
 
+function LabelsRouteGuard() {
+  const { mode } = useMode()
+  if (mode === 'single') return <Navigate to="/summaries" replace />
+  return <LabelsPage />
+}
+
 function AppShell() {
   const { mode } = useMode()
   // Single-label mode wraps the entire app shell (including nav) in the warm
@@ -31,7 +37,7 @@ function AppShell() {
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/run" element={<LabelRunPage />} />
           <Route path="/history" element={<HistoryPage />} />
-          <Route path="/labels" element={<LabelsPage />} />
+          <Route path="/labels" element={<LabelsRouteGuard />} />
           <Route path="/assignments" element={<AssignmentsPage />} />
           <Route path="/summaries" element={<SummariesPage />} />
           <Route path="/analysis" element={<AnalysisPage />} />

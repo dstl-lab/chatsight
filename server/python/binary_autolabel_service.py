@@ -26,7 +26,10 @@ CLASSIFY_SYSTEM_INSTRUCTION = (
     "ONE label at a time. The instructor has provided a label name, an optional description, "
     "and a few-shot block of human-decided examples (some yes, some no). Classify each new "
     "message accordingly. Confidence: 1.0 = certain, 0.5 = guess. Use the examples to "
-    "calibrate borderline cases."
+    "calibrate borderline cases. "
+    "For each classification, also surface a short matched_pattern excerpt (a phrase from the "
+    "label description or examples that fits this message) and a one-sentence rationale grounded "
+    "in the message text."
 )
 
 CLASSIFY_FUNCTION_DECLARATION = {
@@ -43,8 +46,16 @@ CLASSIFY_FUNCTION_DECLARATION = {
                         "index": {"type": "integer", "description": "Index in the input messages array"},
                         "value": {"type": "string", "enum": ["yes", "no"]},
                         "confidence": {"type": "number", "description": "0.0 to 1.0"},
+                        "matched_pattern": {
+                            "type": "string",
+                            "description": "Short excerpt or phrase from the label description / examples that fits this message.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "One-sentence reason for the classification, grounded in the message text.",
+                        },
                     },
-                    "required": ["index", "value", "confidence"],
+                    "required": ["index", "value", "confidence", "matched_pattern", "rationale"],
                 },
             },
         },
@@ -105,8 +116,9 @@ def classify_binary(
 ) -> List[Dict[str, Any]]:
     """Classify each message yes/no for the given label.
 
-    Returns a list of `{index, value, confidence}` dicts in the same order as messages.
-    Missing indices are filled in as `value="no", confidence=0.5`.
+    Returns a list of `{index, value, confidence, matched_pattern, rationale}` dicts
+    in the same order as messages. Missing indices are filled in as
+    `value="no", confidence=0.5, matched_pattern=None, rationale=None`.
     """
     if not messages:
         return []
@@ -132,9 +144,17 @@ def classify_binary(
                 "index": i,
                 "value": c.get("value", "no"),
                 "confidence": float(c.get("confidence", 0.5)),
+                "matched_pattern": c.get("matched_pattern"),
+                "rationale": c.get("rationale"),
             })
         else:
-            out.append({"index": i, "value": "no", "confidence": 0.5})
+            out.append({
+                "index": i,
+                "value": "no",
+                "confidence": 0.5,
+                "matched_pattern": None,
+                "rationale": None,
+            })
     return out
 
 
@@ -284,9 +304,10 @@ def parse_classify_batch_response(
     response_obj: Optional[Dict[str, Any]],
     num_messages: int,
 ) -> List[Dict[str, Any]]:
-    """Parse one line of the Batch API result JSONL into the same `{index, value,
-    confidence}[]` shape as `classify_binary`. Missing/failed entries default to
-    `value="no", confidence=0.5`."""
+    """Parse one line of the Batch API result JSONL into the same
+    `{index, value, confidence, matched_pattern, rationale}[]` shape as
+    `classify_binary`. Missing/failed entries default to
+    `value="no", confidence=0.5, matched_pattern=None, rationale=None`."""
     classifications: List[Dict[str, Any]] = []
     try:
         parts = (response_obj or {}).get("candidates", [{}])[0].get("content", {}).get("parts", [])
@@ -308,7 +329,15 @@ def parse_classify_batch_response(
                 "index": i,
                 "value": c.get("value", "no"),
                 "confidence": float(c.get("confidence", 0.5)),
+                "matched_pattern": c.get("matched_pattern"),
+                "rationale": c.get("rationale"),
             })
         else:
-            out.append({"index": i, "value": "no", "confidence": 0.5})
+            out.append({
+                "index": i,
+                "value": "no",
+                "confidence": 0.5,
+                "matched_pattern": None,
+                "rationale": None,
+            })
     return out

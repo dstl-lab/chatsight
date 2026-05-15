@@ -25,7 +25,6 @@ export function Navigation() {
     mode === 'single'
       ? [
           labelingLink,
-          { to: '/labels', label: 'Labels' },
           { to: '/assignments', label: 'Assignments' },
           { to: '/summaries', label: 'Summaries' },
           { to: '/analysis', label: 'Analysis' },

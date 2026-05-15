@@ -39,6 +39,10 @@ class LabelDefinition(SQLModel, table=True):
     # nulled out at terminal alongside the other in-flight handles.
     batch_total_count: Optional[int] = Field(default=None)
     batch_completed_count: Optional[int] = Field(default=None)
+    # Single-label review threshold (Summaries page Phase 1). AI predictions below
+    # this confidence land in the "Review" bucket. Configurable per-label via the
+    # Settings tab; default 0.7 matches the implicit threshold the legacy code used.
+    review_threshold: float = Field(default=0.7)
 
 
 class LabelApplication(SQLModel, table=True):
@@ -60,6 +64,13 @@ class LabelApplication(SQLModel, table=True):
     # Both NULL when the row was never AI-predicted before being human-decided.
     ai_value_at_review: Optional[str] = Field(default=None)       # "yes" | "no"
     ai_confidence_at_review: Optional[float] = Field(default=None)  # 0.0–1.0
+    # Single-label revamp (Summaries page Phase 1): per-row metadata captured
+    # during AI classification (matched_pattern, rationale) and instructor
+    # post-hoc actions (flagged, note).
+    matched_pattern: Optional[str] = Field(default=None)
+    rationale: Optional[str] = Field(default=None)
+    flagged: bool = Field(default=False)
+    note: Optional[str] = Field(default=None)
 
 
 class LabelPrediction(SQLModel, table=True):
