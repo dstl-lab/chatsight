@@ -22,6 +22,7 @@ cd server/python && uv add <package>                   # add a Python dep
 **Frontend**
 ```bash
 npm run dev          # dev server on :5173
+npm run dev:all      # bin/dev — runs kubectl port-forward, backend, and frontend together with prefixed logs
 npm run build        # type-check + build
 npm test             # run all frontend tests (vitest, once)
 npm run test:watch   # run frontend tests in watch mode
@@ -49,25 +50,42 @@ External PostgreSQL → backend caches student messages into local SQLite `Messa
 - **External PostgreSQL** (`dsc10_tutor_logs` on `localhost:5432`) — read-only source of chatlog data. Single `events` table with `id`, `event_type`, `user_email`, `payload` (JSONB), `created_at`. Conversations grouped by `payload->>'conversation_id'`. Relevant event types: `tutor_query` (payload has `question`) and `tutor_response` (payload has `response`). The stable integer chatlog ID used throughout the API is `MIN(event.id)` per conversation.
 
 ### Backend (`server/python/`)
-- All routes in `main.py` — no routers or sub-apps. Route groups: chatlog reads, label CRUD, session management, queue operations, AI features (suggest/autolabel), concept induction.
-- `models.py` — SQLModel tables: `LabelDefinition` (label categories), `LabelApplication` (label-to-message bindings with `applied_by` human/ai), `LabelingSession`, `SkippedMessage`, `MessageCache` (denormalized student messages from ext DB), `MessageEmbedding` (cached Gemini embeddings), `ConceptCandidate` (AI-discovered label candidates).
+- All routes in `main.py` (~3.6k lines) — no routers or sub-apps. Route groups: chatlog reads, label CRUD (incl. reorder/archive/merge/split), session, queue ops (apply/advance/undo/skip/history/position), AI assist (suggest/autolabel/concise), concept induction, single-label mode, analysis/export, recalibration.
+- `models.py` — SQLModel tables: `LabelDefinition`, `LabelApplication` (with `applied_by` human/ai + optional `confidence`), `LabelingSession`, `SkippedMessage`, `MessageCache` (denormalized student messages), `MessageEmbedding` (cached Gemini embeddings), `ConceptCandidate`, plus single-label/assignment/decision tables.
 - `schemas.py` — Pydantic request/response shapes, separate from ORM models.
-- `autolabel_service.py` — Gemini function-calling for single-message suggestions and batch auto-labeling. Uses `classify_messages` tool with `mode=ANY`.
-- `concept_service.py` — Embedding-based concept induction: embeds unlabeled messages via `gemini-embedding-001`, clusters with KMeans, asks Gemini to name/describe clusters. Produces `ConceptCandidate` rows for instructor review.
-- `label_service.py` — Legacy Gemini labeling (from earlier iteration, before queue mode).
+- Service modules (called from `main.py`):
+  - `queue_service.py` — queue ordering, advance/undo/skip semantics, position tracking.
+  - `assist_service.py` — single-message suggestion path (used by `/api/queue/suggest`).
+  - `autolabel_service.py` — multi-label batch classification via Gemini function-calling (`classify_messages` tool, `mode=ANY`).
+  - `binary_autolabel_service.py` — single-label (binary) auto-labeling variant for "single-label mode".
+  - `concept_service.py` — embeds unlabeled messages with `gemini-embedding-001`, clusters with KMeans, asks Gemini to name clusters, produces `ConceptCandidate` rows.
+  - `definition_service.py` — generates/refines label descriptions via Gemini.
+  - `decision_service.py` — recalibration & label-review decision logic.
+  - `assignment_service.py` — assignment-mode (per-message single-label) flow.
+  - `label_service.py` — legacy Gemini labeling from the pre-queue iteration; kept for reference, not on the main flow.
 
 ### Frontend (`src/`)
-- **React Router** with four pages: `QueuePage` (main labeling), `HistoryPage` (review past labels), `LabelsPage` (manage label definitions), `AnalysisPage` (placeholder).
-- `QueuePage.tsx` is the primary interface — shows one student message at a time with collapsible AI context, label toggle sidebar, progress tracking, AI suggestion/auto-label controls.
-- `src/components/queue/` — `MessageCard` (student message with markdown+LaTeX rendering via react-markdown/rehype-katex), `ProgressSidebar` (label buttons, progress bar, AI unlock thresholds), `NewLabelPopover`, `ArchiveReviewBanner`/`ArchiveReviewSidebar`/`ArchiveConfirmModal` (label archive flow), `DiscoverSection`/`DiscoverModal` (concept induction UI).
-- All fetch calls in `src/services/api.ts` use `/api/...` — Vite proxies to `http://localhost:8000`.
+- **React Router** routes (`App.tsx`): `/queue` (multi-label `QueuePage`), `/run` (single-label `LabelRunPage`), `/history`, `/labels`, `/assignments`, `/summaries`, `/analysis`. Root `/` redirects to `/run` or `/queue` based on the active mode from `useMode` (single vs multi label).
+- `ModeProvider`/`useMode` (`src/hooks/useMode.tsx`) toggles between **single-label mode** (warm "editorial" palette, one label per message) and **multi-label queue mode** (default dark theme, toggleable labels). The shell adds a `warm-flow` class in single mode.
+- `QueuePage.tsx` is the primary multi-label interface — one student message at a time with collapsible AI context, label toggle sidebar, progress tracking, AI suggestion + auto-label controls.
+- `src/components/queue/` — `MessageCard`, `ConversationPanel`, `ProgressSidebar`, `NewLabelPopover`, `LabelContextMenu`, `LabelReviewOverlay`, `RecentHistory`, `ArchiveReviewBanner`/`ArchiveReviewSidebar`/`ArchiveConfirmModal` (label archive flow), `DiscoverSection`/`DiscoverModal` (concept induction UI).
+- All fetch calls in `src/services/api.ts` use `/api/...` — Vite proxies to `http://localhost:8000` (see `vite.config.ts`).
 - TypeScript types for all API shapes live in `src/types/index.ts`.
-- Tailwind v4 configured purely via `@tailwindcss/vite` plugin — no `tailwind.config.ts`. Dark theme (`bg-neutral-950`).
+- Markdown + LaTeX rendering via `react-markdown` + `remark-math` + `rehype-katex` (the AI tutor's responses contain both).
+- Tailwind v4 configured purely via `@tailwindcss/vite` plugin — no `tailwind.config.ts`. Default theme is dark (`bg-neutral-950`); single-label mode swaps in a warm palette via the `warm-flow` class.
 
 ### Key design decisions
-- **Queue mode**: Messages are shown one at a time. Instructors apply labels (toggle on/off), then advance. An undo toast allows reverting the last advance.
+- **Queue mode (multi-label)**: Messages are shown one at a time. Instructors apply labels (toggle on/off), then advance. An undo toast allows reverting the last advance.
+- **Single-label mode**: A separate flow at `/run` where each message gets exactly one label; uses `binary_autolabel_service.py` and a warm-palette UI.
 - **AI thresholds**: Suggestions unlock at 20 human labels; auto-labeling unlocks at `min(40% of total, 100)` human labels.
 - `LabelApplication.applied_by` distinguishes `"human"` vs `"ai"` labels. AI labels include a `confidence` score.
 - Label archive flow: archiving a label returns its orphaned messages to the queue.
 - Concept induction: embedding + clustering discovers candidate labels from unlabeled data; instructor accepts/rejects candidates.
-- Frontend tests use `vitest` + React Testing Library + jsdom. Backend tests use `pytest` with in-memory SQLite (no external DB or API keys needed) — see `tests/conftest.py` for the fixture pattern.
+- Frontend tests use `vitest` + React Testing Library + jsdom (`src/tests/`). Backend tests use `pytest` with in-memory SQLite (no external DB or API keys needed) — see `server/python/tests/conftest.py` for the fixture pattern.
+
+### Other docs in this repo
+- `README.md` — full setup and onboarding walkthrough (kubectl tunnel, env vars, common issues, full API table).
+- `WORKFLOW.md` — research context, hybrid labeling pipeline rationale, open design questions.
+- `TODO.md` — running task list.
+- `docs/handoffs/` — Quarto handoff briefs for collaborators on specific subprojects (smart-picker, drift, classifier-quality, etc.).
+- `GEMINI.md` — older architecture notes from a pre-queue iteration; do not treat as current.
