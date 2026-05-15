@@ -2044,6 +2044,7 @@ def _run_discover():
                         "chatlog_id": mc.chatlog_id,
                         "message_index": mc.message_index,
                         "message_text": mc.message_text,
+                        "context_before": mc.context_before,
                     })
 
             if not all_messages:
