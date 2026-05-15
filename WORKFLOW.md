@@ -66,11 +66,61 @@ Goal: ensure a short labeling session yields a training set that generalizes to 
 
 ## Open Design Questions
 
-1. **Labeling unit**: Individual messages? Message pairs (student + AI response)? Conversation-level?
-2. **Sampling**: Random vs. representative — how do we know when we have "enough" labeled data?
-3. **Multi-instructor**: How do we handle disagreements when two instructors label the same message differently?
-4. **Label schema versioning**: When labels are merged or split, how do we handle previously labeled data?
-5. **Session scope**: Do instructors label within one conversation at a time, or across many conversations looking for patterns?
+| Flow | Page | Status |
+|------|------|--------|
+| Single-label run (yes / no / skip per message, one label at a time) | `LabelRunPage.tsx` (`/run`) | **Active** — primary flow |
+| Multi-label queue (apply N labels per message) | `QueuePage.tsx` (`/queue`) | Legacy; no new feature work |
+| Label management (create / merge / split / archive) | `LabelsPage.tsx` (`/labels`) | Active |
+| Assignment mappings (regex → assignment name) | `AssignmentsPage.tsx` (`/assignments`) | Active |
+| Handoff summaries (post-run AI classification status) | `SummariesPage.tsx` (`/summaries`) | Active |
+| Analysis | `AnalysisPage.tsx` (`/analysis`) | Active, sparse on research-grade views |
+| History | `HistoryPage.tsx` (`/history`) | Active, minimal |
+
+---
+
+## AI integration points
+
+| Surface | Service | What it does |
+|---------|---------|---------------|
+| Assist flank | `assist_service.py` (cosine-NN over `MessageEmbedding`) | Surfaces 3 most-similar prior decisions to anchor calibration |
+| Handoff classifier | `binary_autolabel_service.py` (Gemini function-calling) | Classifies remaining messages yes / no for one label |
+| Multi-label batch (legacy) | `autolabel_service.py` | Classifies messages into N existing label categories |
+| Label description from examples | `definition_service.py` | One-sentence Gemini-written label definitions |
+| Concept candidates | `concept_service.py` (embedding + KMeans + Gemini naming) | Bottom-up label suggestions from unlabeled clusters |
+| Concise summary | `autolabel_service.summarize_message` | Shortens long student messages for display |
+
+---
+
+## What's mature vs WIP
+
+**Mature**: single-label run, assist flank, label management (create / archive / merge / split-with-handoff), assignment mappings, basic analysis coverage.
+
+**WIP / sparse**:
+- Recalibration / drift detection (designed, not implemented).
+- Post-handoff review (the dock is functional but minimal — no bulk ops, no comparison anchors, no tunable threshold).
+- Classifier evaluation (no systematic measurement of Gemini's quality).
+- Classifier prompt / few-shot strategy (uses a fixed prompt, naive examples).
+- Concept induction integration (the service exists; the UX flow does not surface it well).
+- Analysis page as a research-grade dashboard.
+
+**Dormant**: multi-label queue page (intentional — kept working but not prioritized).
+
+---
+
+## Open questions
+
+These supersede the 2026-03 list (which was tied to the older multi-label flow). Five of these are being assigned to research collaborators as week-of-part-time-work briefs (see `docs/handoffs/`):
+
+1. **Smart picker** — what should the queue show next? Current ordering is conversation-aware but not signal-driven. Active-learning literature offers several routes (uncertainty sampling, diversity, calibration-anchored selection).
+2. **Drift** — how do we detect and surface labeler inconsistency within a session? The recalibration design is one answer; others exist.
+3. **Post-handoff review** — what should the review experience look like for one instructor walking hundreds of low-confidence AI predictions? Today the dock is one-at-a-time with three buttons; bulk operations, batch-by-similarity, and trust-accrual shortcuts are all unexplored.
+4. **Classifier quality** — how good is the Gemini handoff classifier today, and what prompt / few-shot strategy actually moves the needle? Build the eval harness first, then run experiments on top of it.
+5. **Negative-space mining** — after several labels exist, which messages are getting actively rejected by every label tried? Cluster that residual; treat each coherent cluster as a candidate missing label or as out-of-scope data the instructor should explicitly acknowledge. Distinct from the existing concept-induction service, which clusters all unlabeled messages and has not produced useful candidates in practice.
+
+Independent (not currently assigned to collaborators):
+
+- **Schema versioning across runs** — when labels are merged or split mid-project, what happens to the analytical history? Today the archive flow handles orphans at the application level; project-wide schema evolution is unclear.
+- **Concept induction in the user flow** — the LLOOM-inspired concept service exists but doesn't integrate cleanly with the single-label flow. Where should bottom-up candidates surface?
 
 ---
 
