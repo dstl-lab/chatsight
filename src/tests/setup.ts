@@ -15,3 +15,6 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: () => false,
   }),
 })
+
+// jsdom doesn't implement Element.scrollTo — stub it for ThreadView's auto-scroll
+Element.prototype.scrollTo = () => {}
