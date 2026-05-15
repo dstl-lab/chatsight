@@ -38,7 +38,7 @@ export function ThreadView({ thread, focusIndex }: ThreadViewProps) {
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 overflow-y-auto overflow-x-hidden px-12 py-6"
+      className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-12 py-6"
     >
       <div className="max-w-[760px] mx-auto">
         {thread.map((turn, i) => {

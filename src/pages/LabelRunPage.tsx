@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { StripBar } from '../components/run/StripBar'
 import { QueueLine } from '../components/run/QueueLine'
 import { ConversationMeta } from '../components/run/ConversationMeta'
-import { ThreadView } from '../components/run/ThreadView'
 import { AssistFlank } from '../components/run/AssistFlank'
 import { DecisionDock } from '../components/run/DecisionDock'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
-import { ReviewDock } from '../components/run/ReviewDock'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
+import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
+import { AiReviewDock } from '../components/decision/AiReviewDock'
 import { api } from '../services/api'
 import type {
   DecisionValue,
@@ -39,6 +39,9 @@ export function LabelRunPage() {
   const [reviewQueue, setReviewQueue] = useState<ReviewItem[] | null>(null)
   const [reviewIdx, setReviewIdx] = useState(0)
   const [recent, setRecent] = useState<{ value: DecisionValue; label: string } | null>(null)
+  // Yes/No confirmation is a colored flash on the matching dock button rather
+  // than text; Skip still flows through `recent` since it has no colored flash.
+  const [flash, setFlash] = useState<'yes' | 'no' | null>(null)
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
 
@@ -70,6 +73,18 @@ export function LabelRunPage() {
     const t = setTimeout(() => setRecent(null), 4000)
     return () => clearTimeout(t)
   }, [recent])
+
+  // Clear the yes/no flash either after a short window (so it stays visible if
+  // the decide round-trip is fast) or as soon as the focused message changes
+  // (so the next message renders without inherited tint).
+  useEffect(() => {
+    if (!flash) return
+    const t = setTimeout(() => setFlash(null), 220)
+    return () => clearTimeout(t)
+  }, [flash])
+  useEffect(() => {
+    setFlash(null)
+  }, [focused?.chatlog_id, focused?.focus_index])
 
   // Reset the assignment filter when the active label changes (handoff,
   // abort, queue activation). Otherwise the new label inherits the previous
@@ -149,19 +164,25 @@ export function LabelRunPage() {
       setBusy(true)
       const decided = focused
       const labelId = activeLabel.id
+      // Yes/No: instant green/red flash on the box. Skip: keep the inline dock
+      // caption, since there's no colored flash to convey what happened.
+      if (value === 'yes' || value === 'no') {
+        setRecent(null)
+        setFlash(value)
+      } else {
+        setFlash(null)
+        setRecent({ value, label: `#${decided.chatlog_id}.${decided.message_index}` })
+      }
       try {
-        const next = await api.decide(labelId, {
+        const res = await api.decide(labelId, {
           chatlog_id: decided.chatlog_id,
           message_index: decided.message_index,
           value,
         }, selectedAssignmentId ?? undefined)
         if (activeLabelIdRef.current !== labelId) return
-        setFocused(next)
-        const ready = await api.getReadiness(labelId)
-        if (activeLabelIdRef.current !== labelId) return
-        setReadiness(ready)
-        syncActiveLabelCounts(labelId, ready)
-        setRecent({ value, label: `#${decided.chatlog_id}.${decided.message_index}` })
+        setFocused(res.next)
+        setReadiness(res.readiness)
+        syncActiveLabelCounts(labelId, res.readiness)
       } finally {
         setBusy(false)
       }
@@ -174,15 +195,11 @@ export function LabelRunPage() {
     setBusy(true)
     const labelId = activeLabel.id
     try {
-      await api.undoLastDecision(labelId)
+      const res = await api.undoLastDecision(labelId, selectedAssignmentId ?? undefined)
       if (activeLabelIdRef.current !== labelId) return
-      const next = await api.getNextFocused(labelId, selectedAssignmentId ?? undefined)
-      if (activeLabelIdRef.current !== labelId) return
-      setFocused(next)
-      const ready = await api.getReadiness(labelId)
-      if (activeLabelIdRef.current !== labelId) return
-      setReadiness(ready)
-      syncActiveLabelCounts(labelId, ready)
+      setFocused(res.next)
+      setReadiness(res.readiness)
+      syncActiveLabelCounts(labelId, res.readiness)
       setRecent(null)
     } finally {
       setBusy(false)
@@ -195,13 +212,11 @@ export function LabelRunPage() {
     setBusy(true)
     const labelId = activeLabel.id
     try {
-      const next = await api.skipConversation(labelId, skippedCid)
+      const res = await api.skipConversation(labelId, skippedCid)
       if (activeLabelIdRef.current !== labelId) return
-      setFocused(next)
-      const ready = await api.getReadiness(labelId)
-      if (activeLabelIdRef.current !== labelId) return
-      setReadiness(ready)
-      syncActiveLabelCounts(labelId, ready)
+      setFocused(res.next)
+      setReadiness(res.readiness)
+      syncActiveLabelCounts(labelId, res.readiness)
       setRecent({ value: 'skip', label: `every remaining message in #${skippedCid}` })
     } finally {
       setBusy(false)
@@ -311,52 +326,28 @@ export function LabelRunPage() {
     []
   )
 
-  // Keyboard: Y/N/S decide (or review yes/no/skip-review), L note, Z undo
+  // Shortcuts NOT owned by DecisionWorkspace: L (note popover) for both modes,
+  // and Shift+S (skip conversation) for initial labeling only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const inField = ['INPUT', 'TEXTAREA'].includes(
-        (document.activeElement as HTMLElement | null)?.tagName ?? ''
-      )
-      if (inField || noteOpen) return
-      const inReview = activeLabel?.phase === 'reviewing' && reviewQueue !== null
+      const tag = (document.activeElement as HTMLElement | null)?.tagName ?? ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (noteOpen || abortOpen) return
       const k = e.key.toLowerCase()
-      if (inReview) {
-        if (k === 'y') handleReview('yes')
-        else if (k === 'n') handleReview('no')
-        else if (k === 's') advanceReview()
-        else if (k === 'l') {
-          e.preventDefault()
-          setNoteOpen(true)
-        }
+      if (k === 'l') {
+        e.preventDefault()
+        setNoteOpen(true)
         return
       }
-      switch (k) {
-        case 'y':
-          handleDecide('yes')
-          break
-        case 'n':
-          handleDecide('no')
-          break
-        case 's':
-          if (e.shiftKey) {
-            e.preventDefault()
-            handleSkipConversation()
-          } else {
-            handleDecide('skip')
-          }
-          break
-        case 'l':
-          e.preventDefault()
-          setNoteOpen(true)
-          break
-        case 'z':
-          handleUndo()
-          break
+      const inReview = activeLabel?.phase === 'reviewing' && reviewQueue !== null
+      if (!inReview && k === 's' && e.shiftKey) {
+        e.preventDefault()
+        handleSkipConversation()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteOpen, handleDecide, handleUndo, handleSkipConversation, handleReview, advanceReview, activeLabel, reviewQueue])
+  }, [noteOpen, abortOpen, activeLabel?.phase, reviewQueue, handleSkipConversation])
 
   if (loading) {
     return (
@@ -385,58 +376,66 @@ export function LabelRunPage() {
       )
     }
     const item = reviewQueue[reviewIdx]
-    const flippedValue: 'yes' | 'no' = item.ai_value === 'yes' ? 'no' : 'yes'
     return (
-      <div className="grid grid-rows-[auto_auto_auto_1fr_auto] flex-1 min-h-0 overflow-hidden bg-canvas">
-        <div className="bg-canvas">
-          <StripBar
-            label={activeLabel}
-            readiness={readiness ?? defaultReadiness()}
-            assignments={assignments}
-            unmapped={unmapped}
-            selectedAssignmentId={selectedAssignmentId}
-            onSelectAssignment={() => {}}
-            onHandoff={handleHandoff}
-            onSampleHandoff={handleSampleHandoff}
-            onAbort={() => setAbortOpen(true)}
-          />
-          <QueueLine
-            queued={queued}
-            onAdd={() => setNoteOpen(true)}
-            onRemove={handleRemoveQueued}
-            onClearAll={handleClearQueue}
-          />
-        </div>
-        <ConversationMeta
-          chatlogId={item.chatlog_id}
-          notebook={item.notebook}
-          turnCount={1}
-        />
-        <ReviewIntro item={item} />
-        <div className="grid grid-cols-[1fr_320px] min-h-0 overflow-hidden">
-          <ThreadView
-            thread={[{ message_index: 0, role: 'student', text: item.text }]}
-            focusIndex={0}
-          />
-          <AssistFlank neighbors={assistNeighbors} />
-        </div>
-        <ReviewDock
-          aiValue={item.ai_value}
-          aiConfidence={item.ai_confidence}
-          position={reviewIdx + 1}
-          total={reviewQueue.length}
-          onConfirm={() => handleReview(item.ai_value)}
-          onFlip={() => handleReview(flippedValue)}
+      <>
+        <DecisionWorkspace
+          thread={[{ message_index: 0, role: 'student', text: item.text }]}
+          focusIndex={0}
+          header={
+            <>
+              <div className="bg-canvas">
+                <StripBar
+                  label={activeLabel}
+                  readiness={readiness ?? defaultReadiness()}
+                  assignments={assignments}
+                  unmapped={unmapped}
+                  selectedAssignmentId={selectedAssignmentId}
+                  onSelectAssignment={() => {}}
+                  onHandoff={handleHandoff}
+                  onSampleHandoff={handleSampleHandoff}
+                  onAbort={() => setAbortOpen(true)}
+                />
+                <QueueLine
+                  queued={queued}
+                  onAdd={() => setNoteOpen(true)}
+                  onRemove={handleRemoveQueued}
+                  onClearAll={handleClearQueue}
+                />
+              </div>
+              <ConversationMeta
+                chatlogId={item.chatlog_id}
+                notebook={item.notebook}
+                turnCount={1}
+              />
+              <ReviewIntro item={item} />
+            </>
+          }
+          flank={<AssistFlank neighbors={assistNeighbors} />}
+          dock={
+            <AiReviewDock
+              mode={{
+                kind: 'review',
+                aiValue: item.ai_value,
+                aiConfidence: item.ai_confidence,
+                position: reviewIdx + 1,
+                total: reviewQueue.length,
+              }}
+              onYes={() => handleReview('yes')}
+              onNo={() => handleReview('no')}
+              onSkip={advanceReview}
+              disabled={busy}
+            />
+          }
+          onYes={() => handleReview('yes')}
+          onNo={() => handleReview('no')}
           onSkip={advanceReview}
-          disabled={busy}
+          disabled={busy || noteOpen || abortOpen}
         />
-
         <NoteLabelPopover
           open={noteOpen}
           onClose={() => setNoteOpen(false)}
           onSubmit={handleNoteSubmit}
         />
-
         {abortOpen && (
           <AbortConfirmModal
             labelName={activeLabel.name}
@@ -446,7 +445,7 @@ export function LabelRunPage() {
             onCancel={() => setAbortOpen(false)}
           />
         )}
-      </div>
+      </>
     )
   }
 
@@ -458,51 +457,62 @@ export function LabelRunPage() {
   }
 
   return (
-    <div className="grid grid-rows-[auto_auto_1fr_auto] flex-1 min-h-0 overflow-hidden bg-canvas">
-      <div className="bg-canvas">
-        <StripBar
-          label={activeLabel}
-          readiness={readiness ?? defaultReadiness()}
-          assignments={assignments}
-          unmapped={unmapped}
-          selectedAssignmentId={selectedAssignmentId}
-          onSelectAssignment={(id) => setSelectedAssignmentId(id)}
-          onHandoff={handleHandoff}
-          onSampleHandoff={handleSampleHandoff}
-          onAbort={() => setAbortOpen(true)}
-        />
-        <QueueLine
-          queued={queued}
-          onAdd={() => setNoteOpen(true)}
-          onRemove={handleRemoveQueued}
-          onClearAll={handleClearQueue}
-        />
-      </div>
-      <ConversationMeta
-        chatlogId={focused.chatlog_id}
-        notebook={focused.notebook}
-        turnCount={focused.conversation_turn_count}
-      />
-      <div className="grid grid-cols-[1fr_320px] min-h-0 overflow-hidden">
-        <ThreadView thread={focused.thread} focusIndex={focused.focus_index} />
-        <AssistFlank neighbors={assistNeighbors} />
-      </div>
-      <DecisionDock
-        onDecide={handleDecide}
+    <>
+      <DecisionWorkspace
+        thread={focused.thread}
+        focusIndex={focused.focus_index}
+        header={
+          <>
+            <div className="bg-canvas">
+              <StripBar
+                label={activeLabel}
+                readiness={readiness ?? defaultReadiness()}
+                assignments={assignments}
+                unmapped={unmapped}
+                selectedAssignmentId={selectedAssignmentId}
+                onSelectAssignment={(id) => setSelectedAssignmentId(id)}
+                onHandoff={handleHandoff}
+                onSampleHandoff={handleSampleHandoff}
+                onAbort={() => setAbortOpen(true)}
+              />
+              <QueueLine
+                queued={queued}
+                onAdd={() => setNoteOpen(true)}
+                onRemove={handleRemoveQueued}
+                onClearAll={handleClearQueue}
+              />
+            </div>
+            <ConversationMeta
+              chatlogId={focused.chatlog_id}
+              notebook={focused.notebook}
+              turnCount={focused.conversation_turn_count}
+            />
+          </>
+        }
+        flank={<AssistFlank neighbors={assistNeighbors} />}
+        dock={
+          <DecisionDock
+            onDecide={handleDecide}
+            onUndo={handleUndo}
+            onHandoff={handleHandoff}
+            onSkipConversation={handleSkipConversation}
+            disabled={busy}
+            recent={recent}
+            flash={flash}
+          />
+        }
+        onYes={() => handleDecide('yes')}
+        onNo={() => handleDecide('no')}
+        onSkip={() => handleDecide('skip')}
         onUndo={handleUndo}
-        onHandoff={handleHandoff}
-        onSkipConversation={handleSkipConversation}
-        disabled={busy}
-        loading={busy}
-        recent={recent}
+        // INTENTIONALLY no onAcceptAi — original keyboard handler did not bind Enter.
+        disabled={busy || noteOpen || abortOpen}
       />
-
       <NoteLabelPopover
         open={noteOpen}
         onClose={() => setNoteOpen(false)}
         onSubmit={handleNoteSubmit}
       />
-
       <SummaryModal
         summary={summary}
         open={summaryOpen}
@@ -510,7 +520,6 @@ export function LabelRunPage() {
         onContinue={handleContinueToReview}
         onRefine={handleRefine}
       />
-
       {abortOpen && (
         <AbortConfirmModal
           labelName={activeLabel.name}
@@ -520,7 +529,7 @@ export function LabelRunPage() {
           onCancel={() => setAbortOpen(false)}
         />
       )}
-    </div>
+    </>
   )
 }
 
