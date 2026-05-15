@@ -19,6 +19,7 @@ test('renders title, description, and verdict counts', () => {
   expect(screen.getByText('1142')).toBeInTheDocument()
   expect(screen.getByText('803')).toBeInTheDocument()
   expect(screen.getByText('91')).toBeInTheDocument()
+  expect(screen.getByText(/^Triage$/)).toBeInTheDocument()
 })
 
 test('tab strip emits onTabChange on click', () => {
@@ -28,12 +29,14 @@ test('tab strip emits onTabChange on click', () => {
   expect(onTabChange).toHaveBeenCalledWith('settings')
 })
 
-test('agreement tooltip shown when agreement is non-null', () => {
+test('info panel renders sparkline + agreement when data is present', () => {
   render(<DetailHeader detail={detail} activeTab="browse" onTabChange={vi.fn()} onMenuAction={vi.fn()} />)
-  expect(screen.getByTitle(/agreement/i)).toBeInTheDocument()
+  expect(screen.getByRole('tooltip')).toBeInTheDocument()
+  expect(screen.getByLabelText(/confidence distribution sparkline/i)).toBeInTheDocument()
+  expect(screen.getByText('87%')).toBeInTheDocument()
 })
 
-test('agreement tooltip suppressed when agreement is null', () => {
+test('info panel shows em-dash for agreement when null but histogram present', () => {
   render(
     <DetailHeader
       detail={{ ...detail, agreement_vs_gold: null }}
@@ -42,5 +45,18 @@ test('agreement tooltip suppressed when agreement is null', () => {
       onMenuAction={vi.fn()}
     />,
   )
-  expect(screen.queryByTitle(/agreement/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('tooltip')).toBeInTheDocument()
+  expect(screen.getByText('—')).toBeInTheDocument()
+})
+
+test('info icon suppressed when neither agreement nor histogram present', () => {
+  render(
+    <DetailHeader
+      detail={{ ...detail, agreement_vs_gold: null, confidence_histogram: [] }}
+      activeTab="browse"
+      onTabChange={vi.fn()}
+      onMenuAction={vi.fn()}
+    />,
+  )
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
 })

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { LabelRail } from '../../components/summaries/LabelRail'
 import { DetailHeader, type SummariesTab } from '../../components/summaries/DetailHeader'
-import { BrowseTab } from '../../components/summaries/BrowseTab'
+import { TriageTab } from '../../components/summaries/TriageTab'
 import { SettingsTab } from '../../components/summaries/SettingsTab'
 import { RenameModal } from '../../components/summaries/RenameModal'
 import { DeleteConfirmModal } from '../../components/summaries/DeleteConfirmModal'
@@ -41,6 +41,7 @@ export function SummariesPageSingle() {
   useEffect(() => { refreshDetail() }, [refreshDetail])
   useEffect(() => {
     if (activeId !== null) localStorage.setItem('summaries.active_label_id', String(activeId))
+    else localStorage.removeItem('summaries.active_label_id')
   }, [activeId])
 
   if (loading) {
@@ -84,7 +85,7 @@ export function SummariesPageSingle() {
               }}
             />
             {tab === 'browse' && (
-              <BrowseTab label={detail} onLabelChanged={() => { refreshList(); refreshDetail() }} />
+              <TriageTab label={detail} onLabelChanged={() => { refreshList(); refreshDetail() }} />
             )}
             {tab === 'settings' && (
               <SettingsTab

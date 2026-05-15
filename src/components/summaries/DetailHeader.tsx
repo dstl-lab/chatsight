@@ -1,4 +1,4 @@
-import type { SingleLabelDetail } from '../../types'
+import type { SingleLabelDetail, ConfidenceHistogramBin } from '../../types'
 
 export type SummariesTab = 'browse' | 'settings'
 export type MenuAction = 'rename' | 'edit' | 'rehandoff' | 'delete'
@@ -11,10 +11,8 @@ interface DetailHeaderProps {
 }
 
 export function DetailHeader({ detail, activeTab, onTabChange, onMenuAction }: DetailHeaderProps) {
-  const agreementTitle =
-    detail.agreement_vs_gold !== null
-      ? `Confidence distribution · agreement vs gold set: ${Math.round(detail.agreement_vs_gold * 100)}%`
-      : undefined
+  const hasInfo =
+    detail.agreement_vs_gold !== null || (detail.confidence_histogram?.length ?? 0) > 0
 
   return (
     <div className="border-b border-edge px-7 pt-5">
@@ -40,8 +38,11 @@ export function DetailHeader({ detail, activeTab, onTabChange, onMenuAction }: D
         <span><span className="text-moss text-[14px]">{detail.yes_count}</span><span className="text-faint text-[9px] tracking-[0.16em] uppercase ml-1.5">YES</span></span>
         <span><span className="text-brick text-[14px]">{detail.no_count}</span><span className="text-faint text-[9px] tracking-[0.16em] uppercase ml-1.5">NO</span></span>
         <span><span className="text-ochre text-[14px]">{detail.review_count}</span><span className="text-faint text-[9px] tracking-[0.16em] uppercase ml-1.5">REVIEW</span></span>
-        {agreementTitle && (
-          <span title={agreementTitle} className="text-faint cursor-help">ⓘ</span>
+        {hasInfo && (
+          <span tabIndex={0} className="relative group text-faint cursor-help focus:outline-none focus:text-on-canvas hover:text-on-canvas">
+            ⓘ
+            <InfoPanel detail={detail} />
+          </span>
         )}
       </div>
 
@@ -54,10 +55,83 @@ export function DetailHeader({ detail, activeTab, onTabChange, onMenuAction }: D
               activeTab === tab ? 'text-paper border-ochre' : 'text-muted border-transparent hover:text-on-canvas'
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'browse' ? 'Triage' : 'Settings'}
           </button>
         ))}
       </div>
     </div>
+  )
+}
+
+function InfoPanel({ detail }: { detail: SingleLabelDetail }) {
+  const bins = detail.confidence_histogram ?? []
+  const maxCount = bins.reduce((m, b) => Math.max(m, b.count), 0)
+  const agreementPct =
+    detail.agreement_vs_gold !== null ? Math.round(detail.agreement_vs_gold * 100) : null
+
+  return (
+    <div
+      role="tooltip"
+      className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity duration-100 absolute top-full right-0 mt-2 z-20 w-72 bg-canvas border border-edge rounded-sm shadow-lg p-3 cursor-default"
+    >
+      <div className="font-mono text-[9px] tracking-[0.18em] uppercase text-faint mb-1.5">
+        Confidence distribution
+      </div>
+      {bins.length > 0 ? (
+        <Sparkline bins={bins} maxCount={maxCount} />
+      ) : (
+        <div className="font-serif italic text-[12px] text-muted">No AI predictions yet.</div>
+      )}
+
+      <div className="mt-3 pt-2.5 border-t border-edge-subtle flex items-baseline justify-between">
+        <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-faint">
+          Agreement vs gold
+        </span>
+        <span className="font-mono text-[13px] text-paper tabular-nums">
+          {agreementPct !== null ? `${agreementPct}%` : '—'}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function Sparkline({ bins, maxCount }: { bins: ConfidenceHistogramBin[]; maxCount: number }) {
+  const height = 36
+  const gap = 2
+  const width = 248
+  const barWidth = (width - gap * (bins.length - 1)) / bins.length
+
+  return (
+    <>
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        aria-label="Confidence distribution sparkline"
+        className="block"
+      >
+        {bins.map((bin, i) => {
+          const h = maxCount > 0 ? (bin.count / maxCount) * height : 0
+          const x = i * (barWidth + gap)
+          const y = height - h
+          return (
+            <rect
+              key={i}
+              x={x}
+              y={y}
+              width={barWidth}
+              height={h}
+              className="fill-ochre-dim"
+            >
+              <title>{`${bin.range_lo.toFixed(2)}–${bin.range_hi.toFixed(2)}: ${bin.count}`}</title>
+            </rect>
+          )
+        })}
+      </svg>
+      <div className="mt-1 flex justify-between font-mono text-[9px] tracking-[0.08em] text-faint tabular-nums">
+        <span>{bins[0]?.range_lo.toFixed(2) ?? '0.00'}</span>
+        <span>{bins[bins.length - 1]?.range_hi.toFixed(2) ?? '1.00'}</span>
+      </div>
+    </>
   )
 }
