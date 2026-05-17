@@ -3284,6 +3284,39 @@ def activate_single_label(label_id: int, db: Session = Depends(get_session)):
     return _label_to_response(db, label)
 
 
+@app.post("/api/single-labels/{target_id}/switch", response_model=SingleLabelResponse)
+def switch_to_label(target_id: int, db: Session = Depends(get_session)):
+    target = db.get(LabelDefinition, target_id)
+    if not target or target.mode != "single" or target.phase != "queued":
+        raise HTTPException(status_code=404, detail="Queued label not found")
+
+    current = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.is_active == True)  # noqa: E712
+        .where(LabelDefinition.phase == "labeling")
+    ).first()
+
+    if current:
+        max_pos = db.exec(
+            select(func.max(LabelDefinition.queue_position))
+            .where(LabelDefinition.mode == "single")
+            .where(LabelDefinition.phase == "queued")
+        ).one()
+        current.is_active = False
+        current.phase = "queued"
+        current.queue_position = (max_pos + 1) if max_pos is not None else 0
+        db.add(current)
+
+    target.is_active = True
+    target.phase = "labeling"
+    target.queue_position = None
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return _label_to_response(db, target)
+
+
 @app.post("/api/single-labels/{label_id}/close", response_model=SingleLabelResponse)
 def close_single_label(label_id: int, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, label_id)

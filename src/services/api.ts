@@ -304,6 +304,10 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
              : req(`/api/single-labels/${id}/activate`, { method: 'POST' }),
 
+  switchToLabel: (targetId: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
+             : req(`/api/single-labels/${targetId}/switch`, { method: 'POST' }),
+
   closeSingleLabel: (id: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
              : req(`/api/single-labels/${id}/close`, { method: 'POST' }),
