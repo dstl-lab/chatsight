@@ -512,3 +512,7 @@ class LabelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     review_threshold: Optional[float] = None
+
+
+class GeminiPreviewResponse(BaseModel):
+    summary: str

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReadinessState } from '../../types'
+import { api } from '../../services/api'
 
 interface ReadinessChipProps {
   readiness: ReadinessState
+  labelId: number
   onHandoff: () => void
 }
 
@@ -33,9 +35,24 @@ const tierBlurb: Record<ReadinessState['tier'], string> = {
     'You have enough variety. Hand off whenever you’re ready — Gemini will classify the rest and surface low-confidence cases for review.',
 }
 
-export function ReadinessChip({ readiness, onHandoff }: ReadinessChipProps) {
+export function ReadinessChip({ readiness, labelId, onHandoff }: ReadinessChipProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const [geminiPreview, setGeminiPreview] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const lastFetchedYesCount = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!open || readiness.tier === 'gray') return
+    if (previewLoading) return
+    if (lastFetchedYesCount.current === readiness.yes_count) return
+    lastFetchedYesCount.current = readiness.yes_count
+    setPreviewLoading(true)
+    api.getSingleLabelGeminiPreview(labelId)
+      .then(({ summary }) => setGeminiPreview(summary))
+      .catch(() => {})
+      .finally(() => setPreviewLoading(false))
+  }, [open, readiness.yes_count])
 
   useEffect(() => {
     if (!open) return
@@ -99,6 +116,23 @@ export function ReadinessChip({ readiness, onHandoff }: ReadinessChipProps) {
               </div>
             )}
           </div>
+
+          {(readiness.tier === 'amber' || readiness.tier === 'green') && (
+            <div className="px-5 pb-3">
+              <div className="p-3 bg-surface rounded border border-edge-subtle">
+                <div className="font-mono text-[9px] uppercase tracking-widest text-faint mb-1.5">
+                  Gemini's understanding
+                </div>
+                {previewLoading ? (
+                  <div className="font-serif text-[12px] text-faint italic">Generating…</div>
+                ) : geminiPreview ? (
+                  <div className="font-serif text-[13px] text-on-surface leading-[1.5]">
+                    {geminiPreview}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
 
           <div className="px-5 pb-4 pt-2">
             <button

@@ -52,7 +52,7 @@ export function StripBar({
       {import.meta.env.DEV && onSampleHandoff && (
         <SampleHandoffControl onSubmit={onSampleHandoff} />
       )}
-      <ReadinessChip readiness={readiness} onHandoff={onHandoff} />
+      <ReadinessChip readiness={readiness} labelId={label.id} onHandoff={onHandoff} />
       <button
         type="button"
         onClick={onAbort}

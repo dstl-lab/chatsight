@@ -345,6 +345,11 @@ export const api = {
     USE_MOCK ? Promise.resolve(mockReadiness)
              : req(`/api/single-labels/${id}/readiness`),
 
+  getSingleLabelGeminiPreview: (labelId: number): Promise<{ summary: string }> =>
+    USE_MOCK
+      ? Promise.resolve({ summary: 'Responds to messages where a student asks for clarification on a specific concept.' })
+      : req(`/api/single-labels/${labelId}/gemini-preview`),
+
   deleteSingleLabel: (id: number): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
              : req(`/api/single-labels/${id}`, { method: 'DELETE' }),

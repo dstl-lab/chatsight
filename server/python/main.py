@@ -47,6 +47,7 @@ from schemas import (
     MessageListItem, MessageListResponse,
     ConversationTurn, MessageDetailResponse,
     FlipRequest, NoteRequest, LabelUpdateRequest,
+    GeminiPreviewResponse,
 )
 import decision_service
 import queue_service
@@ -3442,6 +3443,40 @@ def get_readiness(label_id: int, db: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Single-label not found")
     state = decision_service.compute_readiness(db, label_id)
     return ReadinessResponse(**state)
+
+
+@app.get("/api/single-labels/{label_id}/gemini-preview", response_model=GeminiPreviewResponse)
+def get_gemini_preview(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+
+    yes_rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+            LabelApplication.value == "yes",
+        )
+        .order_by(LabelApplication.created_at.desc())  # type: ignore[arg-type]
+    ).all()
+
+    example_messages = []
+    for c, i in yes_rows[:10]:
+        mc = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == c, MessageCache.message_index == i
+            )
+        ).first()
+        if mc:
+            example_messages.append(mc.message_text)
+
+    if not example_messages:
+        raise HTTPException(status_code=400, detail="No yes examples yet")
+
+    from definition_service import generate_label_definition
+    summary = generate_label_definition(label.name, example_messages)
+    return GeminiPreviewResponse(summary=summary)
 
 
 CLASSIFICATION_CHUNK_SIZE = 50
