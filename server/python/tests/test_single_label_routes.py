@@ -248,8 +248,9 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body is not None
-    assert body["chatlog_id"] != starting_cid
+    assert body["next"] is not None
+    assert body["next"]["chatlog_id"] != starting_cid
+    assert "readiness" in body
 
     # The skipped conversation now has 3 skip rows for the active label
     skips = session.exec(
@@ -260,6 +261,40 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     ).all()
     assert len(skips) == 3
     assert all(r.value == "skip" for r in skips)
+
+
+def test_fetch_full_thread_cache_hits_avoid_second_call(monkeypatch):
+    """Second call for the same chatlog_id should reuse cache without re-invoking the uncached fetcher."""
+    queue_service._clear_thread_cache()
+    calls: list[int] = []
+
+    def fake(chatlog_id):
+        calls.append(chatlog_id)
+        return [{"message_index": 0, "role": "student", "text": "hi", "student_index": 0}]
+
+    monkeypatch.setattr(queue_service, "_fetch_full_thread_uncached", fake)
+    a = queue_service._fetch_full_thread(7777)
+    b = queue_service._fetch_full_thread(7777)
+    assert calls == [7777]
+    assert a is b
+
+
+def test_fetch_full_thread_empty_result_is_not_cached(monkeypatch):
+    """A transient empty result must not poison the cache."""
+    queue_service._clear_thread_cache()
+    results = [[], [{"message_index": 0, "role": "student", "text": "ok", "student_index": 0}]]
+    calls: list[int] = []
+
+    def fake(chatlog_id):
+        calls.append(chatlog_id)
+        return results.pop(0)
+
+    monkeypatch.setattr(queue_service, "_fetch_full_thread_uncached", fake)
+    first = queue_service._fetch_full_thread(8888)
+    second = queue_service._fetch_full_thread(8888)
+    assert first == []
+    assert second and second[0]["text"] == "ok"
+    assert calls == [8888, 8888]
 
 
 def test_next_focused_fallback_includes_tutor_from_cache(client, session, monkeypatch):

@@ -295,6 +295,14 @@ class ReadinessResponse(BaseModel):
     hint: Optional[str]
 
 
+class DecideResponse(BaseModel):
+    """Combined response for decide/undo/skip-conversation: the next focused
+    message (or None if nothing left) plus refreshed readiness. Bundling these
+    saves the /run UI a separate getReadiness round-trip per cycle."""
+    next: Optional[FocusedMessageResponse]
+    readiness: ReadinessResponse
+
+
 class SummaryPattern(BaseModel):
     excerpt: str
     frequency: str  # "common" | "moderate" | "rare"

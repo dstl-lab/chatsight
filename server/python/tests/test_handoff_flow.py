@@ -370,6 +370,28 @@ def test_classifying_label_appears_in_summaries(client, session):
     assert any(item["label_name"] == "help" and item["phase"] == "classifying" for item in items)
 
 
+def test_archived_label_excluded_from_summaries(client, session):
+    """Regression: DELETE /api/single-labels/{id} soft-archives the label by
+    setting `archived_at`. /api/handoff-summaries must filter those out so the
+    UI's LabelRail reflects the deletion."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "test"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    client.post(f"/api/single-labels/{a['id']}/handoff")
+
+    # Sanity: appears before delete.
+    pre = client.get("/api/handoff-summaries").json()
+    assert any(it["label_name"] == "test" for it in pre)
+
+    r = client.delete(f"/api/single-labels/{a['id']}")
+    assert r.status_code == 200
+
+    post = client.get("/api/handoff-summaries").json()
+    assert not any(it["label_name"] == "test" for it in post), (
+        "archived label leaked into /api/handoff-summaries"
+    )
+
+
 def test_two_sequential_handoffs_both_appear_in_summaries(client, session):
     """Regression: hand off two different active labels back-to-back. Both should
     appear on /api/handoff-summaries — not silently disappear."""

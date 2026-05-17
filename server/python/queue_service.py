@@ -2,6 +2,8 @@
 that needs a decision for the active label."""
 import logging
 import hashlib
+import threading
+from collections import OrderedDict
 from typing import Optional
 
 from sqlalchemy import text as sql_text
@@ -11,6 +13,19 @@ from database import ext_engine
 from models import LabelApplication, MessageCache
 
 logger = logging.getLogger(__name__)
+
+# Conversation threads in `events` are immutable once ingested, so a per-process
+# cache keyed by chatlog_id removes redundant Postgres roundtrips during /run
+# (the instructor stays in one conversation across several decide clicks).
+_THREAD_CACHE_MAX = 512
+_thread_cache: "OrderedDict[int, list[dict]]" = OrderedDict()
+_thread_cache_lock = threading.Lock()
+
+
+def _clear_thread_cache() -> None:
+    """Test hook: drop all cached threads."""
+    with _thread_cache_lock:
+        _thread_cache.clear()
 
 
 def _shuffle_key(label_id: int, chatlog_id: int) -> int:
@@ -222,30 +237,46 @@ def _build_focus_payload(
 def _fetch_full_thread(chatlog_id: int) -> list[dict]:
     """Pull the entire conversation (every student question + tutor response) from
     the external Postgres events table, in chronological order. Each entry includes
-    a `student_index` for student turns so we can locate the focused message."""
+    a `student_index` for student turns so we can locate the focused message.
+
+    Cached per-process by chatlog_id. Empty results (Postgres unreachable, etc.)
+    are NOT cached so a transient failure doesn't poison the cache.
+    """
+    with _thread_cache_lock:
+        cached = _thread_cache.get(chatlog_id)
+        if cached is not None:
+            _thread_cache.move_to_end(chatlog_id)
+            return cached
+
+    result = _fetch_full_thread_uncached(chatlog_id)
+    if not result:
+        return result
+
+    with _thread_cache_lock:
+        _thread_cache[chatlog_id] = result
+        _thread_cache.move_to_end(chatlog_id)
+        while len(_thread_cache) > _THREAD_CACHE_MAX:
+            _thread_cache.popitem(last=False)
+    return result
+
+
+def _fetch_full_thread_uncached(chatlog_id: int) -> list[dict]:
+    # chatlog_id is the MIN(events.id) of its conversation by construction
+    # (see ingest paths in main.py). So resolving conversation_id is a single-row
+    # PK lookup — much cheaper than the old GROUP BY/HAVING scan, which was
+    # painful per-decide because /run hits this function on every cycle.
     sql = """
-    WITH conv AS (
-        SELECT id, event_type, payload, created_at
-        FROM events
-        WHERE event_type IN ('tutor_query', 'tutor_response')
-          AND payload->>'conversation_id' = (
-              SELECT payload->>'conversation_id'
-              FROM events
-              WHERE id = (
-                  SELECT MIN(id)
-                  FROM events
-                  WHERE event_type IN ('tutor_query','tutor_response')
-                    AND payload->>'conversation_id' IS NOT NULL
-                  GROUP BY payload->>'conversation_id'
-                  HAVING MIN(id) = :chatlog_id
-              )
-          )
-        ORDER BY id ASC
-    )
     SELECT event_type,
            payload->>'question' AS question,
            payload->>'response' AS response
-    FROM conv
+    FROM events
+    WHERE event_type IN ('tutor_query', 'tutor_response')
+      AND payload->>'conversation_id' = (
+          SELECT payload->>'conversation_id'
+          FROM events
+          WHERE id = :chatlog_id
+      )
+    ORDER BY id ASC
     """
     try:
         with ext_engine.connect() as conn:

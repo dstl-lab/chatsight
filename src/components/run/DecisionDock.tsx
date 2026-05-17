@@ -6,9 +6,12 @@ interface DecisionDockProps {
   onHandoff: () => void
   onSkipConversation: () => void
   disabled?: boolean
-  loading?: boolean
-  /** When non-null, replaces the keyboard hints with a transient confirmation. */
+  /** When non-null, replaces the keyboard hints with a transient confirmation.
+   *  Yes/No confirmation is handled visually by a flash on the matching button,
+   *  so only Skip is expected to flow through here. */
   recent?: { value: DecisionValue; label: string } | null
+  /** Transient yes/no confirmation tint applied to the matching button. */
+  flash?: 'yes' | 'no' | null
 }
 
 export function DecisionDock({
@@ -17,8 +20,8 @@ export function DecisionDock({
   onHandoff,
   onSkipConversation,
   disabled,
-  loading,
   recent,
+  flash = null,
 }: DecisionDockProps) {
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
@@ -30,6 +33,7 @@ export function DecisionDock({
             tone="yes"
             onClick={() => onDecide('yes')}
             disabled={disabled}
+            flashing={flash === 'yes'}
           />
           <DecisionButton
             label="No"
@@ -37,6 +41,7 @@ export function DecisionDock({
             tone="no"
             onClick={() => onDecide('no')}
             disabled={disabled}
+            flashing={flash === 'no'}
           />
           <DecisionButton
             label="Skip"
@@ -46,11 +51,7 @@ export function DecisionDock({
             disabled={disabled}
           />
         </div>
-        {loading ? (
-          <div className="font-mono text-[10px] tracking-[0.08em] text-ochre animate-pulse">
-            Saving decision and loading next message…
-          </div>
-        ) : recent ? (
+        {recent ? (
           <RecentLine recent={recent} onUndo={onUndo} />
         ) : (
           <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint">
@@ -116,15 +117,24 @@ const toneStyles: Record<'yes' | 'no' | 'skip', string> = {
   skip: 'hover:border-stone hover:text-on-canvas',
 }
 
+// Stronger than hover — opaque colored fill so the confirmation reads even when
+// the cursor isn't on the button (e.g., the user triggered Y/N via keyboard).
+const flashStyles: Record<'yes' | 'no', string> = {
+  yes: 'border-moss bg-moss text-bg-warm [&_.kbd]:text-bg-warm',
+  no: 'border-brick bg-brick text-bg-warm [&_.kbd]:text-bg-warm',
+}
+
 interface DecisionButtonProps {
   label: string
   kbd: string
   tone: 'yes' | 'no' | 'skip'
   onClick: () => void
   disabled?: boolean
+  flashing?: boolean
 }
 
-function DecisionButton({ label, kbd, tone, onClick, disabled }: DecisionButtonProps) {
+function DecisionButton({ label, kbd, tone, onClick, disabled, flashing }: DecisionButtonProps) {
+  const flashClass = flashing && (tone === 'yes' || tone === 'no') ? flashStyles[tone] : ''
   return (
     <button
       onClick={onClick}
@@ -136,7 +146,7 @@ function DecisionButton({ label, kbd, tone, onClick, disabled }: DecisionButtonP
         inline-flex items-baseline gap-[14px] justify-center min-w-[130px]
         transition-colors duration-150
         disabled:opacity-50 disabled:cursor-not-allowed
-        ${toneStyles[tone]}
+        ${flashClass || toneStyles[tone]}
       `}
     >
       {label}
