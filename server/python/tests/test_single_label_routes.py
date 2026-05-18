@@ -263,6 +263,22 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     assert all(r.value == "skip" for r in skips)
 
 
+def test_patch_hybrid_explore_fraction(client, session):
+    lab = client.post("/api/single-labels", json={"name": "hybrid"}).json()
+    lid = lab["id"]
+    client.post(f"/api/single-labels/{lid}/activate")
+    r = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": 0.42})
+    assert r.status_code == 200
+    active = client.get("/api/single-labels/active").json()
+    assert active["hybrid_explore_fraction"] == 0.42
+    assert active["hybrid_explore_effective"] == 0.42
+    r2 = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": None})
+    assert r2.status_code == 200
+    active2 = client.get("/api/single-labels/active").json()
+    assert active2["hybrid_explore_fraction"] is None
+    assert active2["hybrid_explore_effective"] == 0.0
+
+
 def test_fetch_full_thread_cache_hits_avoid_second_call(monkeypatch):
     """Second call for the same chatlog_id should reuse cache without re-invoking the uncached fetcher."""
     queue_service._clear_thread_cache()
