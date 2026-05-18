@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { ThreadView } from '../run/ThreadView'
+import { useKeybinds } from '../../hooks/useKeybinds'
 import type { ConversationTurn } from '../../types'
 
 export interface DecisionWorkspaceProps {
@@ -31,9 +32,10 @@ export function DecisionWorkspace({
   onAcceptAi,
   disabled = false,
 }: DecisionWorkspaceProps) {
-  const handlersRef = useRef({ onYes, onNo, onSkip, onUndo, onAcceptAi, disabled })
+  const { keybinds } = useKeybinds()
+  const handlersRef = useRef({ onYes, onNo, onSkip, onUndo, onAcceptAi, disabled, keybinds })
   useEffect(() => {
-    handlersRef.current = { onYes, onNo, onSkip, onUndo, onAcceptAi, disabled }
+    handlersRef.current = { onYes, onNo, onSkip, onUndo, onAcceptAi, disabled, keybinds }
   })
 
   useEffect(() => {
@@ -53,22 +55,19 @@ export function DecisionWorkspace({
       // for callers' bespoke handlers. The shell only owns plain key presses.
       if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
       const key = e.key.toLowerCase()
-      switch (key) {
-        case 'y':
-          h.onYes?.()
-          break
-        case 'n':
-          h.onNo?.()
-          break
-        case 's':
-          h.onSkip?.()
-          break
-        case 'z':
-          h.onUndo?.()
-          break
-        case 'enter':
-          h.onAcceptAi?.()
-          break
+      const k = h.keybinds
+
+      if (key === k.yes) {
+        h.onYes?.()
+      } else if (key === k.no) {
+        h.onNo?.()
+      } else if (key === k.skip) {
+        if (key === ' ') e.preventDefault() // prevent scroll
+        h.onSkip?.()
+      } else if (key === k.undo) {
+        h.onUndo?.()
+      } else if (key === 'enter') {
+        h.onAcceptAi?.()
       }
     }
     window.addEventListener('keydown', onKey)
