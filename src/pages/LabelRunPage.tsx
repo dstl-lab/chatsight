@@ -44,6 +44,7 @@ export function LabelRunPage() {
   const [flash, setFlash] = useState<'yes' | 'no' | null>(null)
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
+  const [readinessOpen, setReadinessOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   // Mirrors activeLabel.id so async handlers can detect a label switch that
@@ -86,6 +87,14 @@ export function LabelRunPage() {
   useEffect(() => {
     setFlash(null)
   }, [focused?.chatlog_id, focused?.focus_index])
+
+  useEffect(() => {
+    setReadinessOpen(false)
+  }, [activeLabel?.id])
+
+  const openHandoffPanel = useCallback(() => {
+    setReadinessOpen(true)
+  }, [])
 
   // Reset the assignment filter when the active label changes (handoff,
   // abort, queue activation). Otherwise the new label inherits the previous
@@ -338,7 +347,7 @@ export function LabelRunPage() {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement | null)?.tagName ?? ''
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (noteOpen || abortOpen) return
+      if (noteOpen || abortOpen || readinessOpen) return
       const k = e.key.toLowerCase()
       if (k === 'l') {
         e.preventDefault()
@@ -353,7 +362,7 @@ export function LabelRunPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteOpen, abortOpen, activeLabel?.phase, reviewQueue, handleSkipConversation])
+  }, [noteOpen, abortOpen, readinessOpen, activeLabel?.phase, reviewQueue, handleSkipConversation])
 
   if (loading) {
     return (
@@ -492,18 +501,20 @@ export function LabelRunPage() {
         header={
           <>
             <div className="bg-canvas">
-              <StripBar
-                label={activeLabel}
-                readiness={readiness ?? defaultReadiness()}
-                assignments={assignments}
-                unmapped={unmapped}
-                selectedAssignmentId={selectedAssignmentId}
-                onSelectAssignment={(id) => setSelectedAssignmentId(id)}
-                onHandoff={handleHandoff}
-                onSampleHandoff={handleSampleHandoff}
-                onAbort={() => setAbortOpen(true)}
-                onLabelMetaUpdated={refresh}
-              />
+                <StripBar
+                  label={activeLabel}
+                  readiness={readiness ?? defaultReadiness()}
+                  assignments={assignments}
+                  unmapped={unmapped}
+                  selectedAssignmentId={selectedAssignmentId}
+                  onSelectAssignment={(id) => setSelectedAssignmentId(id)}
+                  onHandoff={handleHandoff}
+                  onSampleHandoff={handleSampleHandoff}
+                  onAbort={() => setAbortOpen(true)}
+                  onLabelMetaUpdated={refresh}
+                  readinessOpen={readinessOpen}
+                  onReadinessOpenChange={setReadinessOpen}
+                />
               <QueueLine
                 queued={queued}
                 onAdd={() => setNoteOpen(true)}
@@ -533,7 +544,7 @@ export function LabelRunPage() {
           <DecisionDock
             onDecide={handleDecide}
             onUndo={handleUndo}
-            onHandoff={handleHandoff}
+            onHandoff={openHandoffPanel}
             onSkipConversation={handleSkipConversation}
             disabled={busy}
             recent={recent}
@@ -544,8 +555,8 @@ export function LabelRunPage() {
         onNo={() => handleDecide('no')}
         onSkip={() => handleDecide('skip')}
         onUndo={handleUndo}
-        // INTENTIONALLY no onAcceptAi — original keyboard handler did not bind Enter.
-        disabled={busy || noteOpen || abortOpen}
+        onAcceptAi={recent ? undefined : openHandoffPanel}
+        disabled={busy || noteOpen || abortOpen || readinessOpen}
       />
       <NoteLabelPopover
         open={noteOpen}

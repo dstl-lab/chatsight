@@ -4,6 +4,9 @@ import type { ReadinessState } from '../../types'
 interface ReadinessChipProps {
   readiness: ReadinessState
   onHandoff: () => void
+  /** When set, the readiness panel is controlled by the parent (e.g. Enter shortcut). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 const tierLabel: Record<ReadinessState['tier'], string> = {
@@ -33,8 +36,15 @@ const tierBlurb: Record<ReadinessState['tier'], string> = {
     'You have enough variety. Hand off whenever you’re ready — Gemini will classify the rest and surface low-confidence cases for review.',
 }
 
-export function ReadinessChip({ readiness, onHandoff }: ReadinessChipProps) {
-  const [open, setOpen] = useState(false)
+export function ReadinessChip({
+  readiness,
+  onHandoff,
+  open: openProp,
+  onOpenChange,
+}: ReadinessChipProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

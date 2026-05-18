@@ -65,7 +65,12 @@ export function DecisionDock({
             >
               <KeyChip>⇧S</KeyChip> skip conversation
             </button>
-            <button onClick={onHandoff} className="hover:text-on-canvas transition-colors">
+            <button
+              type="button"
+              onClick={onHandoff}
+              className="hover:text-on-canvas transition-colors"
+              title="Open handoff readiness (Enter)"
+            >
               <KeyChip>⏎</KeyChip> hand off
             </button>
           </div>
