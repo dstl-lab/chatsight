@@ -456,7 +456,9 @@ def _thread_from_message_cache(session: Session, chatlog_id: int) -> list[dict]:
         seq += 1
 
     for midx, msg_text, ctx_before, ctx_after in cached_rows:
-        append_tutor(ctx_before or "")
+        # context_before on message 0 is often a pre-conversation tutor event — skip it.
+        if midx > 0:
+            append_tutor(ctx_before or "")
         append_student(midx, msg_text)
         append_tutor(ctx_after or "")
 
@@ -589,8 +591,10 @@ def _fetch_full_thread_uncached(chatlog_id: int) -> list[dict]:
     turns: list[dict] = []
     midx = 0
     student_idx = 0
+    seen_query = False
     for et, q, r in rows:
         if et == "tutor_query" and q:
+            seen_query = True
             turns.append({
                 "message_index": midx,
                 "role": "student",
@@ -599,7 +603,7 @@ def _fetch_full_thread_uncached(chatlog_id: int) -> list[dict]:
             })
             midx += 1
             student_idx += 1
-        elif et == "tutor_response" and r:
+        elif et == "tutor_response" and r and seen_query:
             turns.append({"message_index": midx, "role": "tutor", "text": r})
             midx += 1
     return turns

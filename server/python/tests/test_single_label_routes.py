@@ -313,6 +313,82 @@ def test_fetch_full_thread_empty_result_is_not_cached(monkeypatch):
     assert calls == [8888, 8888]
 
 
+def test_fetch_full_thread_uncached_skips_preamble_tutor(monkeypatch):
+    """Leading tutor_response events must not appear before the first student turn."""
+    queue_service._clear_thread_cache()
+
+    class _Conn:
+        def execute(self, _sql, _params):
+            return self
+
+        def fetchall(self):
+            return [
+                ("tutor_response", None, "Welcome to the tutor."),
+                ("tutor_query", "first student question", None),
+                ("tutor_response", None, "Tutor answer."),
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(queue_service.ext_engine, "connect", lambda: _Conn())
+
+    thread = queue_service._fetch_full_thread_uncached(12345)
+    assert [t["role"] for t in thread] == ["student", "tutor"]
+    assert thread[0]["text"] == "first student question"
+    assert thread[1]["text"] == "Tutor answer."
+
+
+def test_thread_from_cache_skips_context_before_on_first_message(session):
+    """Message 0 context_before is pre-conversation; thread must start with student."""
+    session.add(MessageCache(
+        chatlog_id=920,
+        message_index=0,
+        message_text="first student question",
+        context_before="pre-conversation tutor greeting",
+        context_after="tutor after first",
+    ))
+    session.add(MessageCache(
+        chatlog_id=920,
+        message_index=1,
+        message_text="second student question",
+        context_before="tutor after first",
+        context_after="tutor after second",
+    ))
+    session.commit()
+
+    thread = queue_service._thread_from_message_cache(session, 920)
+    assert [t["role"] for t in thread] == ["student", "tutor", "student", "tutor"]
+    assert thread[0]["text"] == "first student question"
+    assert "pre-conversation" not in "\n".join(t["text"] for t in thread)
+
+
+def test_next_thread_starts_with_student_when_pg_has_preamble(client, session, monkeypatch):
+    """/next must not surface a leading tutor turn from Postgres ordering."""
+    queue_service._clear_thread_cache()
+    monkeypatch.setattr(
+        queue_service,
+        "_fetch_full_thread_uncached",
+        lambda _cid: [
+            {"message_index": 0, "role": "student", "text": "first student", "student_index": 0},
+            {"message_index": 1, "role": "tutor", "text": "Tutor answer."},
+        ],
+    )
+
+    session.add(MessageCache(chatlog_id=930, message_index=0, message_text="first student"))
+    session.commit()
+
+    label = client.post("/api/single-labels", json={"name": "preamble"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    r = client.get(f"/api/single-labels/{label['id']}/next")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["thread"][0]["role"] == "student"
+
+
 def test_next_focused_fallback_includes_tutor_from_cache(client, session, monkeypatch):
     """When Postgres thread fetch fails, rebuild thread from MessageCache including tutor snippets."""
     monkeypatch.setattr(queue_service, "_fetch_full_thread", lambda chatlog_id: [])
