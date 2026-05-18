@@ -4526,15 +4526,33 @@ def patch_single_label(
 
 @app.delete("/api/single-labels/{label_id}")
 def delete_single_label(label_id: int, db: Session = Depends(get_session)):
-    """Archives the label (matches the existing label-archive behavior).
-    Returns orphaned messages to the unlabeled pool implicitly via the
-    `archived_at` filter applied by other queries."""
+    """Archives the label. If it was the active one, also clears is_active
+    and auto-promotes the next queued label so the Run page swaps cleanly
+    (mirrors the handoff flow). Without clearing is_active, the active-label
+    query keeps returning this archived row and abort appears broken."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="single-label not found")
 
+    was_active = label.is_active
     label.archived_at = datetime.utcnow()
+    label.is_active = False
     db.add(label)
+
+    if was_active:
+        next_q = db.exec(
+            select(LabelDefinition)
+            .where(LabelDefinition.mode == "single")
+            .where(LabelDefinition.phase == "queued")
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
+            .order_by(LabelDefinition.queue_position)
+        ).first()
+        if next_q:
+            next_q.is_active = True
+            next_q.phase = "labeling"
+            next_q.queue_position = None
+            db.add(next_q)
+
     db.commit()
     return {"ok": True}
 

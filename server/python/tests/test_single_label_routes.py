@@ -134,6 +134,49 @@ def test_close_auto_pops_next_queued(client):
     assert body["queue_position"] is None
 
 
+def test_delete_active_clears_is_active_and_pops_queued(client):
+    # Regression: deleting (abort) the active label must clear is_active so
+    # /active stops returning the archived row, and the next queued label
+    # should auto-promote (mirrors handoff/close behavior).
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+    queued = client.post("/api/single-labels/queue", json={"name": "frustration"}).json()
+
+    r = client.delete(f"/api/single-labels/{active['id']}")
+    assert r.status_code == 200
+
+    # /active must NOT return the archived label.
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is not None
+    assert active_now["id"] == queued["id"]
+    assert active_now["phase"] == "labeling"
+    assert active_now["queue_position"] is None
+
+
+def test_delete_non_active_does_not_disturb_active(client):
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+    queued = client.post("/api/single-labels/queue", json={"name": "frustration"}).json()
+
+    r = client.delete(f"/api/single-labels/{queued['id']}")
+    assert r.status_code == 200
+
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is not None
+    assert active_now["id"] == active["id"]
+
+
+def test_delete_lone_active_leaves_no_active(client):
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+
+    r = client.delete(f"/api/single-labels/{active['id']}")
+    assert r.status_code == 200
+
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is None
+
+
 def test_undo_removes_last_decision(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()
