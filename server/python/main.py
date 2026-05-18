@@ -2539,6 +2539,109 @@ def get_analysis_temporal(
     }
 
 
+@app.get("/api/export/onehot-csv")
+def export_onehot_csv(db: Session = Depends(get_session)):
+    """Wide-format export for the single-label Summaries page: one row per
+    reviewed message, with each non-archived single-mode label as a one-hot
+    column (1 = value="yes"; 0 = "no"/"skip"/no decision). Joins external
+    Postgres to fetch user_email and the external conversation_id (UUID)."""
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(
+            LabelDefinition.archived_at == None,
+            LabelDefinition.mode == "single",
+        )
+        .order_by(LabelDefinition.sort_order, LabelDefinition.id)
+    ).all()
+    label_id_to_name: dict = {lbl.id: lbl.name for lbl in labels}
+    label_columns = [lbl.name for lbl in labels]
+    active_label_ids = set(label_id_to_name.keys())
+
+    apps = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelApplication.label_id,
+            LabelApplication.value,
+        )
+    ).all()
+
+    # (chatlog_id, message_index) -> set of label_ids with value="yes" (active only)
+    msg_labels: dict = {}
+    reviewed_keys: set = set()
+    for chatlog_id, message_index, label_id, value in apps:
+        if label_id not in active_label_ids:
+            continue
+        key = (chatlog_id, message_index)
+        reviewed_keys.add(key)
+        if value == "yes":
+            msg_labels.setdefault(key, set()).add(label_id)
+
+    if not reviewed_keys:
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["message", "email", "conversation_id"] + label_columns)
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=chatsight-onehot.csv"},
+        )
+
+    # message_text from local cache
+    needed_keys = reviewed_keys
+    text_by_key: dict = {}
+    for mc in db.exec(select(MessageCache)).all():
+        k = (mc.chatlog_id, mc.message_index)
+        if k in needed_keys:
+            text_by_key[k] = mc.message_text or ""
+
+    # email + external conversation_id per chatlog_id (best-effort: skip on failure)
+    chatlog_ids = sorted({k[0] for k in needed_keys})
+    email_by_chatlog: dict = {}
+    convid_by_chatlog: dict = {}
+    try:
+        with ext_engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT MIN(id) AS chatlog_id,
+                           MAX(user_email) AS user_email,
+                           payload->>'conversation_id' AS conv_id
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                      AND payload->>'conversation_id' IS NOT NULL
+                    GROUP BY payload->>'conversation_id'
+                    HAVING MIN(id) = ANY(:ids)
+                """),
+                {"ids": chatlog_ids},
+            ).mappings().all()
+            for r in rows:
+                email_by_chatlog[r["chatlog_id"]] = r["user_email"] or ""
+                convid_by_chatlog[r["chatlog_id"]] = r["conv_id"] or ""
+    except Exception as e:
+        logging.warning(f"export_onehot_csv: external DB unreachable, email/conv_id will be blank: {e}")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["message", "email", "conversation_id"] + label_columns)
+    for key in sorted(needed_keys):
+        chatlog_id, _ = key
+        applied = msg_labels.get(key, set())
+        row = [
+            text_by_key.get(key, ""),
+            email_by_chatlog.get(chatlog_id, ""),
+            convid_by_chatlog.get(chatlog_id, ""),
+        ]
+        for lbl in labels:
+            row.append(1 if lbl.id in applied else 0)
+        writer.writerow(row)
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=chatsight-onehot.csv"},
+    )
+
+
 @app.get("/api/export/csv")
 def export_csv(db: Session = Depends(get_session)):
     rows = db.exec(
