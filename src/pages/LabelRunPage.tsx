@@ -523,20 +523,20 @@ export function LabelRunPage() {
         header={
           <>
             <div className="bg-canvas">
-                <StripBar
-                  label={activeLabel}
-                  readiness={readiness ?? defaultReadiness()}
-                  assignments={assignments}
-                  unmapped={unmapped}
-                  selectedAssignmentId={selectedAssignmentId}
-                  onSelectAssignment={(id) => setSelectedAssignmentId(id)}
-                  onHandoff={handleHandoff}
-                  onSampleHandoff={handleSampleHandoff}
-                  onAbort={() => setAbortOpen(true)}
-                  onLabelMetaUpdated={refresh}
-                  readinessOpen={readinessOpen}
-                  onReadinessOpenChange={setReadinessOpen}
-                />
+              <StripBar
+                label={activeLabel}
+                readiness={readiness ?? defaultReadiness()}
+                assignments={assignments}
+                unmapped={unmapped}
+                selectedAssignmentId={selectedAssignmentId}
+                onSelectAssignment={(id) => setSelectedAssignmentId(id)}
+                onHandoff={handleHandoff}
+                onSampleHandoff={handleSampleHandoff}
+                onAbort={() => setAbortOpen(true)}
+                onLabelMetaUpdated={refresh}
+                readinessOpen={readinessOpen}
+                onReadinessOpenChange={setReadinessOpen}
+              />
               <QueueLine
                 queued={queued}
                 onAdd={() => setNoteOpen(true)}
