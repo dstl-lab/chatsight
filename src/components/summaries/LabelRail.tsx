@@ -1,9 +1,22 @@
+import { useState } from 'react'
+import { api } from '../../services/api'
 import type { HandoffSummaryItem } from '../../types'
 
 interface LabelRailProps {
   items: HandoffSummaryItem[]
   activeId: number | null
   onSelect: (id: number) => void
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 type Kind = 'done' | 'classifying' | 'failed' | 'archived'
@@ -31,10 +44,36 @@ function subtitle(item: HandoffSummaryItem): string {
 }
 
 export function LabelRail({ items, activeId, onSelect }: LabelRailProps) {
+  const [exporting, setExporting] = useState(false)
+
+  const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const blob = await api.exportOneHotCsv()
+      triggerDownload(blob, 'chatsight-onehot.csv')
+    } catch (e) {
+      console.error('CSV export failed', e)
+      alert('CSV export failed — see console for details.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <aside className="w-[220px] shrink-0 border-r border-edge bg-canvas overflow-y-auto p-3">
-      <div className="font-mono text-[9.5px] tracking-[0.18em] uppercase text-faint mb-2 px-1.5">
-        Labels · {items.length}
+      <div className="flex items-center justify-between mb-2 px-1.5">
+        <span className="font-mono text-[9.5px] tracking-[0.18em] uppercase text-faint">
+          Labels · {items.length}
+        </span>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          title="Export labeled messages as CSV (one-hot labels)"
+          className="font-mono text-[9.5px] tracking-[0.18em] uppercase text-ochre hover:text-paper disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? '…' : 'Export ↓'}
+        </button>
       </div>
       {items.map((item) => {
         const isActive = item.label_id === activeId

@@ -258,6 +258,16 @@ export const api = {
     return res.blob()
   },
 
+  exportOneHotCsv: async (): Promise<Blob> => {
+    if (USE_MOCK) {
+      const header = 'message,email,conversation_id,Concept Question\n'
+      return new Blob([header + '"Hello",a@b.edu,abc-123,1\n'], { type: 'text/csv' })
+    }
+    const res = await fetch('/api/export/onehot-csv')
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.blob()
+  },
+
   // ── Recalibration ──────────────────────────────────────────────
   getRecalibration: (force = false): Promise<RecalibrationItem | null> =>
     USE_MOCK ? Promise.resolve(force ? mockApi.recalibrationForced() : mockApi.recalibration())
