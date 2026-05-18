@@ -267,6 +267,8 @@ class SingleLabelResponse(BaseModel):
     skip_count: int
     conversations_walked: int
     total_conversations: int
+    hybrid_explore_fraction: Optional[float] = None
+    hybrid_explore_effective: float = 0.35
 
 
 class TurnResponse(BaseModel):
@@ -283,6 +285,19 @@ class FocusedMessageResponse(BaseModel):
     conversation_turn_count: int
     thread: List[TurnResponse]
     focus_index: int
+    sampling_pick: Optional[str] = None  # "continue" | "explore" | "round_robin"
+    conversation_summary: Optional[str] = None
+    pick_rationale: Optional[str] = None
+    sampling_hint: Optional[str] = None  # deprecated; use conversation_summary / pick_rationale
+    conversation_student_messages: Optional[int] = None
+    pending_student_message_number: Optional[int] = None
+    neighbor_scores_available: bool = False
+    neighbor_uncertainty_pct: Optional[int] = None
+    neighbor_novelty_pct: Optional[int] = None
+    conversation_novelty_pct: Optional[int] = None
+    theme_novelty_pct: Optional[int] = None
+    student_specificity_pct: Optional[int] = None
+    student_rarity_pct: Optional[int] = None
 
 
 class ReadinessResponse(BaseModel):
@@ -512,3 +527,4 @@ class LabelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     review_threshold: Optional[float] = None
+    hybrid_explore_fraction: Optional[float] = None

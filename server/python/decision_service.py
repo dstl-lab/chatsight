@@ -86,6 +86,7 @@ def record_decision(
             ConversationCursor(
                 label_id=label_id,
                 chatlog_id=chatlog_id,
+                last_message_index=message_index,
                 last_message_index_decided=message_index,
             )
         )
@@ -225,6 +226,7 @@ def skip_conversation(session: Session, label_id: int, chatlog_id: int) -> int:
             session.add(ConversationCursor(
                 label_id=label_id,
                 chatlog_id=chatlog_id,
+                last_message_index=last_idx,
                 last_message_index_decided=last_idx,
             ))
     session.commit()

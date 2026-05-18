@@ -2915,6 +2915,12 @@ def get_sample():
 # Single-label binary flow
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _effective_hybrid_explore_fraction(label: LabelDefinition) -> float:
+    if label.hybrid_explore_fraction is not None:
+        return max(0.0, min(1.0, label.hybrid_explore_fraction))
+    return queue_service.default_hybrid_explore_fraction()
+
+
 def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelResponse:
     yes, no, skip, walked = decision_service.label_counts(db, label.id)
     total_convs = db.exec(select(MessageCache.chatlog_id).distinct()).all()
@@ -2931,6 +2937,8 @@ def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelRespon
         skip_count=skip,
         conversations_walked=walked,
         total_conversations=len(total_convs),
+        hybrid_explore_fraction=label.hybrid_explore_fraction,
+        hybrid_explore_effective=_effective_hybrid_explore_fraction(label),
     )
 
 
@@ -3323,7 +3331,13 @@ def get_next_focused(
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
 
-    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    assist_service.rebuild_cache_if_stale(db, label_id)
+    payload = queue_service.next_message_for_label(
+        db,
+        label_id,
+        assignment_id,
+        explore_fraction=_effective_hybrid_explore_fraction(label),
+    )
     if not payload:
         return None
     return FocusedMessageResponse(**payload)
@@ -3362,7 +3376,15 @@ def _decide_response(
     db: Session, label_id: int, assignment_id: Optional[int] = None
 ) -> DecideResponse:
     """Build the combined next-message + readiness payload for the /run hot path."""
-    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    label = db.get(LabelDefinition, label_id)
+    explore = _effective_hybrid_explore_fraction(label) if label else None
+    assist_service.rebuild_cache_if_stale(db, label_id)
+    payload = queue_service.next_message_for_label(
+        db,
+        label_id,
+        assignment_id,
+        explore_fraction=explore,
+    )
     nxt = FocusedMessageResponse(**payload) if payload else None
     readiness = ReadinessResponse(**decision_service.compute_readiness(db, label_id))
     return DecideResponse(next=nxt, readiness=readiness)
@@ -4413,6 +4435,11 @@ def patch_single_label(
         if not (0.0 <= body.review_threshold <= 1.0):
             raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
         label.review_threshold = body.review_threshold
+    if "hybrid_explore_fraction" in body.model_dump(exclude_unset=True):
+        v = body.hybrid_explore_fraction
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise HTTPException(status_code=422, detail="hybrid_explore_fraction must be in [0, 1]")
+        label.hybrid_explore_fraction = v
 
     db.add(label)
     db.commit()
