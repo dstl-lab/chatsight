@@ -21,7 +21,8 @@ export function KeybindSettingsModal({ open, onClose }: KeybindSettingsModalProp
       // We don't want to bind modifier keys by themselves
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return
 
-      setKeybind(listeningFor, e.key)
+      const prefix = e.shiftKey ? 'shift+' : ''
+      setKeybind(listeningFor, prefix + e.key)
       setListeningFor(null)
     }
 
@@ -35,7 +36,7 @@ export function KeybindSettingsModal({ open, onClose }: KeybindSettingsModalProp
     { id: 'yes', label: 'Yes' },
     { id: 'no', label: 'No' },
     { id: 'skip', label: 'Skip' },
-    { id: 'undo', label: 'Undo / Back' },
+    { id: 'undo', label: 'Undo' },
   ]
 
   const formatKey = (key: string) => {

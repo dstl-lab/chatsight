@@ -65,4 +65,33 @@ describe('DecisionWorkspace Keybinds', () => {
     fireEvent.keyDown(window, { key: 'A' })
     expect(onYes).toHaveBeenCalled()
   })
+
+  describe('Shift Keybinds', () => {
+    const STORAGE_KEY = 'chatsight-keybinds'
+
+    it('calls onYes when Shift+Enter is pressed and bound to "shift+enter"', () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ yes: 'shift+enter' }))
+      const onYes = vi.fn()
+      renderWorkspace({ onYes })
+      fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+      expect(onYes).toHaveBeenCalled()
+      localStorage.removeItem(STORAGE_KEY)
+    })
+
+    it('calls onAcceptAi when Shift+Enter is pressed even if NOT explicitly bound (backward compatibility)', () => {
+      const onAcceptAi = vi.fn()
+      renderWorkspace({ onAcceptAi })
+      fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+      expect(onAcceptAi).toHaveBeenCalled()
+    })
+
+    it('ignores plain Enter if "yes" is bound to shift+enter', () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ yes: 'shift+enter' }))
+      const onYes = vi.fn()
+      renderWorkspace({ onYes })
+      fireEvent.keyDown(window, { key: 'Enter', shiftKey: false })
+      expect(onYes).not.toHaveBeenCalled()
+      localStorage.removeItem(STORAGE_KEY)
+    })
+  })
 })

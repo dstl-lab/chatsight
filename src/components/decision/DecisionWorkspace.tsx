@@ -51,22 +51,23 @@ export function DecisionWorkspace({
         return
       const h = handlersRef.current
       if (h.disabled) return
-      // Modifier-prefixed shortcuts (shift+s, ctrl+z, cmd+enter, etc.) are reserved
-      // for callers' bespoke handlers. The shell only owns plain key presses.
-      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
-      const key = e.key.toLowerCase()
+      // Non-shift modifiers are reserved for callers' bespoke handlers.
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+
+      const rawKey = e.key.toLowerCase()
+      const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey
       const k = h.keybinds
 
-      if (key === k.yes) {
+      if (pressedKey === k.yes) {
         h.onYes?.()
-      } else if (key === k.no) {
+      } else if (pressedKey === k.no) {
         h.onNo?.()
-      } else if (key === k.skip) {
-        if (key === ' ') e.preventDefault() // prevent scroll
+      } else if (pressedKey === k.skip) {
+        if (rawKey === ' ') e.preventDefault() // prevent scroll
         h.onSkip?.()
-      } else if (key === k.undo) {
+      } else if (pressedKey === k.undo) {
         h.onUndo?.()
-      } else if (key === 'enter') {
+      } else if (pressedKey === 'enter' || rawKey === 'enter') {
         h.onAcceptAi?.()
       }
     }
