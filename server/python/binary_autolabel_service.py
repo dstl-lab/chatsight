@@ -89,10 +89,13 @@ def _build_classify_prompt(
     yes_examples: List[str],
     no_examples: List[str],
     messages: List[str],
+    guidance: Optional[str] = None,
 ) -> str:
     parts = [f"# Label: {label_name}"]
     if label_description:
         parts.append(f"\nDescription: {label_description}")
+    if guidance:
+        parts.append(f"\nInstructor guidance: {guidance}")
     if yes_examples:
         parts.append("\n## YES examples (label applies):")
         for ex in yes_examples[:10]:
@@ -113,6 +116,7 @@ def classify_binary(
     yes_examples: List[str],
     no_examples: List[str],
     messages: List[str],
+    guidance: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Classify each message yes/no for the given label.
 
@@ -122,7 +126,7 @@ def classify_binary(
     """
     if not messages:
         return []
-    prompt = _build_classify_prompt(label_name, label_description, yes_examples, no_examples, messages)
+    prompt = _build_classify_prompt(label_name, label_description, yes_examples, no_examples, messages, guidance)
     response = client.models.generate_content(
         model="gemini-2.0-flash",
         contents=prompt,
@@ -267,6 +271,7 @@ def build_classify_batch_request(
     yes_examples: List[str],
     no_examples: List[str],
     messages: List[str],
+    guidance: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return one entry for the Batch API JSONL.
 
@@ -278,7 +283,7 @@ def build_classify_batch_request(
     Batch JSONL docs example uses snake_case for protocol fields, so we dump
     with `by_alias=False`."""
     prompt = _build_classify_prompt(
-        label_name, label_description, yes_examples, no_examples, messages
+        label_name, label_description, yes_examples, no_examples, messages, guidance
     )
     tool_dict = CLASSIFY_TOOL.model_dump(by_alias=False, exclude_none=True)
     tool_config = types.ToolConfig(

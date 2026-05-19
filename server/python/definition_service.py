@@ -6,10 +6,11 @@ from typing import List
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 
-def generate_label_definition(label_name: str, example_messages: List[str]) -> str:
+def generate_label_definition(label_name: str, example_messages: List[str], guidance: str | None = None) -> str:
     """
     Given a label name and a list of example student messages that carry that label,
     ask Gemini to produce a concise 1-2 sentence definition.
+    Optional `guidance` is instructor feedback incorporated into the prompt.
     """
     numbered = "\n".join(f"{i + 1}. {m}" for i, m in enumerate(example_messages))
 
@@ -21,10 +22,13 @@ The following student messages have been labeled "{label_name}" by human instruc
 
 {numbered}
 
-Write a very concise 1 sentence definition of what "{label_name}" means in this labeling context. Be specific to the patterns you observe in the examples above. 
+Write a very concise 1 sentence definition of what "{label_name}" means in this labeling context. Be specific to the patterns you observe in the examples above.
 Return only the definition text, nothing else. Do not restate the name of the label in your definition.
 
 An example is 'Responds to AI question or message'. It does not restate any of the label, and it immediately begins the defintion without stating anything about this label. It begins with a verb to be concise"""
+
+    if guidance:
+        prompt += f"\n\nAdditional guidance from the instructor: {guidance}\n\nRevise the definition to incorporate this guidance while remaining grounded in the examples above."
 
     response = client.models.generate_content(
         model="gemini-2.0-flash",

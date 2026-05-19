@@ -576,7 +576,7 @@ export const api = {
 
   patchSingleLabel: (
     id: number,
-    patch: { name?: string; description?: string; review_threshold?: number },
+    patch: { name?: string; description?: string; review_threshold?: number; guidance?: string },
   ): Promise<SingleLabelDetail> =>
     USE_MOCK ? Promise.resolve({
       id, name: patch.name ?? 'Mock Label', description: patch.description ?? null,

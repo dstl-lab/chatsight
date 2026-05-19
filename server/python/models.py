@@ -43,6 +43,7 @@ class LabelDefinition(SQLModel, table=True):
     # this confidence land in the "Review" bucket. Configurable per-label via the
     # Settings tab; default 0.7 matches the implicit threshold the legacy code used.
     review_threshold: float = Field(default=0.7)
+    guidance: Optional[str] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):

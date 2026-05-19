@@ -267,6 +267,7 @@ class SingleLabelResponse(BaseModel):
     skip_count: int
     conversations_walked: int
     total_conversations: int
+    guidance: Optional[str] = None
 
 
 class TurnResponse(BaseModel):
@@ -512,6 +513,7 @@ class LabelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     review_threshold: Optional[float] = None
+    guidance: Optional[str] = None
 
 
 class GeminiPreviewResponse(BaseModel):

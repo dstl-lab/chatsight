@@ -3461,6 +3461,7 @@ def get_gemini_preview(label_id: int, db: Session = Depends(get_session)):
         .order_by(LabelApplication.created_at.desc())  # type: ignore[arg-type]
     ).all()
 
+    CONTEXT_CHAR_LIMIT = 500
     example_messages = []
     for c, i in yes_rows[:10]:
         mc = db.exec(
@@ -3469,13 +3470,18 @@ def get_gemini_preview(label_id: int, db: Session = Depends(get_session)):
             )
         ).first()
         if mc:
-            example_messages.append(mc.message_text)
+            if mc.context_before and mc.context_before.strip():
+                ctx = mc.context_before[-CONTEXT_CHAR_LIMIT:]
+                pair = f"Tutor: {ctx}\nStudent: {mc.message_text}"
+            else:
+                pair = f"[Conversation start]\nStudent: {mc.message_text}"
+            example_messages.append(pair)
 
     if not example_messages:
         raise HTTPException(status_code=400, detail="No yes examples yet")
 
     from definition_service import generate_label_definition
-    summary = generate_label_definition(label.name, example_messages)
+    summary = generate_label_definition(label.name, example_messages, guidance=label.guidance)
     return GeminiPreviewResponse(summary=summary)
 
 
@@ -3621,6 +3627,7 @@ def _classify_in_parallel(
     label_id = label.id
     label_name = label.name
     label_description = label.description
+    label_guidance = label.guidance
 
     chunks = [
         pending[i:i + CLASSIFICATION_CHUNK_SIZE]
@@ -3643,6 +3650,7 @@ def _classify_in_parallel(
                     yes_examples=yes_examples,
                     no_examples=no_examples,
                     messages=chunk_texts,
+                    guidance=label_guidance,
                 )
                 return chunk, classifications
             except Exception as e:
@@ -3906,6 +3914,7 @@ def _classify_via_batch_api(
                         yes_examples=yes_examples,
                         no_examples=no_examples,
                         messages=chunk_texts,
+                        guidance=label.guidance,
                     )
                     f.write(json_mod.dumps(req) + "\n")
                     global_chunk_idx += 1
@@ -4448,6 +4457,8 @@ def patch_single_label(
         if not (0.0 <= body.review_threshold <= 1.0):
             raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
         label.review_threshold = body.review_threshold
+    if body.guidance is not None:
+        label.guidance = body.guidance
 
     db.add(label)
     db.commit()
