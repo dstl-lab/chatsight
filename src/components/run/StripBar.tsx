@@ -3,6 +3,7 @@ import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount } fr
 import { api } from '../../services/api'
 import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
+import { HoverTip } from './HoverTip'
 
 interface StripBarProps {
   label: SingleLabel
@@ -117,13 +118,16 @@ function HybridExploreMix({
   }
 
   return (
-    <div
-      className="inline-flex items-center gap-1.5 shrink-0 max-w-[200px] flex-wrap"
-      title="When choosing a new conversation (not while continuing one in progress), this % use explore scoring; the rest use round-robin order."
-    >
-      <span className="text-[9px] tracking-[0.06em] uppercase text-faint whitespace-nowrap">
-        new-chat explore
-      </span>
+    <div className="inline-flex items-center gap-1.5 shrink-0 max-w-[200px] flex-wrap">
+      <HoverTip
+        label="new-chat explore"
+        className="text-[9px] tracking-[0.06em] uppercase"
+        tip={
+          'When choosing a new conversation (not while continuing one you started), this % ' +
+          'uses Explore scoring — favoring specific, uncommon student help. The rest use ' +
+          'round-robin order. Finishing an in-progress chat is never affected.'
+        }
+      />
       <input
         type="number"
         min={0}
