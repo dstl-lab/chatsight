@@ -26,6 +26,7 @@
     "react-router-dom": "^7.13.2",
     "recharts": "^2.13.0",
     "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tailwind-merge": "^2.5.5"
   },

@@ -9,6 +9,7 @@ import { LabelRunPage } from './pages/LabelRunPage'
 import { AssignmentsPage } from './pages/AssignmentsPage'
 import { SummariesPage } from './pages/SummariesPage'
 import { ModeProvider, useMode } from './hooks/useMode'
+import { KeybindProvider } from './hooks/useKeybinds'
 
 function ModeAwareRedirect() {
   const { mode } = useMode()
@@ -50,9 +51,11 @@ function AppShell() {
 export default function App() {
   return (
     <ModeProvider>
-      <BrowserRouter>
-        <AppShell />
-      </BrowserRouter>
+      <KeybindProvider>
+        <BrowserRouter>
+          <AppShell />
+        </BrowserRouter>
+      </KeybindProvider>
     </ModeProvider>
   )
 }

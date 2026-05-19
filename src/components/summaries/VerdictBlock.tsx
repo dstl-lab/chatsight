@@ -20,7 +20,7 @@ function badgeStyles(v: MessageVerdict | null) {
 }
 
 export function VerdictBlock({
-  verdict, confidence, appliedBy, matchedPattern, rationale, nearThreshold,
+  verdict, confidence, matchedPattern, rationale, nearThreshold,
   onAccept, onFlip, onFlag,
 }: VerdictBlockProps) {
   const [whyOpen, setWhyOpen] = useState(false)

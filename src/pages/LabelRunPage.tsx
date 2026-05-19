@@ -9,6 +9,7 @@ import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
 import { AiReviewDock } from '../components/decision/AiReviewDock'
+import { useKeybinds } from '../hooks/useKeybinds'
 import { api } from '../services/api'
 import type {
   DecisionValue,
@@ -341,6 +342,8 @@ export function LabelRunPage() {
     []
   )
 
+  const { keybinds } = useKeybinds()
+
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
@@ -356,7 +359,7 @@ export function LabelRunPage() {
   )
 
   // Shortcuts NOT owned by DecisionWorkspace: L (note popover) for both modes,
-  // and Shift+S (skip conversation) for initial labeling only.
+  // and Shift+[Skip] (skip conversation) for initial labeling only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement | null)?.tagName ?? ''
@@ -368,15 +371,19 @@ export function LabelRunPage() {
         setNoteOpen(true)
         return
       }
+      
       const inReview = activeLabel?.phase === 'reviewing' && reviewQueue !== null
-      if (!inReview && k === 's' && e.shiftKey) {
+      const skipKey = keybinds.skip
+      const isShiftSkip = e.shiftKey && (k === skipKey || `shift+${k}` === skipKey)
+
+      if (!inReview && isShiftSkip) {
         e.preventDefault()
         handleSkipConversation()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteOpen, abortOpen, readinessOpen, activeLabel?.phase, reviewQueue, handleSkipConversation])
+  }, [noteOpen, abortOpen, readinessOpen, activeLabel?.phase, reviewQueue, handleSkipConversation, keybinds.skip])
 
   if (loading) {
     return (

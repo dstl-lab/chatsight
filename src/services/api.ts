@@ -603,7 +603,7 @@ export const api = {
   // ─── Handoff summaries ───
   listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>
     USE_MOCK
-      ? Promise.resolve([
+        ? Promise.resolve([
           {
             label_id: 2,
             label_name: 'frustration',
@@ -619,6 +619,11 @@ export const api = {
             classification_total: 142,
             error: null,
             error_kind: null,
+            batch_state: 'RUNNING',
+            batch_submitted_at: new Date().toISOString(),
+            batch_polled_at: new Date().toISOString(),
+            batch_total_count: 2,
+            batch_completed_count: 1,
           },
           {
             label_id: 1,
@@ -644,6 +649,11 @@ export const api = {
             classification_total: 142,
             error: null,
             error_kind: null,
+            batch_state: null,
+            batch_submitted_at: null,
+            batch_polled_at: null,
+            batch_total_count: null,
+            batch_completed_count: null,
           },
         ])
       : req('/api/handoff-summaries'),

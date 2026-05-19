@@ -1,3 +1,4 @@
+import { useKeybinds } from '../../hooks/useKeybinds'
 import { DockButton } from './DockButton'
 
 export type AiReviewMode =
@@ -34,28 +35,40 @@ function TriageDockBody({
   canUndo,
   disabled = false,
 }: TriageBodyProps) {
+  const { keybinds } = useKeybinds()
   const aiIsYes = mode.aiVerdict === 'yes'
+  const formatKey = (key: string) => {
+    if (key === ' ') return '␣'
+    return key.toUpperCase()
+  }
+
   return (
     <div className="px-7 py-4 border-t border-edge bg-canvas flex items-center gap-2.5">
       <DockButton
         label={aiIsYes ? 'Keep YES' : 'Flip to YES'}
-        kbd="y"
+        kbd={formatKey(keybinds.yes)}
         tone={aiIsYes ? 'primary' : 'moss'}
         onClick={onYes}
         disabled={disabled}
       />
       <DockButton
         label={aiIsYes ? 'Flip to NO' : 'Keep NO'}
-        kbd="n"
+        kbd={formatKey(keybinds.no)}
         tone={aiIsYes ? 'brick' : 'primary'}
         onClick={onNo}
         disabled={disabled}
       />
-      <DockButton label="Skip" kbd="s" tone="muted" onClick={onSkip} disabled={disabled} />
+      <DockButton
+        label="Skip"
+        kbd={formatKey(keybinds.skip)}
+        tone="muted"
+        onClick={onSkip}
+        disabled={disabled}
+      />
       {onUndo && (
         <DockButton
           label="Undo"
-          kbd="z"
+          kbd={formatKey(keybinds.undo)}
           tone="muted"
           onClick={onUndo}
           disabled={disabled || !canUndo}
@@ -82,7 +95,13 @@ interface ReviewBodyProps extends AiReviewDockProps {
 }
 
 function ReviewDockBody({ mode, onYes, onNo, onSkip, disabled = false }: ReviewBodyProps) {
+  const { keybinds } = useKeybinds()
   const aiIsYes = mode.aiValue === 'yes'
+  const formatKey = (key: string) => {
+    if (key === ' ') return '␣'
+    return key.toUpperCase()
+  }
+
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
       <div className="max-w-[760px] mx-auto flex flex-col items-center gap-3.5">
@@ -94,19 +113,25 @@ function ReviewDockBody({ mode, onYes, onNo, onSkip, disabled = false }: ReviewB
         <div className="flex gap-2.5">
           <DockButton
             label={aiIsYes ? 'Confirm Yes' : 'Flip to Yes'}
-            kbd="y"
+            kbd={formatKey(keybinds.yes)}
             tone={aiIsYes ? 'primary' : 'moss'}
             onClick={onYes}
             disabled={disabled}
           />
           <DockButton
             label={aiIsYes ? 'Flip to No' : 'Confirm No'}
-            kbd="n"
+            kbd={formatKey(keybinds.no)}
             tone={aiIsYes ? 'brick' : 'primary'}
             onClick={onNo}
             disabled={disabled}
           />
-          <DockButton label="Skip" kbd="s" tone="muted" onClick={onSkip} disabled={disabled} />
+          <DockButton
+            label="Skip"
+            kbd={formatKey(keybinds.skip)}
+            tone="muted"
+            onClick={onSkip}
+            disabled={disabled}
+          />
         </div>
       </div>
     </div>
