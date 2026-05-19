@@ -35,7 +35,9 @@ def session_fixture(engine):
 
 
 @pytest.fixture(name="client")
-def client_fixture(session):
+def client_fixture(session, monkeypatch):
+    monkeypatch.setenv("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0")
+
     def override_session():
         yield session
 
