@@ -5,9 +5,10 @@ interface QueueLineProps {
   onAdd: () => void
   onRemove: (id: number) => void
   onClearAll: () => void
+  onSwitch?: (id: number) => void
 }
 
-export function QueueLine({ queued, onAdd, onRemove, onClearAll }: QueueLineProps) {
+export function QueueLine({ queued, onAdd, onRemove, onClearAll, onSwitch }: QueueLineProps) {
   return (
     <div className="flex items-baseline gap-3 px-12 pb-4 font-serif text-[13px] text-faint tracking-[-0.005em] border-b border-edge-subtle">
       <span className="font-mono text-[9px] tracking-[0.18em] uppercase text-faint shrink-0">
@@ -20,7 +21,10 @@ export function QueueLine({ queued, onAdd, onRemove, onClearAll }: QueueLineProp
           queued.map((q, i) => (
             <span key={q.id} className="group flex items-baseline">
               {i > 0 && <span className="text-faint mx-1.5 not-italic">·</span>}
-              <button className="text-on-surface hover:text-on-canvas py-0.5 border-b border-dashed border-transparent hover:border-faint transition-colors">
+              <button
+                onClick={() => onSwitch?.(q.id)}
+                className="text-on-surface hover:text-on-canvas py-0.5 border-b border-dashed border-transparent hover:border-faint transition-colors"
+              >
                 {q.name}
               </button>
               <button

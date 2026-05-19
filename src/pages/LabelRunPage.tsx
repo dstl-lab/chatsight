@@ -341,6 +341,20 @@ export function LabelRunPage() {
     []
   )
 
+  const handleSwitchToQueued = useCallback(
+    async (id: number) => {
+      if (busy) return
+      setBusy(true)
+      try {
+        await api.switchToLabel(id)
+        await refresh()
+      } finally {
+        setBusy(false)
+      }
+    },
+    [busy, refresh]
+  )
+
   // Shortcuts NOT owned by DecisionWorkspace: L (note popover) for both modes,
   // and Shift+S (skip conversation) for initial labeling only.
   useEffect(() => {
@@ -437,6 +451,7 @@ export function LabelRunPage() {
                   onAdd={() => setNoteOpen(true)}
                   onRemove={handleRemoveQueued}
                   onClearAll={handleClearQueue}
+                  onSwitch={handleSwitchToQueued}
                 />
               </div>
               <ConversationMeta
@@ -520,6 +535,7 @@ export function LabelRunPage() {
                 onAdd={() => setNoteOpen(true)}
                 onRemove={handleRemoveQueued}
                 onClearAll={handleClearQueue}
+                onSwitch={handleSwitchToQueued}
               />
             </div>
             <ConversationMeta
