@@ -45,6 +45,8 @@ export function LabelRunPage() {
   const [flash, setFlash] = useState<'yes' | 'no' | null>(null)
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
+  const [readinessOpen, setReadinessOpen] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Mirrors activeLabel.id so async handlers can detect a label switch that
   // occurred while a decide/undo/skip was in flight, and avoid clobbering
@@ -87,6 +89,14 @@ export function LabelRunPage() {
     setFlash(null)
   }, [focused?.chatlog_id, focused?.focus_index])
 
+  useEffect(() => {
+    setReadinessOpen(false)
+  }, [activeLabel?.id])
+
+  const openHandoffPanel = useCallback(() => {
+    setReadinessOpen(true)
+  }, [])
+
   // Reset the assignment filter when the active label changes (handoff,
   // abort, queue activation). Otherwise the new label inherits the previous
   // label's filter and may show "done" prematurely if the new label has no
@@ -105,7 +115,7 @@ export function LabelRunPage() {
     api.getAssist(
       activeLabel.id,
       focused.chatlog_id,
-      focused.thread[focused.focus_index].message_index,
+      focused.message_index,
       selectedAssignmentId ?? undefined,
     ).then((res) => {
       if (!cancelled) setAssistNeighbors(res.neighbors)
@@ -117,34 +127,39 @@ export function LabelRunPage() {
 
   // Refetch the page state. Called on mount, after decisions, after undo, after queue add.
   const refresh = useCallback(async () => {
-    const active = await api.getActiveSingleLabel()
-    setActiveLabel(active)
-    const [a, um] = await Promise.all([api.listAssignments(), api.getUnmappedCount()])
-    setAssignments(a)
-    setUnmapped(um)
-    if (active) {
-      const [next, ready, q] = await Promise.all([
-        api.getNextFocused(active.id, selectedAssignmentId ?? undefined),
-        api.getReadiness(active.id),
-        api.listSingleLabels({ phase: 'queued' }),
-      ])
-      setFocused(next)
-      setReadiness(ready)
-      setQueued(q)
-      // If we landed in reviewing phase (e.g., page reload mid-review), prime the queue.
-      if (active.phase === 'reviewing') {
-        const rq = await api.getReviewQueue(active.id)
-        setReviewQueue(rq)
-        setReviewIdx(0)
+    try {
+      setLoadError(null)
+      const active = await api.getActiveSingleLabel()
+      setActiveLabel(active)
+      const [a, um] = await Promise.all([api.listAssignments(), api.getUnmappedCount()])
+      setAssignments(a)
+      setUnmapped(um)
+      if (active) {
+        const [next, ready, q] = await Promise.all([
+          api.getNextFocused(active.id, selectedAssignmentId ?? undefined),
+          api.getReadiness(active.id),
+          api.listSingleLabels({ phase: 'queued' }),
+        ])
+        setFocused(next)
+        setReadiness(ready)
+        setQueued(q)
+        if (active.phase === 'reviewing') {
+          const rq = await api.getReviewQueue(active.id)
+          setReviewQueue(rq)
+          setReviewIdx(0)
+        } else {
+          setReviewQueue(null)
+          setReviewIdx(0)
+        }
       } else {
-        setReviewQueue(null)
-        setReviewIdx(0)
+        setFocused(null)
+        setReadiness(null)
+        const q = await api.listSingleLabels({ phase: 'queued' })
+        setQueued(q)
       }
-    } else {
-      setFocused(null)
-      setReadiness(null)
-      const q = await api.listSingleLabels({ phase: 'queued' })
-      setQueued(q)
+    } catch (e) {
+      console.error('LabelRunPage refresh failed', e)
+      setLoadError(e instanceof Error ? e.message : 'Failed to load run page')
     }
   }, [selectedAssignmentId])
 
@@ -329,13 +344,27 @@ export function LabelRunPage() {
 
   const { keybinds } = useKeybinds()
 
+  const handleSwitchToQueued = useCallback(
+    async (id: number) => {
+      if (busy) return
+      setBusy(true)
+      try {
+        await api.switchToLabel(id)
+        await refresh()
+      } finally {
+        setBusy(false)
+      }
+    },
+    [busy, refresh]
+  )
+
   // Shortcuts NOT owned by DecisionWorkspace: L (note popover) for both modes,
   // and Shift+[Skip] (skip conversation) for initial labeling only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement | null)?.tagName ?? ''
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      if (noteOpen || abortOpen) return
+      if (noteOpen || abortOpen || readinessOpen) return
       const k = e.key.toLowerCase()
       if (k === 'l') {
         e.preventDefault()
@@ -354,12 +383,33 @@ export function LabelRunPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteOpen, abortOpen, activeLabel?.phase, reviewQueue, handleSkipConversation, keybinds.skip])
+  }, [noteOpen, abortOpen, readinessOpen, activeLabel?.phase, reviewQueue, handleSkipConversation, keybinds.skip])
 
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
         Loading…
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
+        <p className="text-brick text-sm max-w-md">{loadError}</p>
+        <p className="text-faint text-xs max-w-md">
+          If the backend just restarted, wait a few seconds and retry. Ensure port-forward to Postgres is running.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true)
+            void refresh().finally(() => setLoading(false))
+          }}
+          className="font-mono text-[11px] tracking-widest uppercase text-ochre hover:text-paper"
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -401,12 +451,14 @@ export function LabelRunPage() {
                   onHandoff={handleHandoff}
                   onSampleHandoff={handleSampleHandoff}
                   onAbort={() => setAbortOpen(true)}
+                  onLabelMetaUpdated={refresh}
                 />
                 <QueueLine
                   queued={queued}
                   onAdd={() => setNoteOpen(true)}
                   onRemove={handleRemoveQueued}
                   onClearAll={handleClearQueue}
+                  onSwitch={handleSwitchToQueued}
                 />
               </div>
               <ConversationMeta
@@ -471,28 +523,42 @@ export function LabelRunPage() {
         header={
           <>
             <div className="bg-canvas">
-              <StripBar
-                label={activeLabel}
-                readiness={readiness ?? defaultReadiness()}
-                assignments={assignments}
-                unmapped={unmapped}
-                selectedAssignmentId={selectedAssignmentId}
-                onSelectAssignment={(id) => setSelectedAssignmentId(id)}
-                onHandoff={handleHandoff}
-                onSampleHandoff={handleSampleHandoff}
-                onAbort={() => setAbortOpen(true)}
-              />
+                <StripBar
+                  label={activeLabel}
+                  readiness={readiness ?? defaultReadiness()}
+                  assignments={assignments}
+                  unmapped={unmapped}
+                  selectedAssignmentId={selectedAssignmentId}
+                  onSelectAssignment={(id) => setSelectedAssignmentId(id)}
+                  onHandoff={handleHandoff}
+                  onSampleHandoff={handleSampleHandoff}
+                  onAbort={() => setAbortOpen(true)}
+                  onLabelMetaUpdated={refresh}
+                  readinessOpen={readinessOpen}
+                  onReadinessOpenChange={setReadinessOpen}
+                />
               <QueueLine
                 queued={queued}
                 onAdd={() => setNoteOpen(true)}
                 onRemove={handleRemoveQueued}
                 onClearAll={handleClearQueue}
+                onSwitch={handleSwitchToQueued}
               />
             </div>
             <ConversationMeta
               chatlogId={focused.chatlog_id}
               notebook={focused.notebook}
               turnCount={focused.conversation_turn_count}
+              samplingPick={focused.sampling_pick}
+              conversationStudentMessages={focused.conversation_student_messages}
+              pendingStudentMessageNumber={focused.pending_student_message_number}
+              neighborScoresAvailable={focused.neighbor_scores_available}
+              neighborUncertaintyPct={focused.neighbor_uncertainty_pct}
+              neighborNoveltyPct={focused.neighbor_novelty_pct}
+              conversationNoveltyPct={focused.conversation_novelty_pct}
+              themeNoveltyPct={focused.theme_novelty_pct}
+              studentSpecificityPct={focused.student_specificity_pct}
+              studentRarityPct={focused.student_rarity_pct}
             />
           </>
         }
@@ -501,7 +567,7 @@ export function LabelRunPage() {
           <DecisionDock
             onDecide={handleDecide}
             onUndo={handleUndo}
-            onHandoff={handleHandoff}
+            onHandoff={openHandoffPanel}
             onSkipConversation={handleSkipConversation}
             disabled={busy}
             recent={recent}
@@ -512,8 +578,8 @@ export function LabelRunPage() {
         onNo={() => handleDecide('no')}
         onSkip={() => handleDecide('skip')}
         onUndo={handleUndo}
-        // INTENTIONALLY no onAcceptAi — original keyboard handler did not bind Enter.
-        disabled={busy || noteOpen || abortOpen}
+        onAcceptAi={recent ? undefined : openHandoffPanel}
+        disabled={busy || noteOpen || abortOpen || readinessOpen}
       />
       <NoteLabelPopover
         open={noteOpen}

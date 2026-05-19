@@ -2539,6 +2539,109 @@ def get_analysis_temporal(
     }
 
 
+@app.get("/api/export/onehot-csv")
+def export_onehot_csv(db: Session = Depends(get_session)):
+    """Wide-format export for the single-label Summaries page: one row per
+    reviewed message, with each non-archived single-mode label as a one-hot
+    column (1 = value="yes"; 0 = "no"/"skip"/no decision). Joins external
+    Postgres to fetch user_email and the external conversation_id (UUID)."""
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(
+            LabelDefinition.archived_at == None,
+            LabelDefinition.mode == "single",
+        )
+        .order_by(LabelDefinition.sort_order, LabelDefinition.id)
+    ).all()
+    label_id_to_name: dict = {lbl.id: lbl.name for lbl in labels}
+    label_columns = [lbl.name for lbl in labels]
+    active_label_ids = set(label_id_to_name.keys())
+
+    apps = db.exec(
+        select(
+            LabelApplication.chatlog_id,
+            LabelApplication.message_index,
+            LabelApplication.label_id,
+            LabelApplication.value,
+        )
+    ).all()
+
+    # (chatlog_id, message_index) -> set of label_ids with value="yes" (active only)
+    msg_labels: dict = {}
+    reviewed_keys: set = set()
+    for chatlog_id, message_index, label_id, value in apps:
+        if label_id not in active_label_ids:
+            continue
+        key = (chatlog_id, message_index)
+        reviewed_keys.add(key)
+        if value == "yes":
+            msg_labels.setdefault(key, set()).add(label_id)
+
+    if not reviewed_keys:
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["message", "email", "conversation_id"] + label_columns)
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=chatsight-onehot.csv"},
+        )
+
+    # message_text from local cache
+    needed_keys = reviewed_keys
+    text_by_key: dict = {}
+    for mc in db.exec(select(MessageCache)).all():
+        k = (mc.chatlog_id, mc.message_index)
+        if k in needed_keys:
+            text_by_key[k] = mc.message_text or ""
+
+    # email + external conversation_id per chatlog_id (best-effort: skip on failure)
+    chatlog_ids = sorted({k[0] for k in needed_keys})
+    email_by_chatlog: dict = {}
+    convid_by_chatlog: dict = {}
+    try:
+        with ext_engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT MIN(id) AS chatlog_id,
+                           MAX(user_email) AS user_email,
+                           payload->>'conversation_id' AS conv_id
+                    FROM events
+                    WHERE event_type IN ('tutor_query', 'tutor_response')
+                      AND payload->>'conversation_id' IS NOT NULL
+                    GROUP BY payload->>'conversation_id'
+                    HAVING MIN(id) = ANY(:ids)
+                """),
+                {"ids": chatlog_ids},
+            ).mappings().all()
+            for r in rows:
+                email_by_chatlog[r["chatlog_id"]] = r["user_email"] or ""
+                convid_by_chatlog[r["chatlog_id"]] = r["conv_id"] or ""
+    except Exception as e:
+        logging.warning(f"export_onehot_csv: external DB unreachable, email/conv_id will be blank: {e}")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["message", "email", "conversation_id"] + label_columns)
+    for key in sorted(needed_keys):
+        chatlog_id, _ = key
+        applied = msg_labels.get(key, set())
+        row = [
+            text_by_key.get(key, ""),
+            email_by_chatlog.get(chatlog_id, ""),
+            convid_by_chatlog.get(chatlog_id, ""),
+        ]
+        for lbl in labels:
+            row.append(1 if lbl.id in applied else 0)
+        writer.writerow(row)
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=chatsight-onehot.csv"},
+    )
+
+
 @app.get("/api/export/csv")
 def export_csv(db: Session = Depends(get_session)):
     rows = db.exec(
@@ -2915,6 +3018,12 @@ def get_sample():
 # Single-label binary flow
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _effective_hybrid_explore_fraction(label: LabelDefinition) -> float:
+    if label.hybrid_explore_fraction is not None:
+        return max(0.0, min(1.0, label.hybrid_explore_fraction))
+    return queue_service.default_hybrid_explore_fraction()
+
+
 def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelResponse:
     yes, no, skip, walked = decision_service.label_counts(db, label.id)
     total_convs = db.exec(select(MessageCache.chatlog_id).distinct()).all()
@@ -2931,6 +3040,8 @@ def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelRespon
         skip_count=skip,
         conversations_walked=walked,
         total_conversations=len(total_convs),
+        hybrid_explore_fraction=label.hybrid_explore_fraction,
+        hybrid_explore_effective=_effective_hybrid_explore_fraction(label),
     )
 
 
@@ -3284,6 +3395,39 @@ def activate_single_label(label_id: int, db: Session = Depends(get_session)):
     return _label_to_response(db, label)
 
 
+@app.post("/api/single-labels/{target_id}/switch", response_model=SingleLabelResponse)
+def switch_to_label(target_id: int, db: Session = Depends(get_session)):
+    target = db.get(LabelDefinition, target_id)
+    if not target or target.mode != "single" or target.phase != "queued":
+        raise HTTPException(status_code=404, detail="Queued label not found")
+
+    current = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.is_active == True)  # noqa: E712
+        .where(LabelDefinition.phase == "labeling")
+    ).first()
+
+    if current:
+        max_pos = db.exec(
+            select(func.max(LabelDefinition.queue_position))
+            .where(LabelDefinition.mode == "single")
+            .where(LabelDefinition.phase == "queued")
+        ).one()
+        current.is_active = False
+        current.phase = "queued"
+        current.queue_position = (max_pos + 1) if max_pos is not None else 0
+        db.add(current)
+
+    target.is_active = True
+    target.phase = "labeling"
+    target.queue_position = None
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    return _label_to_response(db, target)
+
+
 @app.post("/api/single-labels/{label_id}/close", response_model=SingleLabelResponse)
 def close_single_label(label_id: int, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, label_id)
@@ -3323,7 +3467,13 @@ def get_next_focused(
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
 
-    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    assist_service.rebuild_cache_if_stale(db, label_id)
+    payload = queue_service.next_message_for_label(
+        db,
+        label_id,
+        assignment_id,
+        explore_fraction=_effective_hybrid_explore_fraction(label),
+    )
     if not payload:
         return None
     return FocusedMessageResponse(**payload)
@@ -3362,7 +3512,15 @@ def _decide_response(
     db: Session, label_id: int, assignment_id: Optional[int] = None
 ) -> DecideResponse:
     """Build the combined next-message + readiness payload for the /run hot path."""
-    payload = queue_service.next_message_for_label(db, label_id, assignment_id)
+    label = db.get(LabelDefinition, label_id)
+    explore = _effective_hybrid_explore_fraction(label) if label else None
+    assist_service.rebuild_cache_if_stale(db, label_id)
+    payload = queue_service.next_message_for_label(
+        db,
+        label_id,
+        assignment_id,
+        explore_fraction=explore,
+    )
     nxt = FocusedMessageResponse(**payload) if payload else None
     readiness = ReadinessResponse(**decision_service.compute_readiness(db, label_id))
     return DecideResponse(next=nxt, readiness=readiness)
@@ -4413,6 +4571,11 @@ def patch_single_label(
         if not (0.0 <= body.review_threshold <= 1.0):
             raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
         label.review_threshold = body.review_threshold
+    if "hybrid_explore_fraction" in body.model_dump(exclude_unset=True):
+        v = body.hybrid_explore_fraction
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise HTTPException(status_code=422, detail="hybrid_explore_fraction must be in [0, 1]")
+        label.hybrid_explore_fraction = v
 
     db.add(label)
     db.commit()
@@ -4423,15 +4586,33 @@ def patch_single_label(
 
 @app.delete("/api/single-labels/{label_id}")
 def delete_single_label(label_id: int, db: Session = Depends(get_session)):
-    """Archives the label (matches the existing label-archive behavior).
-    Returns orphaned messages to the unlabeled pool implicitly via the
-    `archived_at` filter applied by other queries."""
+    """Archives the label. If it was the active one, also clears is_active
+    and auto-promotes the next queued label so the Run page swaps cleanly
+    (mirrors the handoff flow). Without clearing is_active, the active-label
+    query keeps returning this archived row and abort appears broken."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="single-label not found")
 
+    was_active = label.is_active
     label.archived_at = datetime.utcnow()
+    label.is_active = False
     db.add(label)
+
+    if was_active:
+        next_q = db.exec(
+            select(LabelDefinition)
+            .where(LabelDefinition.mode == "single")
+            .where(LabelDefinition.phase == "queued")
+            .where(LabelDefinition.archived_at == None)  # noqa: E711
+            .order_by(LabelDefinition.queue_position)
+        ).first()
+        if next_q:
+            next_q.is_active = True
+            next_q.phase = "labeling"
+            next_q.queue_position = None
+            db.add(next_q)
+
     db.commit()
     return {"ok": True}
 

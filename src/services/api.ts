@@ -258,6 +258,16 @@ export const api = {
     return res.blob()
   },
 
+  exportOneHotCsv: async (): Promise<Blob> => {
+    if (USE_MOCK) {
+      const header = 'message,email,conversation_id,Concept Question\n'
+      return new Blob([header + '"Hello",a@b.edu,abc-123,1\n'], { type: 'text/csv' })
+    }
+    const res = await fetch('/api/export/onehot-csv')
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.blob()
+  },
+
   // ── Recalibration ──────────────────────────────────────────────
   getRecalibration: (force = false): Promise<RecalibrationItem | null> =>
     USE_MOCK ? Promise.resolve(force ? mockApi.recalibrationForced() : mockApi.recalibration())
@@ -303,6 +313,10 @@ export const api = {
   activateSingleLabel: (id: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
              : req(`/api/single-labels/${id}/activate`, { method: 'POST' }),
+
+  switchToLabel: (targetId: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
+             : req(`/api/single-labels/${targetId}/switch`, { method: 'POST' }),
 
   closeSingleLabel: (id: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
@@ -571,7 +585,12 @@ export const api = {
 
   patchSingleLabel: (
     id: number,
-    patch: { name?: string; description?: string; review_threshold?: number },
+    patch: {
+      name?: string
+      description?: string
+      review_threshold?: number
+      hybrid_explore_fraction?: number | null
+    },
   ): Promise<SingleLabelDetail> =>
     USE_MOCK ? Promise.resolve({
       id, name: patch.name ?? 'Mock Label', description: patch.description ?? null,

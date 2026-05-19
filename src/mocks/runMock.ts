@@ -18,6 +18,8 @@ export const mockActiveLabel: SingleLabel = {
   skip_count: 0,
   conversations_walked: 4,
   total_conversations: 12,
+  hybrid_explore_fraction: null,
+  hybrid_explore_effective: 0.35,
 }
 
 export const mockQueuedLabels: SingleLabel[] = [
@@ -34,6 +36,8 @@ export const mockQueuedLabels: SingleLabel[] = [
     skip_count: 0,
     conversations_walked: 0,
     total_conversations: 12,
+    hybrid_explore_fraction: null,
+    hybrid_explore_effective: 0.35,
   },
   {
     id: 3,
@@ -48,6 +52,8 @@ export const mockQueuedLabels: SingleLabel[] = [
     skip_count: 0,
     conversations_walked: 0,
     total_conversations: 12,
+    hybrid_explore_fraction: null,
+    hybrid_explore_effective: 0.35,
   },
 ]
 
@@ -127,6 +133,19 @@ export const mockFocusedMessage: FocusedMessage = {
   conversation_turn_count: fullThread.length,
   thread: fullThread,
   focus_index: 10,  // position of the focused turn in the full thread
+  sampling_pick: 'explore',
+  conversation_summary: null,
+  pick_rationale: 'Specific student help (not generic spam).',
+  conversation_student_messages: 7,
+  pending_student_message_number: 6,
+  neighbor_scores_available: true,
+  neighbor_uncertainty_pct: 72,
+  neighbor_novelty_pct: 41,
+  conversation_novelty_pct: 88,
+  theme_novelty_pct: 76,
+  student_specificity_pct: 91,
+  student_rarity_pct: 84,
+  sampling_hint: null,
 }
 
 export const mockReadiness: ReadinessState = {
