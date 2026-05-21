@@ -1,3 +1,7 @@
+import { Settings } from 'lucide-react'
+import { useState } from 'react'
+import { useKeybinds } from '../../hooks/useKeybinds'
+import { KeybindSettingsModal } from '../decision/KeybindSettingsModal'
 import type { DecisionValue } from '../../types'
 
 interface DecisionDockProps {
@@ -23,13 +27,21 @@ export function DecisionDock({
   recent,
   flash = null,
 }: DecisionDockProps) {
+  const { keybinds } = useKeybinds()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const formatKey = (key: string) => {
+    if (key === ' ') return '␣'
+    return key.toUpperCase()
+  }
+
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
       <div className="max-w-[760px] mx-auto flex flex-col items-center gap-3.5">
         <div className="flex gap-3 justify-center">
           <DecisionButton
             label="Yes"
-            kbd="Y"
+            kbd={formatKey(keybinds.yes)}
             tone="yes"
             onClick={() => onDecide('yes')}
             disabled={disabled}
@@ -37,7 +49,7 @@ export function DecisionDock({
           />
           <DecisionButton
             label="No"
-            kbd="N"
+            kbd={formatKey(keybinds.no)}
             tone="no"
             onClick={() => onDecide('no')}
             disabled={disabled}
@@ -45,7 +57,7 @@ export function DecisionDock({
           />
           <DecisionButton
             label="Skip"
-            kbd="S"
+            kbd={formatKey(keybinds.skip)}
             tone="skip"
             onClick={() => onDecide('skip')}
             disabled={disabled}
@@ -54,23 +66,36 @@ export function DecisionDock({
         {recent ? (
           <RecentLine recent={recent} onUndo={onUndo} />
         ) : (
-          <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint">
+          <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint items-center">
             <button onClick={onUndo} className="hover:text-on-canvas transition-colors">
-              <KeyChip>Z</KeyChip> undo
+              <KeyChip>{formatKey(keybinds.undo)}</KeyChip> undo
             </button>
             <button
               onClick={onSkipConversation}
               className="hover:text-on-canvas transition-colors"
               title="Skip every remaining message in this conversation"
             >
-              <KeyChip>⇧S</KeyChip> skip conversation
+              <KeyChip>⇧{formatKey(keybinds.skip)}</KeyChip> skip conversation
             </button>
-            <button onClick={onHandoff} className="hover:text-on-canvas transition-colors">
+            <button
+              type="button"
+              onClick={onHandoff}
+              className="hover:text-on-canvas transition-colors"
+              title="Open handoff readiness (Enter)"
+            >
               <KeyChip>⏎</KeyChip> hand off
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="ml-2 p-1 rounded-sm hover:bg-surface text-muted hover:text-on-canvas transition-colors"
+              title="Keyboard shortcuts"
+            >
+              <Settings size={13} />
             </button>
           </div>
         )}
       </div>
+      <KeybindSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }
@@ -88,7 +113,13 @@ function RecentLine({
   recent: { value: DecisionValue; label: string }
   onUndo: () => void
 }) {
+  const { keybinds } = useKeybinds()
   const word = recent.value === 'yes' ? 'Yes' : recent.value === 'no' ? 'No' : 'Skip'
+  const formatKey = (key: string) => {
+    if (key === ' ') return 'Space'
+    return key.toUpperCase()
+  }
+
   return (
     <div className="flex items-center gap-3 font-mono text-[10px] tracking-[0.08em] animate-[fadeUp_.18s_ease-out]">
       <span className={`${recentTone[recent.value]} font-medium`}>● {word}</span>
@@ -97,7 +128,7 @@ function RecentLine({
         onClick={onUndo}
         className="text-ochre hover:text-paper transition-colors border-b border-dashed border-ochre-dim"
       >
-        undo (Z)
+        undo ({formatKey(keybinds.undo)})
       </button>
     </div>
   )

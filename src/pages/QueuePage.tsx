@@ -17,6 +17,7 @@ import type {
 	RecalibrationStats,
 } from "../types";
 import { api } from "../services/api";
+import { useKeybinds } from "../hooks/useKeybinds";
 import { ProgressSidebar } from "../components/queue/ProgressSidebar";
 import { MessageCard } from "../components/queue/MessageCard";
 import { ArchiveConfirmModal } from "../components/queue/ArchiveConfirmModal";
@@ -32,6 +33,7 @@ interface UndoState {
 }
 
 export function QueuePage() {
+	const { keybinds } = useKeybinds();
 	const [queue, setQueue] = useState<QueueItem[]>([]);
 	const [currentIdx, setCurrentIdx] = useState(0);
 	const [labels, setLabels] = useState<LabelDefinition[]>([]);
@@ -97,6 +99,16 @@ export function QueuePage() {
 	const [recalibrationToast, setRecalibrationToast] = useState<'match' | null>(null);
 
 	const currentMessage = queue[currentIdx] ?? null;
+
+	const formatKey = (key: string) => {
+		if (key === " ") return "Space";
+		if (key === "enter") return "Enter";
+		if (key.startsWith("shift+")) {
+			return "⇧" + key.split("+")[1].toUpperCase();
+		}
+		return key.toUpperCase();
+	};
+
 	const isBackNav = navPos !== null;
 	const isRecalibrating = recalibration !== null;
 	// Single source of truth for the on-screen message + which mode produced
@@ -541,18 +553,24 @@ export function QueuePage() {
 				if (label) handleToggleLabel(label.id);
 				return;
 			}
-			if (e.key === "Enter" || e.key === "n") {
+			const rawKey = e.key.toLowerCase();
+			const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey;
+
+			if (pressedKey === keybinds.yes || rawKey === "enter" || rawKey === "n") {
 				if (!isBackNav && (isReviewing || appliedLabelIds.size > 0)) {
 					e.preventDefault(); // prevent focused button from firing a click
 					handleNext();
 				}
 				return;
 			}
-			if (e.key === "s") {
-				if (!isReviewing && !isBackNav) handleSkip();
+			if (pressedKey === keybinds.skip || rawKey === "s") {
+				if (!isReviewing && !isBackNav) {
+					if (rawKey === " ") e.preventDefault(); // prevent scroll if space is bound to skip
+					handleSkip();
+				}
 				return;
 			}
-			if (e.key === "z" || (e.ctrlKey && e.key === "z")) {
+			if (pressedKey === keybinds.undo || rawKey === "z" || (e.ctrlKey && rawKey === "z")) {
 				handleUndo();
 				return;
 			}
@@ -585,6 +603,7 @@ export function QueuePage() {
 		isBackNav,
 		archiveReview,
 		recalibration,
+		keybinds,
 		handleToggleLabel,
 		handleNext,
 		handleSkip,
@@ -891,7 +910,7 @@ export function QueuePage() {
 					</div>
 					<div className="flex gap-3 text-[10px] text-faint">
 						<span><kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd> toggle</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">Enter</kbd> submit</span>
+						<span><kbd className="bg-elevated px-1 rounded text-muted">{formatKey(keybinds.yes)}</kbd> submit</span>
 						<span><kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd> cancel</span>
 					</div>
 				</div>
@@ -900,11 +919,11 @@ export function QueuePage() {
 				<div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
 						<span className="bg-amber-500 text-black text-[10px] font-semibold px-2 py-0.5 rounded">MISMATCH</span>
-						<span className="text-warning-name text-xs">Labels differ from original — toggle labels to reconcile, then press Enter</span>
+						<span className="text-warning-name text-xs">Labels differ from original — toggle labels to reconcile, then press {formatKey(keybinds.yes)}</span>
 					</div>
 					<div className="flex gap-3 text-[10px] text-faint">
 						<span><kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd> toggle</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">Enter</kbd> confirm</span>
+						<span><kbd className="bg-elevated px-1 rounded text-muted">{formatKey(keybinds.yes)}</kbd> confirm</span>
 						<span><kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd> keep original</span>
 					</div>
 				</div>

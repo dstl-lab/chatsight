@@ -269,7 +269,11 @@ export interface SingleLabel {
   skip_count: number
   conversations_walked: number
   total_conversations: number
+  hybrid_explore_fraction: number | null
+  hybrid_explore_effective: number
 }
+
+export type SamplingPick = 'continue' | 'explore' | 'round_robin'
 
 export interface ConversationTurn {
   message_index: number
@@ -285,6 +289,20 @@ export interface FocusedMessage {
   conversation_turn_count: number
   thread: ConversationTurn[]
   focus_index: number
+  sampling_pick: SamplingPick | null
+  conversation_summary: string | null
+  pick_rationale: string | null
+  conversation_student_messages: number | null
+  pending_student_message_number: number | null
+  neighbor_scores_available: boolean
+  neighbor_uncertainty_pct: number | null
+  neighbor_novelty_pct: number | null
+  conversation_novelty_pct: number | null
+  theme_novelty_pct: number | null
+  student_specificity_pct: number | null
+  student_rarity_pct: number | null
+  /** @deprecated use conversation_summary / pick_rationale */
+  sampling_hint: string | null
 }
 
 export type ReadinessTier = 'gray' | 'amber' | 'green'

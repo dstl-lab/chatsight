@@ -1,5 +1,5 @@
 // src/components/Navigation.tsx
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { Sun, Moon, Monitor, Layers, Target } from 'lucide-react'
 import { useTheme, type Theme } from '../hooks/useTheme'
 import { useMode, type Mode } from '../hooks/useMode'
@@ -11,10 +11,12 @@ const themeLabel: Record<Theme, string> = { light: 'Light', dark: 'Dark', system
 const modeIcon: Record<Mode, typeof Layers> = { multi: Layers, single: Target }
 const modeNext: Record<Mode, Mode> = { multi: 'single', single: 'multi' }
 const modeLabel: Record<Mode, string> = { multi: 'Multi-label', single: 'Single-label' }
+const modeLandingPath: Record<Mode, string> = { multi: '/queue', single: '/run' }
 
 export function Navigation() {
   const { theme, setTheme } = useTheme()
   const { mode, setMode } = useMode()
+  const navigate = useNavigate()
   const ThemeIcon = themeIcon[theme]
   const ModeIcon = modeIcon[mode]
 
@@ -60,7 +62,11 @@ export function Navigation() {
       </div>
       <div className="ml-auto flex items-center gap-2">
         <button
-          onClick={() => setMode(modeNext[mode])}
+          onClick={() => {
+            const next = modeNext[mode]
+            setMode(next)
+            navigate(modeLandingPath[next])
+          }}
           className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border font-mono text-[10px] tracking-[0.05em] transition-colors ${
             mode === 'single'
               ? 'border-ochre-dim text-ochre'

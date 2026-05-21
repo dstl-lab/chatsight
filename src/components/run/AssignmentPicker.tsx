@@ -45,19 +45,21 @@ export function AssignmentPicker({
         {label} <span className="opacity-60">▾</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-30 w-[260px] bg-bg-warm border border-edge rounded-md shadow-2xl py-1.5">
-          <PickerItem
-            active={selectedId === null}
-            onClick={() => {
-              onSelect(null)
-              setOpen(false)
-            }}
-            name="All conversations"
-            count={unmapped?.total_count ?? null}
-          />
-          {assignments.length > 0 && (
-            <div className="h-px bg-edge mx-2 my-1" />
-          )}
+        <div className="absolute right-0 top-full mt-2 z-30 w-[260px] max-h-[min(80vh,560px)] overflow-y-auto overscroll-contain bg-bg-warm border border-edge rounded-md shadow-2xl">
+          <div className="sticky top-0 z-10 bg-bg-warm pt-1.5">
+            <PickerItem
+              active={selectedId === null}
+              onClick={() => {
+                onSelect(null)
+                setOpen(false)
+              }}
+              name="All conversations"
+              count={unmapped?.total_count ?? null}
+            />
+            {assignments.length > 0 && (
+              <div className="h-px bg-edge mx-2 mt-1" />
+            )}
+          </div>
           {assignments.map((a) => (
             <PickerItem
               key={a.id}
@@ -80,13 +82,15 @@ export function AssignmentPicker({
               hint
             />
           )}
-          <div className="h-px bg-edge mx-2 my-1" />
-          <a
-            href="/assignments"
-            className="block px-3 py-2 font-mono text-[10px] tracking-[0.06em] uppercase text-muted hover:text-ochre transition-colors"
-          >
-            + Manage assignments →
-          </a>
+          <div className="sticky bottom-0 z-10 bg-bg-warm pb-1.5">
+            <div className="h-px bg-edge mx-2 mb-1" />
+            <a
+              href="/assignments"
+              className="block px-3 py-2 font-mono text-[10px] tracking-[0.06em] uppercase text-muted hover:text-ochre transition-colors"
+            >
+              + Manage assignments →
+            </a>
+          </div>
         </div>
       )}
     </div>

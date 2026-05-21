@@ -134,6 +134,49 @@ def test_close_auto_pops_next_queued(client):
     assert body["queue_position"] is None
 
 
+def test_delete_active_clears_is_active_and_pops_queued(client):
+    # Regression: deleting (abort) the active label must clear is_active so
+    # /active stops returning the archived row, and the next queued label
+    # should auto-promote (mirrors handoff/close behavior).
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+    queued = client.post("/api/single-labels/queue", json={"name": "frustration"}).json()
+
+    r = client.delete(f"/api/single-labels/{active['id']}")
+    assert r.status_code == 200
+
+    # /active must NOT return the archived label.
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is not None
+    assert active_now["id"] == queued["id"]
+    assert active_now["phase"] == "labeling"
+    assert active_now["queue_position"] is None
+
+
+def test_delete_non_active_does_not_disturb_active(client):
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+    queued = client.post("/api/single-labels/queue", json={"name": "frustration"}).json()
+
+    r = client.delete(f"/api/single-labels/{queued['id']}")
+    assert r.status_code == 200
+
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is not None
+    assert active_now["id"] == active["id"]
+
+
+def test_delete_lone_active_leaves_no_active(client):
+    active = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{active['id']}/activate")
+
+    r = client.delete(f"/api/single-labels/{active['id']}")
+    assert r.status_code == 200
+
+    active_now = client.get("/api/single-labels/active").json()
+    assert active_now is None
+
+
 def test_undo_removes_last_decision(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()
@@ -263,6 +306,22 @@ def test_skip_conversation_endpoint_jumps_to_next_conversation(client, session):
     assert all(r.value == "skip" for r in skips)
 
 
+def test_patch_hybrid_explore_fraction(client, session):
+    lab = client.post("/api/single-labels", json={"name": "hybrid"}).json()
+    lid = lab["id"]
+    client.post(f"/api/single-labels/{lid}/activate")
+    r = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": 0.42})
+    assert r.status_code == 200
+    active = client.get("/api/single-labels/active").json()
+    assert active["hybrid_explore_fraction"] == 0.42
+    assert active["hybrid_explore_effective"] == 0.42
+    r2 = client.patch(f"/api/single-labels/{lid}", json={"hybrid_explore_fraction": None})
+    assert r2.status_code == 200
+    active2 = client.get("/api/single-labels/active").json()
+    assert active2["hybrid_explore_fraction"] is None
+    assert active2["hybrid_explore_effective"] == 0.0
+
+
 def test_fetch_full_thread_cache_hits_avoid_second_call(monkeypatch):
     """Second call for the same chatlog_id should reuse cache without re-invoking the uncached fetcher."""
     queue_service._clear_thread_cache()
@@ -295,6 +354,82 @@ def test_fetch_full_thread_empty_result_is_not_cached(monkeypatch):
     assert first == []
     assert second and second[0]["text"] == "ok"
     assert calls == [8888, 8888]
+
+
+def test_fetch_full_thread_uncached_skips_preamble_tutor(monkeypatch):
+    """Leading tutor_response events must not appear before the first student turn."""
+    queue_service._clear_thread_cache()
+
+    class _Conn:
+        def execute(self, _sql, _params):
+            return self
+
+        def fetchall(self):
+            return [
+                ("tutor_response", None, "Welcome to the tutor."),
+                ("tutor_query", "first student question", None),
+                ("tutor_response", None, "Tutor answer."),
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(queue_service.ext_engine, "connect", lambda: _Conn())
+
+    thread = queue_service._fetch_full_thread_uncached(12345)
+    assert [t["role"] for t in thread] == ["student", "tutor"]
+    assert thread[0]["text"] == "first student question"
+    assert thread[1]["text"] == "Tutor answer."
+
+
+def test_thread_from_cache_skips_context_before_on_first_message(session):
+    """Message 0 context_before is pre-conversation; thread must start with student."""
+    session.add(MessageCache(
+        chatlog_id=920,
+        message_index=0,
+        message_text="first student question",
+        context_before="pre-conversation tutor greeting",
+        context_after="tutor after first",
+    ))
+    session.add(MessageCache(
+        chatlog_id=920,
+        message_index=1,
+        message_text="second student question",
+        context_before="tutor after first",
+        context_after="tutor after second",
+    ))
+    session.commit()
+
+    thread = queue_service._thread_from_message_cache(session, 920)
+    assert [t["role"] for t in thread] == ["student", "tutor", "student", "tutor"]
+    assert thread[0]["text"] == "first student question"
+    assert "pre-conversation" not in "\n".join(t["text"] for t in thread)
+
+
+def test_next_thread_starts_with_student_when_pg_has_preamble(client, session, monkeypatch):
+    """/next must not surface a leading tutor turn from Postgres ordering."""
+    queue_service._clear_thread_cache()
+    monkeypatch.setattr(
+        queue_service,
+        "_fetch_full_thread_uncached",
+        lambda _cid: [
+            {"message_index": 0, "role": "student", "text": "first student", "student_index": 0},
+            {"message_index": 1, "role": "tutor", "text": "Tutor answer."},
+        ],
+    )
+
+    session.add(MessageCache(chatlog_id=930, message_index=0, message_text="first student"))
+    session.commit()
+
+    label = client.post("/api/single-labels", json={"name": "preamble"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    r = client.get(f"/api/single-labels/{label['id']}/next")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["thread"][0]["role"] == "student"
 
 
 def test_next_focused_fallback_includes_tutor_from_cache(client, session, monkeypatch):

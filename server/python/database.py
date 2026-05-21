@@ -93,6 +93,8 @@ def _migrate_label_definition(conn, inspect, text):
         ))
     if "guidance" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN guidance TEXT"))
+    if "hybrid_explore_fraction" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN hybrid_explore_fraction FLOAT"))
 
 
 def _migrate_label_application(conn, inspect, text):
@@ -152,6 +154,17 @@ def _cleanup_polluted_multi_label_rows(conn, text):
         print(f"[chatsight] cleanup: removed {n} stale value-bearing rows from multi-mode labels")
 
 
+def _migrate_conversation_cursor(conn, inspect, text):
+    cols = [c["name"] for c in inspect(conn).get_columns("conversationcursor")]
+    if "last_message_index" not in cols:
+        conn.execute(
+            text(
+                "ALTER TABLE conversationcursor "
+                "ADD COLUMN last_message_index INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
     with engine.connect() as conn:
@@ -160,6 +173,7 @@ def create_db_and_tables():
         _migrate_label_application(conn, inspect, text)
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
+        _migrate_conversation_cursor(conn, inspect, text)
         _cleanup_polluted_multi_label_rows(conn, text)
         # Indexes
         conn.execute(text(

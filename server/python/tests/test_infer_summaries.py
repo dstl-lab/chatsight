@@ -81,7 +81,7 @@ def test_handoff_summaries_includes_handed_off_and_classifying(client, session):
         json={"chatlog_id": 601, "message_index": 0, "value": "no"},
     )
 
-    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         return [{"index": i, "value": "yes", "confidence": 0.9} for i in range(len(messages))]
 
     def fake_summary(*args, **kwargs):

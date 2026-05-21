@@ -1,4 +1,5 @@
 import type { MessageListItem } from '../../types'
+import { AppliedByGlyph } from './AppliedByGlyph'
 
 interface MessageListRowProps {
   item: MessageListItem
@@ -16,10 +17,19 @@ export function MessageListRow({ item, active, onSelect }: MessageListRowProps) 
   return (
     <div
       onClick={onSelect}
-      className={`grid grid-cols-[38px_1fr] items-center gap-2.5 px-5 py-2 cursor-pointer ${
+      // active rows draw a 2px left border; pl-[18px] = px-5 (20px) minus that
+      // border so the glyph/confidence columns don't shift.
+      className={`grid grid-cols-[16px_38px_1fr] items-center gap-2.5 px-5 py-2 cursor-pointer ${
         active ? 'bg-elevated border-l-2 border-ochre pl-[18px]' : 'hover:bg-surface'
       }`}
     >
+      <span className="flex justify-center">
+        <AppliedByGlyph
+          appliedBy={item.applied_by}
+          chatlogId={item.chatlog_id}
+          messageIndex={item.message_index}
+        />
+      </span>
       <span className={`font-mono text-[11px] text-right tabular-nums ${confColor(item.verdict)}`}>
         {item.confidence !== null ? item.confidence.toFixed(2) : '—'}
       </span>

@@ -36,7 +36,7 @@ def _decide(client, label_id, chatlog_id, message_index, value):
 def _run_classification(session, label_id):
     """Test helper — run the same classification path the background task would, but
     using the test's in-memory session. Bypasses Gemini entirely via patches."""
-    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         return [
             {"index": i, "value": "yes" if i % 2 == 0 else "no", "confidence": 0.9 if i < 2 else 0.4}
             for i in range(len(messages))
@@ -145,7 +145,7 @@ def test_parallel_classify_retries_on_rate_limit_then_succeeds(client, session):
     class _RateLimited(Exception):
         code = 429
 
-    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         call_count["n"] += 1
         if call_count["n"] <= 2:
             raise _RateLimited("429 RESOURCE_EXHAUSTED: quota exceeded")
@@ -211,7 +211,7 @@ def test_parallel_classify_retries_on_request_timeout(client, session):
     class _ReadTimeout(Exception):
         pass
 
-    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def flaky_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         call_count["n"] += 1
         if call_count["n"] <= 2:
             raise _ReadTimeout("read timeout while waiting for Gemini response")
@@ -451,7 +451,7 @@ def test_sample_size_caps_pending_to_n(client, session):
     a = client.post("/api/single-labels", json={"name": "help"}).json()
     client.post(f"/api/single-labels/{a['id']}/activate")
 
-    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         return [
             {"index": i, "value": "yes", "confidence": 0.9}
             for i in range(len(messages))
@@ -484,7 +484,7 @@ def test_sample_size_above_pending_uses_all(client, session):
     a = client.post("/api/single-labels", json={"name": "help"}).json()
     client.post(f"/api/single-labels/{a['id']}/activate")
 
-    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         return [
             {"index": i, "value": "yes", "confidence": 0.9}
             for i in range(len(messages))
@@ -513,7 +513,7 @@ def test_sample_size_omitted_classifies_all_pending(client, session):
     a = client.post("/api/single-labels", json={"name": "help"}).json()
     client.post(f"/api/single-labels/{a['id']}/activate")
 
-    def fake_classify(label_name, label_description, yes_examples, no_examples, messages):
+    def fake_classify(label_name, label_description, yes_examples, no_examples, messages, guidance=None):
         return [
             {"index": i, "value": "yes", "confidence": 0.9}
             for i in range(len(messages))

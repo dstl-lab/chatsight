@@ -7,6 +7,7 @@ import DiscoverSection from './DiscoverSection'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useKeybinds } from '../../hooks/useKeybinds'
 
 interface AutolabelStatus {
   running: boolean
@@ -169,6 +170,7 @@ export function ProgressSidebar({
   onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
   recalibration, recalibrationStats,
 }: Props) {
+  const { keybinds } = useKeybinds()
   const [showPopover, setShowPopover] = useState(false)
   const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
   const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
@@ -177,6 +179,15 @@ export function ProgressSidebar({
   const [contextMenu, setContextMenu] = useState<{ labelId: number; x: number; y: number } | null>(null)
   const [renamingLabelId, setRenamingLabelId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
+
+  const formatKey = (key: string) => {
+    if (key === ' ') return 'Space'
+    if (key === 'enter') return 'Enter'
+    if (key.startsWith('shift+')) {
+      return '⇧' + key.split('+')[1].toUpperCase()
+    }
+    return key.toUpperCase()
+  }
 
   const startHover = useCallback((labelId: number) => {
     if (editingLabelId === labelId) return
@@ -331,7 +342,7 @@ export function ProgressSidebar({
           {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
         </p>
         {recalibration?.phase === 'reconcile' && (
-          <p className="text-[10px] text-disabled mb-2">Toggle with 1-9 keys, Enter to confirm</p>
+          <p className="text-[10px] text-disabled mb-2">Toggle with 1-9 keys, {formatKey(keybinds.yes)} to confirm</p>
         )}
         <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

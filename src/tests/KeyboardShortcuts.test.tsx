@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 import { QueuePage } from '../pages/QueuePage'
+import { KeybindProvider } from '../hooks/useKeybinds'
 
 const {
   mockApplyLabel, mockSkipMessage, mockGetLabels,
@@ -54,7 +55,15 @@ vi.mock('../services/api', () => ({
     getOrphanedMessages: vi.fn().mockResolvedValue({ messages: [], count: 0 }),
   },
 }))
-const renderQueue = () => render(<MemoryRouter><QueuePage /></MemoryRouter>)
+
+const renderQueue = () =>
+  render(
+    <KeybindProvider>
+      <MemoryRouter>
+        <QueuePage />
+      </MemoryRouter>
+    </KeybindProvider>
+  )
 
 test('pressing "s" calls skipMessage', async () => {
   mockSkipMessage.mockClear()

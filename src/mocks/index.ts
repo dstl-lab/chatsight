@@ -44,6 +44,8 @@ export const mockApi = {
     mode: "single", phase: "queued", is_active: false, queue_position: 0,
     yes_count: 5, no_count: 0, skip_count: 0,
     conversations_walked: 1, total_conversations: 12,
+    hybrid_explore_fraction: null,
+    hybrid_explore_effective: 0.35,
   } satisfies SingleLabel,
 
   session: {

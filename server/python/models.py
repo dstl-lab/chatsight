@@ -44,6 +44,9 @@ class LabelDefinition(SQLModel, table=True):
     # Settings tab; default 0.7 matches the implicit threshold the legacy code used.
     review_threshold: float = Field(default=0.7)
     guidance: Optional[str] = Field(default=None)
+    # Hybrid queue: fraction [0,1] of picks that bias toward richer conversations;
+    # None → use CHATSIGHT_HYBRID_EXPLORE_FRACTION env (default 0.35).
+    hybrid_explore_fraction: Optional[float] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):
@@ -105,6 +108,7 @@ class ConversationCursor(SQLModel, table=True):
     """Tracks resume position per (label_id, chatlog_id) for the single-label flow."""
     label_id: int = Field(foreign_key="labeldefinition.id", primary_key=True)
     chatlog_id: int = Field(primary_key=True)
+    last_message_index: int = Field(default=0)
     last_message_index_decided: int
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -162,6 +166,25 @@ class RecalibrationEvent(SQLModel, table=True):
     matched: bool                  # True if original_label_ids == relabel_ids
     session_id: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LabelExploreGradebook(SQLModel, table=True):
+    """Cached yes/no pattern summary for explore theme scoring (per label)."""
+    label_id: int = Field(primary_key=True, foreign_key="labeldefinition.id")
+    gradebook_json: str
+    human_label_count: int = Field(default=0)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ConversationProfile(SQLModel, table=True):
+    """Cached AI one-liner + embedding for a conversation under a label."""
+    label_id: int = Field(primary_key=True, foreign_key="labeldefinition.id")
+    chatlog_id: int = Field(primary_key=True)
+    one_liner: str
+    theme_tags_json: Optional[str] = Field(default=None)
+    summary_embedding: bytes
+    human_label_count_at_build: int = Field(default=0)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ConceptCandidate(SQLModel, table=True):

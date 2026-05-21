@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { ThreadView } from '../run/ThreadView'
+import { useKeybinds } from '../../hooks/useKeybinds'
 import type { ConversationTurn } from '../../types'
 
 export interface DecisionWorkspaceProps {
@@ -31,9 +32,10 @@ export function DecisionWorkspace({
   onAcceptAi,
   disabled = false,
 }: DecisionWorkspaceProps) {
-  const handlersRef = useRef({ onYes, onNo, onSkip, onUndo, onAcceptAi, disabled })
+  const { keybinds } = useKeybinds()
+  const handlersRef = useRef({ onYes, onNo, onSkip, onUndo, onAcceptAi, disabled, keybinds })
   useEffect(() => {
-    handlersRef.current = { onYes, onNo, onSkip, onUndo, onAcceptAi, disabled }
+    handlersRef.current = { onYes, onNo, onSkip, onUndo, onAcceptAi, disabled, keybinds }
   })
 
   useEffect(() => {
@@ -49,26 +51,24 @@ export function DecisionWorkspace({
         return
       const h = handlersRef.current
       if (h.disabled) return
-      // Modifier-prefixed shortcuts (shift+s, ctrl+z, cmd+enter, etc.) are reserved
-      // for callers' bespoke handlers. The shell only owns plain key presses.
-      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
-      const key = e.key.toLowerCase()
-      switch (key) {
-        case 'y':
-          h.onYes?.()
-          break
-        case 'n':
-          h.onNo?.()
-          break
-        case 's':
-          h.onSkip?.()
-          break
-        case 'z':
-          h.onUndo?.()
-          break
-        case 'enter':
-          h.onAcceptAi?.()
-          break
+      // Non-shift modifiers are reserved for callers' bespoke handlers.
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+
+      const rawKey = e.key.toLowerCase()
+      const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey
+      const k = h.keybinds
+
+      if (pressedKey === k.yes) {
+        h.onYes?.()
+      } else if (pressedKey === k.no) {
+        h.onNo?.()
+      } else if (pressedKey === k.skip) {
+        if (rawKey === ' ') e.preventDefault() // prevent scroll
+        h.onSkip?.()
+      } else if (pressedKey === k.undo) {
+        h.onUndo?.()
+      } else if (pressedKey === 'enter' || rawKey === 'enter') {
+        h.onAcceptAi?.()
       }
     }
     window.addEventListener('keydown', onKey)

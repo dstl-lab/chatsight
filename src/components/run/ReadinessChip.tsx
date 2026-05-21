@@ -7,6 +7,9 @@ interface ReadinessChipProps {
   labelId: number
   guidance: string | null
   onHandoff: () => void
+  /** When set, the readiness panel is controlled by the parent (e.g. Enter shortcut). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 const tierLabel: Record<ReadinessState['tier'], string> = {
@@ -36,8 +39,17 @@ const tierBlurb: Record<ReadinessState['tier'], string> = {
     'You have enough variety. Hand off whenever you’re ready — Gemini will classify the rest and surface low-confidence cases for review.',
 }
 
-export function ReadinessChip({ readiness, labelId, guidance, onHandoff }: ReadinessChipProps) {
-  const [open, setOpen] = useState(false)
+export function ReadinessChip({
+  readiness,
+  labelId,
+  guidance,
+  onHandoff,
+  open: openProp,
+  onOpenChange,
+}: ReadinessChipProps) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = openProp ?? internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
   const ref = useRef<HTMLDivElement>(null)
   const [geminiPreview, setGeminiPreview] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -121,7 +133,7 @@ export function ReadinessChip({ readiness, labelId, guidance, onHandoff }: Readi
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className="inline-flex items-center gap-2 px-[11px] py-[5px] rounded-full font-mono text-[11px] tracking-[0.04em] text-muted hover:text-on-canvas transition-colors"
         title="Click to see full readiness"
       >

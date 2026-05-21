@@ -258,6 +258,16 @@ export const api = {
     return res.blob()
   },
 
+  exportOneHotCsv: async (): Promise<Blob> => {
+    if (USE_MOCK) {
+      const header = 'message,email,conversation_id,Concept Question\n'
+      return new Blob([header + '"Hello",a@b.edu,abc-123,1\n'], { type: 'text/csv' })
+    }
+    const res = await fetch('/api/export/onehot-csv')
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+    return res.blob()
+  },
+
   // ── Recalibration ──────────────────────────────────────────────
   getRecalibration: (force = false): Promise<RecalibrationItem | null> =>
     USE_MOCK ? Promise.resolve(force ? mockApi.recalibrationForced() : mockApi.recalibration())
@@ -303,6 +313,10 @@ export const api = {
   activateSingleLabel: (id: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
              : req(`/api/single-labels/${id}/activate`, { method: 'POST' }),
+
+  switchToLabel: (targetId: number): Promise<SingleLabel> =>
+    USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: true })
+             : req(`/api/single-labels/${targetId}/switch`, { method: 'POST' }),
 
   closeSingleLabel: (id: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
@@ -576,7 +590,13 @@ export const api = {
 
   patchSingleLabel: (
     id: number,
-    patch: { name?: string; description?: string; review_threshold?: number; guidance?: string },
+    patch: {
+      name?: string
+      description?: string
+      review_threshold?: number
+      guidance?: string
+      hybrid_explore_fraction?: number | null
+    },
   ): Promise<SingleLabelDetail> =>
     USE_MOCK ? Promise.resolve({
       id, name: patch.name ?? 'Mock Label', description: patch.description ?? null,
@@ -589,7 +609,7 @@ export const api = {
   // ─── Handoff summaries ───
   listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>
     USE_MOCK
-      ? Promise.resolve([
+        ? Promise.resolve([
           {
             label_id: 2,
             label_name: 'frustration',
@@ -605,6 +625,11 @@ export const api = {
             classification_total: 142,
             error: null,
             error_kind: null,
+            batch_state: 'RUNNING',
+            batch_submitted_at: new Date().toISOString(),
+            batch_polled_at: new Date().toISOString(),
+            batch_total_count: 2,
+            batch_completed_count: 1,
           },
           {
             label_id: 1,
@@ -630,6 +655,11 @@ export const api = {
             classification_total: 142,
             error: null,
             error_kind: null,
+            batch_state: null,
+            batch_submitted_at: null,
+            batch_polled_at: null,
+            batch_total_count: null,
+            batch_completed_count: null,
           },
         ])
       : req('/api/handoff-summaries'),
