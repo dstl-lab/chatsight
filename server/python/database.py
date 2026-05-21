@@ -91,6 +91,8 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text(
             "ALTER TABLE labeldefinition ADD COLUMN review_threshold FLOAT NOT NULL DEFAULT 0.7"
         ))
+    if "guidance" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN guidance TEXT"))
     if "hybrid_explore_fraction" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN hybrid_explore_fraction FLOAT"))
 

@@ -259,6 +259,7 @@ export interface SingleLabel {
   id: number
   name: string
   description: string | null
+  guidance: string | null
   mode: LabelMode
   phase: LabelPhase
   is_active: boolean

@@ -267,6 +267,7 @@ class SingleLabelResponse(BaseModel):
     skip_count: int
     conversations_walked: int
     total_conversations: int
+    guidance: Optional[str] = None
     hybrid_explore_fraction: Optional[float] = None
     hybrid_explore_effective: float = 0.35
 
@@ -527,4 +528,9 @@ class LabelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     review_threshold: Optional[float] = None
+    guidance: Optional[str] = None
     hybrid_explore_fraction: Optional[float] = None
+
+
+class GeminiPreviewResponse(BaseModel):
+    summary: str

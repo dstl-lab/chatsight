@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReadinessState } from '../../types'
+import { api } from '../../services/api'
 
 interface ReadinessChipProps {
   readiness: ReadinessState
+  labelId: number
+  guidance: string | null
   onHandoff: () => void
   /** When set, the readiness panel is controlled by the parent (e.g. Enter shortcut). */
   open?: boolean
@@ -38,6 +41,8 @@ const tierBlurb: Record<ReadinessState['tier'], string> = {
 
 export function ReadinessChip({
   readiness,
+  labelId,
+  guidance,
   onHandoff,
   open: openProp,
   onOpenChange,
@@ -46,6 +51,34 @@ export function ReadinessChip({
   const open = openProp ?? internalOpen
   const setOpen = onOpenChange ?? setInternalOpen
   const ref = useRef<HTMLDivElement>(null)
+  const [geminiPreview, setGeminiPreview] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const lastFetchedYesCount = useRef<number | null>(null)
+
+  // Inline description edit
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [descDraft, setDescDraft] = useState('')
+  const [savingDesc, setSavingDesc] = useState(false)
+
+  // Refine guidance panel
+  const [refineOpen, setRefineOpen] = useState(false)
+  const [guidanceDraft, setGuidanceDraft] = useState('')
+  const [applyingGuidance, setApplyingGuidance] = useState(false)
+  // Track the latest saved guidance locally so reopening the panel after an
+  // apply shows the freshly saved text (parent prop only updates on next refresh).
+  const [savedGuidance, setSavedGuidance] = useState<string | null>(guidance)
+
+  useEffect(() => {
+    if (!open || readiness.tier === 'gray') return
+    if (previewLoading) return
+    if (lastFetchedYesCount.current === readiness.yes_count) return
+    lastFetchedYesCount.current = readiness.yes_count
+    setPreviewLoading(true)
+    api.getSingleLabelGeminiPreview(labelId)
+      .then(({ summary }) => setGeminiPreview(summary))
+      .catch(() => {})
+      .finally(() => setPreviewLoading(false))
+  }, [open, readiness.yes_count])
 
   useEffect(() => {
     if (!open) return
@@ -63,6 +96,40 @@ export function ReadinessChip({
     }
   }, [open])
 
+  const handleStartEdit = () => {
+    setDescDraft(geminiPreview ?? '')
+    setEditingDesc(true)
+  }
+
+  const handleSaveDesc = async () => {
+    setSavingDesc(true)
+    try {
+      await api.patchSingleLabel(labelId, { description: descDraft })
+      setGeminiPreview(descDraft)
+      setEditingDesc(false)
+    } finally {
+      setSavingDesc(false)
+    }
+  }
+
+  const handleOpenRefine = () => {
+    setGuidanceDraft(savedGuidance ?? '')
+    setRefineOpen(true)
+  }
+
+  const handleApplyGuidance = async () => {
+    setApplyingGuidance(true)
+    try {
+      await api.patchSingleLabel(labelId, { guidance: guidanceDraft })
+      setSavedGuidance(guidanceDraft)
+      const { summary } = await api.getSingleLabelGeminiPreview(labelId)
+      setGeminiPreview(summary)
+      setRefineOpen(false)
+    } finally {
+      setApplyingGuidance(false)
+    }
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -77,7 +144,7 @@ export function ReadinessChip({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-30 w-[340px] bg-bg-warm border border-edge rounded-md shadow-2xl overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 z-30 w-[360px] bg-bg-warm border border-edge rounded-md shadow-2xl overflow-hidden">
           <div className="px-5 pt-4 pb-3 border-b border-edge-subtle">
             <div className={`font-mono text-[10px] tracking-[0.18em] uppercase mb-1.5 ${
               readiness.tier === 'green'
@@ -109,6 +176,102 @@ export function ReadinessChip({
               </div>
             )}
           </div>
+
+          {(readiness.tier === 'amber' || readiness.tier === 'green') && (
+            <div className="px-5 pb-3">
+              <div className="p-3 bg-surface rounded border border-edge-subtle">
+                <div className="font-mono text-[9px] uppercase tracking-widest text-faint mb-1.5">
+                  Gemini's understanding
+                </div>
+
+                {previewLoading ? (
+                  <div className="font-serif text-[12px] text-faint italic">Generating…</div>
+                ) : editingDesc ? (
+                  <>
+                    <textarea
+                      autoFocus
+                      value={descDraft}
+                      onChange={(e) => setDescDraft(e.target.value)}
+                      rows={3}
+                      className="w-full text-[13px] font-serif bg-canvas border border-edge rounded px-2 py-1.5 text-on-surface resize-none focus:outline-none focus:border-ochre"
+                    />
+                    <div className="flex justify-end gap-2 mt-1.5">
+                      <button
+                        onClick={() => setEditingDesc(false)}
+                        className="font-mono text-[10px] text-faint hover:text-on-surface transition-colors"
+                      >
+                        cancel
+                      </button>
+                      <button
+                        onClick={handleSaveDesc}
+                        disabled={savingDesc}
+                        className="font-mono text-[10px] text-ochre hover:brightness-110 transition-colors disabled:opacity-50"
+                      >
+                        {savingDesc ? 'saving…' : 'save'}
+                      </button>
+                    </div>
+                  </>
+                ) : geminiPreview ? (
+                  <div className="flex items-start gap-2">
+                    <div className="font-serif text-[13px] text-on-surface leading-[1.5] flex-1">
+                      {geminiPreview}
+                    </div>
+                    <button
+                      onClick={handleStartEdit}
+                      title="Edit description"
+                      className="text-faint hover:text-on-surface transition-colors shrink-0 mt-0.5"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z"/>
+                      </svg>
+                    </button>
+                  </div>
+                ) : null}
+
+                {!previewLoading && !editingDesc && (
+                  <div className="mt-2 border-t border-edge-subtle pt-2">
+                    {refineOpen ? (
+                      <>
+                        <div className="font-mono text-[9px] uppercase tracking-widest text-faint mb-1.5">
+                          Guidance for Gemini
+                        </div>
+                        <textarea
+                          autoFocus
+                          value={guidanceDraft}
+                          onChange={(e) => setGuidanceDraft(e.target.value)}
+                          placeholder="e.g. Focus on probability questions, not general math"
+                          rows={3}
+                          className="w-full text-[12px] font-serif bg-canvas border border-edge rounded px-2 py-1.5 text-on-surface placeholder:text-faint resize-none focus:outline-none focus:border-ochre"
+                        />
+                        <div className="flex justify-end gap-2 mt-1.5">
+                          <button
+                            onClick={() => setRefineOpen(false)}
+                            className="font-mono text-[10px] text-faint hover:text-on-surface transition-colors"
+                          >
+                            cancel
+                          </button>
+                          <button
+                            onClick={handleApplyGuidance}
+                            disabled={applyingGuidance}
+                            className="font-mono text-[10px] text-ochre hover:brightness-110 transition-colors disabled:opacity-50"
+                          >
+                            {applyingGuidance ? 'applying…' : 'apply'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handleOpenRefine}
+                        className="font-mono text-[10px] text-faint hover:text-ochre transition-colors"
+                      >
+                        {savedGuidance ? '✶ refine guidance' : '+ refine'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="px-5 pb-4 pt-2">
             <button

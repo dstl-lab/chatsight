@@ -65,6 +65,8 @@ export function StripBar({
       )}
       <ReadinessChip
         readiness={readiness}
+        labelId={label.id}
+        guidance={label.guidance}
         onHandoff={onHandoff}
         open={readinessOpen}
         onOpenChange={onReadinessOpenChange}

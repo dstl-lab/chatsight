@@ -43,6 +43,7 @@ class LabelDefinition(SQLModel, table=True):
     # this confidence land in the "Review" bucket. Configurable per-label via the
     # Settings tab; default 0.7 matches the implicit threshold the legacy code used.
     review_threshold: float = Field(default=0.7)
+    guidance: Optional[str] = Field(default=None)
     # Hybrid queue: fraction [0,1] of picks that bias toward richer conversations;
     # None → use CHATSIGHT_HYBRID_EXPLORE_FRACTION env (default 0.35).
     hybrid_explore_fraction: Optional[float] = Field(default=None)

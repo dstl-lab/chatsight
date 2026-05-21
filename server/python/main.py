@@ -47,6 +47,7 @@ from schemas import (
     MessageListItem, MessageListResponse,
     ConversationTurn, MessageDetailResponse,
     FlipRequest, NoteRequest, LabelUpdateRequest,
+    GeminiPreviewResponse,
 )
 import decision_service
 import queue_service
@@ -3602,6 +3603,46 @@ def get_readiness(label_id: int, db: Session = Depends(get_session)):
     return ReadinessResponse(**state)
 
 
+@app.get("/api/single-labels/{label_id}/gemini-preview", response_model=GeminiPreviewResponse)
+def get_gemini_preview(label_id: int, db: Session = Depends(get_session)):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+
+    yes_rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+            LabelApplication.value == "yes",
+        )
+        .order_by(LabelApplication.created_at.desc())  # type: ignore[arg-type]
+    ).all()
+
+    CONTEXT_CHAR_LIMIT = 500
+    example_messages = []
+    for c, i in yes_rows[:10]:
+        mc = db.exec(
+            select(MessageCache).where(
+                MessageCache.chatlog_id == c, MessageCache.message_index == i
+            )
+        ).first()
+        if mc:
+            if mc.context_before and mc.context_before.strip():
+                ctx = mc.context_before[-CONTEXT_CHAR_LIMIT:]
+                pair = f"Tutor: {ctx}\nStudent: {mc.message_text}"
+            else:
+                pair = f"[Conversation start]\nStudent: {mc.message_text}"
+            example_messages.append(pair)
+
+    if not example_messages:
+        raise HTTPException(status_code=400, detail="No yes examples yet")
+
+    from definition_service import generate_label_definition
+    summary = generate_label_definition(label.name, example_messages, guidance=label.guidance)
+    return GeminiPreviewResponse(summary=summary)
+
+
 CLASSIFICATION_CHUNK_SIZE = 50
 # 3 was chosen after `PARALLEL_CONCURRENCY = 8` blew through Gemini's
 # per-project quota in the first second of a fresh run. The retry-on-429
@@ -3744,6 +3785,7 @@ def _classify_in_parallel(
     label_id = label.id
     label_name = label.name
     label_description = label.description
+    label_guidance = label.guidance
 
     chunks = [
         pending[i:i + CLASSIFICATION_CHUNK_SIZE]
@@ -3766,6 +3808,7 @@ def _classify_in_parallel(
                     yes_examples=yes_examples,
                     no_examples=no_examples,
                     messages=chunk_texts,
+                    guidance=label_guidance,
                 )
                 return chunk, classifications
             except Exception as e:
@@ -4029,6 +4072,7 @@ def _classify_via_batch_api(
                         yes_examples=yes_examples,
                         no_examples=no_examples,
                         messages=chunk_texts,
+                        guidance=label.guidance,
                     )
                     f.write(json_mod.dumps(req) + "\n")
                     global_chunk_idx += 1
@@ -4571,6 +4615,8 @@ def patch_single_label(
         if not (0.0 <= body.review_threshold <= 1.0):
             raise HTTPException(status_code=422, detail="review_threshold must be in [0, 1]")
         label.review_threshold = body.review_threshold
+    if body.guidance is not None:
+        label.guidance = body.guidance
     if "hybrid_explore_fraction" in body.model_dump(exclude_unset=True):
         v = body.hybrid_explore_fraction
         if v is not None and not (0.0 <= v <= 1.0):
