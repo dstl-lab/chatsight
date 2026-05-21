@@ -550,15 +550,9 @@ export function LabelRunPage() {
               notebook={focused.notebook}
               turnCount={focused.conversation_turn_count}
               samplingPick={focused.sampling_pick}
+              explorePickSummary={focused.explore_pick_summary}
               conversationStudentMessages={focused.conversation_student_messages}
               pendingStudentMessageNumber={focused.pending_student_message_number}
-              neighborScoresAvailable={focused.neighbor_scores_available}
-              neighborUncertaintyPct={focused.neighbor_uncertainty_pct}
-              neighborNoveltyPct={focused.neighbor_novelty_pct}
-              conversationNoveltyPct={focused.conversation_novelty_pct}
-              themeNoveltyPct={focused.theme_novelty_pct}
-              studentSpecificityPct={focused.student_specificity_pct}
-              studentRarityPct={focused.student_rarity_pct}
             />
           </>
         }

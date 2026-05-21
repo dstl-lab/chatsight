@@ -110,6 +110,7 @@ class ConversationCursor(SQLModel, table=True):
     chatlog_id: int = Field(primary_key=True)
     last_message_index: int = Field(default=0)
     last_message_index_decided: int
+    explore_pick_summary: Optional[str] = Field(default=None)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

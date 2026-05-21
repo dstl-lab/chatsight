@@ -3475,6 +3475,7 @@ def get_next_focused(
         assignment_id,
         explore_fraction=_effective_hybrid_explore_fraction(label),
     )
+    db.commit()
     if not payload:
         return None
     return FocusedMessageResponse(**payload)
@@ -3522,6 +3523,7 @@ def _decide_response(
         assignment_id,
         explore_fraction=explore,
     )
+    db.commit()
     nxt = FocusedMessageResponse(**payload) if payload else None
     readiness = ReadinessResponse(**decision_service.compute_readiness(db, label_id))
     return DecideResponse(next=nxt, readiness=readiness)

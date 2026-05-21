@@ -163,6 +163,10 @@ def _migrate_conversation_cursor(conn, inspect, text):
                 "ADD COLUMN last_message_index INTEGER NOT NULL DEFAULT 0"
             )
         )
+    if "explore_pick_summary" not in cols:
+        conn.execute(
+            text("ALTER TABLE conversationcursor ADD COLUMN explore_pick_summary TEXT")
+        )
 
 
 def create_db_and_tables():

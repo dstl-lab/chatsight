@@ -287,6 +287,7 @@ class FocusedMessageResponse(BaseModel):
     thread: List[TurnResponse]
     focus_index: int
     sampling_pick: Optional[str] = None  # "continue" | "explore" | "round_robin"
+    explore_pick_summary: Optional[str] = None
     conversation_summary: Optional[str] = None
     pick_rationale: Optional[str] = None
     sampling_hint: Optional[str] = None  # deprecated; use conversation_summary / pick_rationale

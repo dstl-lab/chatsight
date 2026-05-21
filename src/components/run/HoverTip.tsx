@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 export function HoverTip({
@@ -7,7 +7,7 @@ export function HoverTip({
   tone = 'faint',
   className = '',
 }: {
-  label: string
+  label: ReactNode
   tip: string
   tone?: 'faint' | 'ochre' | 'paper'
   className?: string

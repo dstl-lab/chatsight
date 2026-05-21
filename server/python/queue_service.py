@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 import assist_service
 import explore_service
 from database import ext_engine
-from models import ConversationProfile, LabelApplication, MessageCache
+from models import ConversationCursor, ConversationProfile, LabelApplication, MessageCache
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,124 @@ def neighbor_uncertainty_novelty(
     return uncertainty, novelty
 
 
+def _join_phrases(parts: list[str]) -> str:
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+
+def compose_explore_pick_summary(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    pending_text: str,
+) -> str:
+    """Plain-language sentence for why Explore opened this conversation (frozen per chat)."""
+    unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
+    labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
+    conv_nov = explore_service.conversation_novelty(
+        session, label_id, chatlog_id, labeled_centroids
+    )
+    theme_nov = explore_service.theme_novelty(session, label_id, chatlog_id)
+    rarity = explore_service.student_message_corpus_rarity(session, chatlog_id, message_index)
+    paste_score = explore_service.student_message_copy_paste_likelihood(pending_text or "")
+    spec = explore_service.student_help_specificity(
+        pending_text or "", corpus_rarity=rarity
+    )
+
+    phrases: list[str] = []
+    if spec is not None and spec >= 0.55 and (paste_score or 0) < 0.65:
+        phrases.append("student question specificity")
+    if rarity is not None and rarity >= 0.5 and (paste_score or 0) < 0.65:
+        phrases.append("uncommon course wording")
+    if conv_nov is not None and conv_nov >= 0.5:
+        phrases.append("topics unlike your labeled chats")
+    if theme_nov is not None and theme_nov >= 0.5:
+        phrases.append("themes new to your prior labels")
+    if unc_nov and (paste_score or 0) < 0.65:
+        phrases.append("wording near past ambiguous labels")
+
+    if not phrases:
+        return (
+            "Conversation was chosen because it offers varied student help "
+            "worth labeling next."
+        )
+    return f"Conversation was chosen because of unique {_join_phrases(phrases)}."
+
+
+def _ensure_explore_pick_summary(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    summary: str,
+) -> None:
+    """Store pick explanation once per (label, chat); reused for every message in the chat."""
+    row = session.get(ConversationCursor, (label_id, chatlog_id))
+    if row and row.explore_pick_summary:
+        return
+    if row:
+        row.explore_pick_summary = summary
+        session.add(row)
+        return
+    session.add(
+        ConversationCursor(
+            label_id=label_id,
+            chatlog_id=chatlog_id,
+            last_message_index=0,
+            last_message_index_decided=0,
+            explore_pick_summary=summary,
+        )
+    )
+
+
+def _last_human_labeled_chatlog_id(session: Session, label_id: int) -> Optional[int]:
+    row = session.exec(
+        select(LabelApplication.chatlog_id)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+        )
+        .order_by(LabelApplication.created_at.desc(), LabelApplication.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    return row[0] if isinstance(row, tuple) else row
+
+
+def _display_sampling_pick(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    pick_mode: str,
+) -> str:
+    """UI-facing pick mode.
+
+    Internal selection uses ``continue`` for any in-progress chat. Instructors
+    should only see Continue when resuming a *different* chat they left partial;
+    walking message 2+ in an Explore-opened chat stays Explore.
+    """
+    if pick_mode == "baseline":
+        pick_mode = "round_robin"
+    if pick_mode != "continue":
+        return pick_mode
+
+    cursor = session.get(ConversationCursor, (label_id, chatlog_id))
+    if not cursor or not (cursor.explore_pick_summary or "").strip():
+        return pick_mode
+
+    # Still walking this Explore-opened chat (yes/no/skip on msg 1, 2, …).
+    if _last_human_labeled_chatlog_id(session, label_id) == chatlog_id:
+        return "explore"
+    # Came back after labeling a different conversation.
+    return pick_mode
+
+
 def build_sampling_meta(
     session: Session,
     label_id: int,
@@ -82,105 +200,33 @@ def build_sampling_meta(
     conversation_student_messages: int,
     sampling_pick: str,
 ) -> dict:
-    """Human-readable sampling diagnostics for the RUN UI."""
+    """Queue context for the RUN meta bar (no per-message metric chips)."""
     if sampling_pick == "baseline":
         sampling_pick = "round_robin"
-    unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
-    labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
-    conv_nov = explore_service.conversation_novelty(
-        session, label_id, chatlog_id, labeled_centroids
-    )
-    theme_nov = explore_service.theme_novelty(session, label_id, chatlog_id)
-    pending_row = session.exec(
-        select(MessageCache.message_text).where(
-            MessageCache.chatlog_id == chatlog_id,
-            MessageCache.message_index == message_index,
-        )
-    ).first()
-    pending_str = (
-        pending_row[0] if pending_row is not None and isinstance(pending_row, tuple) else pending_row
-    )
-    rarity = explore_service.student_message_corpus_rarity(session, chatlog_id, message_index)
-    spec = (
-        explore_service.student_help_specificity(
-            pending_str or "", corpus_rarity=rarity
-        )
-        if pending_str is not None
-        else None
-    )
-    paste_score = (
-        explore_service.student_message_copy_paste_likelihood(pending_str or "")
-        if pending_str is not None
-        else None
-    )
-    profile = session.get(ConversationProfile, (label_id, chatlog_id))
-    conversation_summary = (
-        profile.one_liner.strip()
-        if profile and profile.one_liner and profile.one_liner.strip()
+
+    cursor = session.get(ConversationCursor, (label_id, chatlog_id))
+    explore_pick_summary = (
+        cursor.explore_pick_summary.strip()
+        if cursor and cursor.explore_pick_summary and cursor.explore_pick_summary.strip()
         else None
     )
 
-    meta = {
+    return {
         "sampling_pick": sampling_pick,
         "conversation_student_messages": conversation_student_messages,
         "pending_student_message_number": message_index + 1,
-        "neighbor_scores_available": unc_nov is not None,
+        "explore_pick_summary": explore_pick_summary,
+        "neighbor_scores_available": False,
         "neighbor_uncertainty_pct": None,
         "neighbor_novelty_pct": None,
         "conversation_novelty_pct": None,
         "theme_novelty_pct": None,
-        "student_specificity_pct": int(round(spec * 100)) if spec is not None else None,
-        "student_rarity_pct": int(round(rarity * 100)) if rarity is not None else None,
-        "conversation_summary": conversation_summary,
+        "student_specificity_pct": None,
+        "student_rarity_pct": None,
+        "conversation_summary": None,
         "pick_rationale": None,
         "sampling_hint": None,
     }
-    if unc_nov:
-        u, n = unc_nov
-        meta["neighbor_uncertainty_pct"] = int(round(u * 100))
-        meta["neighbor_novelty_pct"] = int(round(n * 100))
-    if conv_nov is not None:
-        meta["conversation_novelty_pct"] = int(round(conv_nov * 100))
-    if theme_nov is not None:
-        meta["theme_novelty_pct"] = int(round(theme_nov * 100))
-    if sampling_pick == "explore":
-        bits = []
-        if unc_nov:
-            bits.append("ambiguous neighbors")
-        if conv_nov is not None and conv_nov >= 0.5:
-            bits.append("unlike labeled conversations")
-        if theme_nov is not None and theme_nov >= 0.5:
-            bits.append("new theme vs prior chats")
-        if paste_score is not None and paste_score >= 0.65:
-            bits.append("likely copy-paste (deprioritized in explore)")
-        elif spec is not None and spec >= 0.55:
-            bits.append("specific student help (not generic spam)")
-        if rarity is not None and rarity >= 0.5 and (paste_score or 0) < 0.65:
-            bits.append("uncommon phrasing in the corpus")
-        if bits:
-            meta["pick_rationale"] = ", ".join(bits) + "."
-        elif unc_nov:
-            meta["pick_rationale"] = (
-                "Neighbors disagree or look less like prior message labels."
-            )
-        else:
-            meta["pick_rationale"] = (
-                "Seeking specific, uncommon student help (scores still warming up)."
-            )
-    elif sampling_pick == "continue":
-        meta["pick_rationale"] = (
-            "Continue mode — finishing a chat you already started."
-        )
-    elif sampling_pick == "round_robin":
-        meta["pick_rationale"] = (
-            "Round-robin mode — next new chat in fair rotation, not Explore scoring."
-        )
-    elif not unc_nov:
-        meta["pick_rationale"] = (
-            "Neighbor scores not ready — need human yes/no labels on other messages "
-            "with embeddings."
-        )
-    return meta
 
 
 def default_hybrid_explore_fraction() -> float:
@@ -401,13 +447,19 @@ def next_message_for_label(
     if not tup:
         return None
     midx, text, notebook = tup
+    if pick_mode == "explore":
+        summary = compose_explore_pick_summary(
+            session, label_id, cid_pick, midx, text
+        )
+        _ensure_explore_pick_summary(session, label_id, cid_pick, summary)
+    display_pick = _display_sampling_pick(session, label_id, cid_pick, pick_mode)
     sampling_meta = build_sampling_meta(
         session,
         label_id,
         cid_pick,
         midx,
         len(conv[cid_pick]),
-        pick_mode,
+        display_pick,
     )
     return _build_focus_payload(
         session, label_id, cid_pick, midx, text, notebook, sampling_meta=sampling_meta
@@ -536,6 +588,7 @@ def _build_focus_payload(
         "student_specificity_pct": None,
         "student_rarity_pct": None,
         "conversation_summary": None,
+        "explore_pick_summary": None,
         "pick_rationale": None,
         "sampling_hint": None,
     }

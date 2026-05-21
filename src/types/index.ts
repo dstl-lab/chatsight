@@ -290,6 +290,7 @@ export interface FocusedMessage {
   thread: ConversationTurn[]
   focus_index: number
   sampling_pick: SamplingPick | null
+  explore_pick_summary: string | null
   conversation_summary: string | null
   pick_rationale: string | null
   conversation_student_messages: number | null
