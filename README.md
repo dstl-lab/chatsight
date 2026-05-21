@@ -6,20 +6,29 @@ Chatsight is a research tool that helps instructors label student-AI tutoring co
 
 ## How it works
 
-1. The instructor opens the app and enters **queue mode**
-2. The system shows one student message at a time, with the surrounding AI responses as collapsible context (supports markdown and LaTeX rendering)
-3. The instructor either:
-   - **Toggles one or more labels** by clicking them in the sidebar — labels turn on/off, and multiple can be applied to the same message
-   - **Creates a new label** on the fly if nothing fits
-   - **Skips** the message to come back to it later
-4. When done with a message, the instructor clicks **"Next"** to advance (disabled until at least one label is applied)
-5. After advancing, an **undo toast** appears briefly — click it to revert and return to that message
-6. A progress sidebar tracks how many messages have been labeled
-7. **Two-tier AI assist**:
-   - After **20** human-labeled messages, AI suggestions appear as ghost tags on each message (powered by Gemini)
-   - After **min(40% of total, 100)** human-labeled messages, an **auto-label button** unlocks that batch-classifies all remaining messages in the background
+Chatsight has **two labeling modes**, toggled in the app. Both show one student message at a time with the surrounding AI tutor responses as collapsible context (markdown + LaTeX rendering).
 
-Labels can later be merged, split, or renamed as the instructor's understanding of the data evolves (planned, not yet implemented).
+### Multi-label queue mode (`/queue`)
+
+For exploratory, many-labels-per-message coding:
+
+1. The system shows one student message at a time.
+2. The instructor **toggles one or more labels** on/off, **creates a new label** on the fly if nothing fits, or **skips** the message.
+3. Clicking **"Next"** advances (disabled until at least one label is applied); a brief **undo toast** lets you revert.
+4. **Two-tier AI assist**: after **20** human-labeled messages, Gemini suggestions appear as ghost tags; after **min(40% of total, 100)** human labels, an **auto-label** button batch-classifies the rest in the background.
+5. Labels can be **merged, split, renamed, reordered, or archived** from the label management view as understanding evolves (archiving returns a label's orphaned messages to the queue).
+6. **Concept induction** ("Discover") clusters unlabeled messages and proposes candidate labels for you to accept or reject.
+
+### Single-label mode (`/run`)
+
+For one decision per message (a binary "does this label apply?" pass), with a warm editorial UI:
+
+1. The instructor makes a **yes / no / skip** decision per message (keyboard-driven: `a` / `d` / Space, `s` to undo — rebindable).
+2. A **readiness** indicator tracks when enough variety has been labeled to hand off.
+3. On **handoff**, Gemini classifies all remaining messages (inline or via the Gemini Batch API for large jobs). Low-confidence predictions land in a **review queue** for the instructor to confirm or override.
+4. Optional free-text **instructor guidance** is fed into the classifier, and a "Gemini's Understanding" preview shows how the model interprets the label.
+
+Other views: **`/summaries`** (per-label message browser with human-vs-AI provenance), **`/analysis`** (mode-aware dashboards), **`/assignments`** (group messages by notebook/assignment), and **`/history`**.
 
 ---
 
@@ -97,38 +106,42 @@ Open http://localhost:5173 in your browser. The frontend automatically proxies A
 
 ```
 chatsight/
-├── src/                              # Frontend (React + TypeScript)
-│   ├── App.tsx                       # React Router shell
-│   ├── pages/
-│   │   ├── QueuePage.tsx             # Main labeling screen
-│   │   ├── LabelsPage.tsx            # Label management (placeholder)
-│   │   └── AnalysisPage.tsx          # Analysis dashboard (placeholder)
+├── src/                              # Frontend (React 19 + TypeScript)
+│   ├── App.tsx                       # React Router shell + Mode/Keybind providers
+│   ├── pages/                        # QueuePage (/queue), LabelRunPage (/run), HistoryPage,
+│   │   │                             #   LabelsPage, AssignmentsPage, SummariesPage, AnalysisPage
+│   │   ├── summaries/                # Mode-aware summaries variants (multi / single)
+│   │   └── analysis/                 # Mode-aware analysis variants (multi / single)
 │   ├── components/
-│   │   ├── Navigation.tsx            # Top nav bar (Queue / Labels / Analysis)
-│   │   └── queue/
-│   │       ├── MessageCard.tsx       # Student message + collapsible AI context (markdown + LaTeX)
-│   │       ├── ProgressSidebar.tsx   # Label toggle buttons, progress, AI unlock bar, auto-label
-│   │       └── NewLabelPopover.tsx   # Inline form to create a new label
-│   ├── services/api.ts              # All fetch calls to the backend
-│   ├── types/index.ts               # Shared TypeScript interfaces
-│   ├── mocks/index.ts               # Mock data for development without backend
-│   └── tests/                       # Frontend tests (vitest + React Testing Library)
+│   │   ├── Navigation.tsx            # Top nav bar
+│   │   ├── queue/                    # Multi-label UI (MessageCard, ProgressSidebar, archive, Discover…)
+│   │   ├── run/                      # Single-label UI (DecisionDock, StripBar, ReadinessChip, ThreadView…)
+│   │   ├── decision/                 # DecisionWorkspace, AiReviewDock, KeybindSettingsModal
+│   │   └── summaries/                # Summaries browser components
+│   ├── hooks/                        # useMode (single/multi), useKeybinds, useTheme
+│   ├── services/api.ts               # All fetch calls to the backend (mock mode aware)
+│   ├── types/index.ts                # Shared TypeScript interfaces
+│   ├── mocks/                        # Mock data for development without a backend
+│   └── tests/                        # Frontend tests (vitest + React Testing Library)
 │
-├── server/python/                    # Backend (FastAPI + Python)
-│   ├── main.py                       # All API routes (single file)
+├── server/python/                    # Backend (FastAPI + Python 3.11+, managed by uv)
+│   ├── main.py                       # ~all API routes (~4.8k lines, single file)
 │   ├── models.py                     # Database tables (SQLModel ORM)
 │   ├── schemas.py                    # Request/response shapes (Pydantic)
-│   ├── database.py                   # Database connections (SQLite + PostgreSQL)
-│   ├── label_service.py              # Gemini AI integration (legacy, used for old labeling)
-│   ├── autolabel_service.py          # Gemini batch classification for suggestions + auto-labeling
+│   ├── database.py                   # DB connections (SQLite + PostgreSQL) + migrations
+│   ├── queue_service.py              # Multi-label queue ordering / advance / undo / skip
+│   ├── decision_service.py           # Single-label yes/no/skip decisions + readiness math
+│   ├── autolabel_service.py          # Multi-label Gemini batch classification (suggest + auto-label)
+│   ├── binary_autolabel_service.py   # Single-label (binary) Gemini classification
+│   ├── explore_service.py            # Hybrid-queue "explore" sampling (student-message novelty)
+│   ├── concept_service.py            # Concept induction (embed + cluster + name)
+│   ├── definition_service.py         # Gemini label descriptions / "understanding" previews
+│   ├── assist_service.py             # Single-message suggestion path
+│   ├── assignment_service.py         # Notebook filename → assignment-name mapping
+│   ├── analysis_single_label.py      # Single-label analysis APIRouter
+│   ├── label_service.py              # Legacy pre-queue Gemini labeling (reference only)
 │   ├── pyproject.toml                # Python dependencies
-│   └── tests/                        # Backend tests (pytest)
-│       ├── conftest.py               # Test fixtures (in-memory SQLite)
-│       ├── test_labels.py            # Label CRUD tests
-│       ├── test_session.py           # Session + advance tests
-│       ├── test_queue_actions.py     # Apply, unapply, undo, advance tests
-│       ├── test_stubs.py             # Stub route contract tests
-│       └── test_models_smoke.py      # Model import smoke test
+│   └── tests/                        # Backend tests (pytest, in-memory SQLite)
 │
 ├── WORKFLOW.md                       # Research context and design rationale
 ├── CLAUDE.md                         # AI assistant instructions
@@ -174,74 +187,35 @@ The frontend never talks to either database directly. It goes through the backen
 
 ## API overview
 
-All routes are defined in `server/python/main.py`.
+All routes are in `server/python/main.py` (single-label analysis routes are an `APIRouter` in `analysis_single_label.py`). The **authoritative, always-current reference is the auto-generated interactive docs at http://localhost:8000/docs** — there are ~85 routes, so the groups below are a map, not a full list. Everything is under the `/api/...` prefix and the frontend reaches it through the Vite proxy.
 
-### Chatlog routes
-
-| Method | Path | What it does |
-|--------|------|--------------|
-| `GET` | `/api/chatlogs` | List all conversations from the external DB |
-| `GET` | `/api/chatlogs/{id}` | Get a single chatlog's full transcript |
-
-### Label management
-
-| Method | Path | What it does |
-|--------|------|--------------|
-| `GET` | `/api/labels` | List all label definitions with application counts |
-| `POST` | `/api/labels` | Create a new label (`name`, optional `description`) |
-| `PUT` | `/api/labels/{id}` | Rename or redescribe a label |
-| `GET` | `/api/labels/{id}/messages` | Get all applications of a specific label |
-
-### Session
-
-| Method | Path | What it does |
-|--------|------|--------------|
-| `POST` | `/api/session/start` | Start a new labeling session |
-| `GET` | `/api/session` | Get current session state (progress, timing) |
-
-### Queue (labeling flow)
-
-| Method | Path | What it does |
-|--------|------|--------------|
-| `GET` | `/api/queue` | Get next batch of unlabeled messages |
-| `GET` | `/api/queue/stats` | Total / labeled / skipped message counts |
-| `POST` | `/api/queue/apply` | Apply a label to a message (idempotent) |
-| `DELETE` | `/api/queue/apply` | Remove a label from a message (toggle off) |
-| `GET` | `/api/queue/applied` | Get which labels are applied to a specific message |
-| `POST` | `/api/queue/advance` | Record that a message was completed, increment count |
-| `POST` | `/api/queue/undo` | Remove all labels for a message, decrement count |
-| `POST` | `/api/queue/skip` | Skip a message |
-
-### AI features
-
-| Method | Path | What it does |
-|--------|------|--------------|
-| `POST` | `/api/queue/suggest` | Get AI suggestion for a single message (real Gemini call) |
-| `POST` | `/api/queue/autolabel` | Start background auto-labeling of all unlabeled messages |
-| `GET` | `/api/queue/autolabel/status` | Poll auto-labeling progress (`processed`, `total`, `running`) |
-
-### Stub routes (return placeholder data)
-
-| Method | Path | Planned feature |
-|--------|------|-----------------|
-| `POST` | `/api/labels/merge` | Merge two labels into one |
-| `POST` | `/api/labels/split` | Split a label into two |
-| `GET` | `/api/analysis/summary` | Label distribution and coverage stats |
-| `GET` | `/api/export/csv` | Download all labels as CSV |
-| `GET` | `/api/session/recalibration` | Suggest labels to review for consistency |
-| `GET` | `/api/queue/sample` | Smart sampling strategy |
+| Group | Examples | What it covers |
+|-------|----------|----------------|
+| **Chatlogs** | `GET /api/chatlogs`, `GET /api/chatlogs/{id}`, `.../messages` | Read conversations + transcripts from the external DB |
+| **Labels** | `GET/POST /api/labels`, `PUT /api/labels/{id}`, `.../archive`, `reorder`, `merge`, `split`, `split-autolabel`, `{id}/promote`, `generate-description` | Label CRUD, reorder/archive, merge/split, promote multi→single, AI-generated descriptions |
+| **Session** | `POST /api/session/start`, `GET /api/session`, `.../recalibration`, `.../label-review` | Session state, recalibration, label-review |
+| **Queue (multi-label)** | `GET /api/queue`, `/queue/stats`, `POST/DELETE /api/queue/apply`, `advance`, `undo`, `skip`, `apply-batch`, `history`, `position` | The multi-label labeling flow |
+| **AI assist (multi-label)** | `POST /api/queue/suggest`, `autolabel`, `GET /api/queue/autolabel/status`, `POST /api/queue/concise` | Gemini suggestions + background auto-labeling |
+| **Single-label** | `GET/POST /api/single-labels`, `{id}/activate`, `decide`, `undo`, `next`, `readiness`, `handoff`, `retry-handoff`, `review`, `review-queue`, `refine`, `summary`, `assist`, `gemini-preview`, `switch` | The full single-label run + handoff + review lifecycle |
+| **Concepts** | `POST /api/concepts/discover`, `GET /api/concepts/candidates`, `PUT .../{id}`, `GET /api/concepts/embed-status` | Concept induction (embed + cluster + accept/reject) |
+| **Assignments** | `GET/POST /api/assignments`, `infer`, `merge`, `unmapped` | Notebook→assignment mapping |
+| **Analysis & export** | `GET /api/analysis/summary`, `temporal`, `milestones`, `GET /api/analysis/single-label/cohort`, `/runs/{id}`, `GET /api/export/csv`, `onehot-csv`, `GET /api/handoff-summaries` | Dashboards + CSV exports |
 
 ---
 
 ## AI system
 
-Chatsight uses **Google Gemini 2.0 Flash** for two AI features, both defined in `autolabel_service.py`:
+Chatsight uses **Google Gemini 2.0 Flash** (function-calling mode, `mode=ANY`, for structured JSON output) plus **`gemini-embedding-001`** for embeddings. AI-written labels are always stored with `applied_by="ai"` (and a `confidence` score) so they stay distinguishable from human labels.
 
-**Suggestions** (unlocks at 20 human labels): When the instructor views a message, the frontend calls `POST /api/queue/suggest`. The backend builds a prompt with label definitions + up to 5 human-labeled examples per label, then asks Gemini to classify the current message. The result appears as a ghost tag on the message card.
+**Multi-label suggestions** (`autolabel_service.py`, unlocks at 20 human labels): when the instructor views a message, `POST /api/queue/suggest` builds a prompt with label definitions + up to 5 human-labeled examples per label and asks Gemini to classify the current message. The result appears as a ghost tag.
 
-**Auto-labeling** (unlocks at min(40% of total, 100) human labels): The instructor clicks "Auto-label remaining" in the sidebar. The backend spawns a background thread that classifies all unlabeled messages in batches of 30. The frontend polls `/api/queue/autolabel/status` to show a progress bar. AI-applied labels are stored with `applied_by="ai"` so they can be distinguished from human labels.
+**Multi-label auto-labeling** (unlocks at min(40% of total, 100) human labels): a background thread classifies all unlabeled messages in batches; the frontend polls `/api/queue/autolabel/status` for progress.
 
-Both features use Gemini's function-calling mode (`mode=ANY`) to force structured JSON output.
+**Single-label classification** (`binary_autolabel_service.py`): after the instructor labels a sample and hands off, Gemini makes a binary yes/no decision on every remaining message — either inline (parallel chunks with retry/backoff) or via the **Gemini Batch API** with multi-sub-batch splitting for large jobs. Optional instructor **guidance** is threaded into the prompt; low-confidence predictions are routed to a review queue. `definition_service.py` also generates label descriptions and "Gemini's Understanding" previews.
+
+**Concept induction** (`concept_service.py`): embeds unlabeled messages with `gemini-embedding-001`, clusters them with KMeans, and asks Gemini to name each cluster, producing candidate labels to accept or reject.
+
+**Explore sampling** (`explore_service.py`): embeds *student* messages to score novelty, so the single-label queue surfaces rare/specific help requests instead of generic "help"/assignment-prompt spam.
 
 ---
 
@@ -253,7 +227,7 @@ cd server/python
 uv run pytest
 ```
 
-Backend tests use an in-memory SQLite database — no external database, tunnel, or Gemini key needed.
+Backend tests use an in-memory SQLite database and make no real external-DB or Gemini calls. They do still need `GEMINI_API_KEY` and `PG_PASSWORD` *set* (not valid — just present), because a few service modules build their Gemini client at import time. `conftest.py` supplies a dummy `PG_PASSWORD`; the Gemini key is picked up from your `.env`. If you run tests in an environment without `.env`, export any non-empty value first: `GEMINI_API_KEY=dummy uv run pytest`.
 
 **Frontend:**
 ```bash
@@ -270,12 +244,13 @@ Frontend tests use mock data — no backend needed.
 |-------|-----------|-----|
 | Frontend | React 19, TypeScript, Vite 6 | Standard modern stack |
 | Styling | Tailwind CSS v4 | Utility-first, no config file needed (uses `@tailwindcss/vite` plugin) |
-| Rendering | React Markdown, KaTeX | AI tutor responses contain markdown and LaTeX math |
+| Rendering | React Markdown (`remark-math`, `remark-gfm`, `rehype-katex`), KaTeX | AI tutor responses contain markdown, GFM tables, and LaTeX math |
+| UI | Recharts (charts), `@dnd-kit` (label reorder), Framer Motion (animation), lucide-react (icons) | Analysis dashboards and interactive labeling UI |
 | Backend | FastAPI, Uvicorn | Auto-generates API docs, async support, Python type hints |
 | ORM | SQLModel | Combines SQLAlchemy + Pydantic (same models for DB and validation) |
 | Local DB | SQLite | Zero setup, file-based, good enough for single-user research tool |
 | External DB | PostgreSQL | Where the real chatlog data lives (read-only) |
-| AI | Google Gemini 2.0 Flash | Function calling for structured label suggestions and batch classification |
+| AI | Google Gemini 2.0 Flash + `gemini-embedding-001`; scikit-learn (KMeans) | Function-calling classification, embeddings, and concept clustering |
 | Tests | pytest (backend), vitest (frontend) | Both run fast with in-memory/mock data |
 
 ---
@@ -307,6 +282,7 @@ Auto-labeling requires min(40% of total messages, 100) human labels. Keep labeli
 ```bash
 # Frontend
 npm run dev              # dev server on :5173
+npm run dev:all          # bin/dev — kubectl port-forward + backend + frontend together, prefixed logs
 npm run build            # type-check + production build
 npm test                 # run frontend tests once
 npm run test:watch       # run frontend tests in watch mode

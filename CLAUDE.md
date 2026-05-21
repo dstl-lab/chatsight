@@ -35,7 +35,7 @@ npx tsc --noEmit     # type-check only
 
 ## Required environment
 
-- `GEMINI_API_KEY` — used by `autolabel_service.py` and `concept_service.py` for AI suggestions, auto-labeling, and concept induction
+- `GEMINI_API_KEY` — used across the AI service modules (`autolabel_service`, `binary_autolabel_service`, `assist_service`, `concept_service`, `definition_service`, `explore_service`) for suggestions, auto-labeling, concept induction, label-description/understanding generation, and explore embeddings. Several modules construct a `genai.Client` at **import time**, so it must be resolvable (via `.env` or the shell) just to import `main` — even for tests that make no real Gemini calls (set any non-empty dummy value if you don't have a real key).
 - `PG_PASSWORD` — password for the `dsc10_tutor` PostgreSQL user (read from `.env` at repo root via `python-dotenv`)
 - `kubectl port-forward` to `localhost:5432` must be running before starting the backend (external DB is `dsc10_tutor_logs`)
 - Optional: `EXT_DB_URL` overrides the default PostgreSQL connection string
@@ -46,42 +46,50 @@ npx tsc --noEmit     # type-check only
 External PostgreSQL → backend caches student messages into local SQLite `MessageCache` at startup → instructor labels messages through the queue UI → `LabelDefinition`/`LabelApplication` rows saved in local SQLite → after enough human labels, Gemini suggests/auto-labels remaining messages.
 
 ### Two database connections (`server/python/database.py`)
-- **Local SQLite** (`chatsight.db`) — stores all labeling data: `LabelDefinition`, `LabelApplication`, `LabelingSession`, `SkippedMessage`, `MessageCache`, `MessageEmbedding`, `ConceptCandidate`. Created at startup via `SQLModel.metadata.create_all` + migration code for schema evolution.
+- **Local SQLite** (`chatsight.db`) — stores all labeling data: `LabelDefinition`, `LabelApplication`, `LabelPrediction`, `LabelingSession`, `ConversationCursor`, `AssignmentMapping`, `SkippedMessage`, `MessageCache`, `MessageEmbedding`, `RecalibrationEvent`, `LabelExploreGradebook`, `ConversationProfile`, `ConceptCandidate`, `SuggestionCache`. Created at startup via `SQLModel.metadata.create_all`; schema evolution is handled by hand-written `ALTER TABLE` migration helpers in `database.py` (one `_migrate_*` function per table — add new columns there, not via Alembic).
 - **External PostgreSQL** (`dsc10_tutor_logs` on `localhost:5432`) — read-only source of chatlog data. Single `events` table with `id`, `event_type`, `user_email`, `payload` (JSONB), `created_at`. Conversations grouped by `payload->>'conversation_id'`. Relevant event types: `tutor_query` (payload has `question`) and `tutor_response` (payload has `response`). The stable integer chatlog ID used throughout the API is `MIN(event.id)` per conversation.
 
 ### Backend (`server/python/`)
-- All routes in `main.py` (~3.6k lines) — no routers or sub-apps. Route groups: chatlog reads, label CRUD (incl. reorder/archive/merge/split), session, queue ops (apply/advance/undo/skip/history/position), AI assist (suggest/autolabel/concise), concept induction, single-label mode, analysis/export, recalibration.
-- `models.py` — SQLModel tables: `LabelDefinition`, `LabelApplication` (with `applied_by` human/ai + optional `confidence`), `LabelingSession`, `SkippedMessage`, `MessageCache` (denormalized student messages), `MessageEmbedding` (cached Gemini embeddings), `ConceptCandidate`, plus single-label/assignment/decision tables.
+- Almost all routes are in `main.py` (~4.8k lines) — no routers, with **one exception**: single-label analysis routes are an `APIRouter` defined in `analysis_single_label.py` and mounted via `app.include_router`. Route groups in `main.py`: chatlog reads, label CRUD (incl. reorder/archive/merge/split), session, queue ops (apply/advance/undo/skip/history/position), AI assist (suggest/autolabel/concise), concept induction, single-label decisions + handoff/classification, analysis/export, recalibration.
+- `models.py` — SQLModel tables. Key ones: `LabelDefinition` (carries `mode` multi/single, `phase`, `review_threshold`, `guidance` for AI instructions, `hybrid_explore_fraction`, and `batch_*` job-tracking fields), `LabelApplication` (`applied_by` human/ai + optional `confidence`; single-label adds `value` yes/no/skip plus `ai_value_at_review`/`ai_confidence_at_review` snapshots captured when a human overrides an AI prediction). Also `LabelPrediction`, `LabelingSession`, `ConversationCursor`, `AssignmentMapping`, `SkippedMessage`, `MessageCache`, `MessageEmbedding`, `RecalibrationEvent`, `LabelExploreGradebook`, `ConversationProfile`, `ConceptCandidate`, `SuggestionCache`.
 - `schemas.py` — Pydantic request/response shapes, separate from ORM models.
 - Service modules (called from `main.py`):
-  - `queue_service.py` — queue ordering, advance/undo/skip semantics, position tracking.
+  - `queue_service.py` — multi-label queue ordering, advance/undo/skip semantics, position tracking.
   - `assist_service.py` — single-message suggestion path (used by `/api/queue/suggest`).
   - `autolabel_service.py` — multi-label batch classification via Gemini function-calling (`classify_messages` tool, `mode=ANY`).
-  - `binary_autolabel_service.py` — single-label (binary) auto-labeling variant for "single-label mode".
+  - `binary_autolabel_service.py` — single-label (binary yes/no) classification via Gemini; the engine behind the single-label handoff/auto-label path. Threads optional instructor `guidance` into the prompt.
+  - `decision_service.py` — single-label binary decisions (record yes/no/skip, undo-last, skip-conversation) and **readiness math** (`compute_readiness`, used to gate handoff).
+  - `explore_service.py` — hybrid-queue "explore" sampling: embeds *student* messages only (tutor turns excluded) to surface rare/specific help requests over generic "help"/assignment-prompt spam. Backs `hybrid_explore_fraction` (env default `CHATSIGHT_HYBRID_EXPLORE_FRACTION`, 0.35).
+  - `analysis_single_label.py` — single-label analysis `APIRouter` (cohort overview + run detail); computes human↔AI agreement from the `ai_value_at_review` overlap set.
   - `concept_service.py` — embeds unlabeled messages with `gemini-embedding-001`, clusters with KMeans, asks Gemini to name clusters, produces `ConceptCandidate` rows.
-  - `definition_service.py` — generates/refines label descriptions via Gemini.
-  - `decision_service.py` — recalibration & label-review decision logic.
-  - `assignment_service.py` — assignment-mode (per-message single-label) flow.
+  - `definition_service.py` — generates/refines label descriptions and Gemini "understanding" previews.
+  - `assignment_service.py` — heuristic regex mapping of notebook filenames → assignment names (e.g. `lab03.ipynb` → "Lab 3").
   - `label_service.py` — legacy Gemini labeling from the pre-queue iteration; kept for reference, not on the main flow.
+- **Single-label handoff/classification** lives in `main.py` (`_do_classification`): it either runs inline parallel chunks (`_classify_in_parallel`, with transient-error retry/backoff) or uses the Gemini **Batch API** (`_classify_via_batch_api`) with multi-sub-batch splitting for large jobs. Live progress is written to `LabelDefinition.batch_*` and surfaced in the UI.
 
 ### Frontend (`src/`)
 - **React Router** routes (`App.tsx`): `/queue` (multi-label `QueuePage`), `/run` (single-label `LabelRunPage`), `/history`, `/labels`, `/assignments`, `/summaries`, `/analysis`. Root `/` redirects to `/run` or `/queue` based on the active mode from `useMode` (single vs multi label).
 - `ModeProvider`/`useMode` (`src/hooks/useMode.tsx`) toggles between **single-label mode** (warm "editorial" palette, one label per message) and **multi-label queue mode** (default dark theme, toggleable labels). The shell adds a `warm-flow` class in single mode.
 - `QueuePage.tsx` is the primary multi-label interface — one student message at a time with collapsible AI context, label toggle sidebar, progress tracking, AI suggestion + auto-label controls.
+- `LabelRunPage.tsx` is the single-label interface (`/run`): one conversation/message at a time with a yes/no/skip `DecisionDock`, `StripBar` (readiness + assignment picker + explore mix), `ReadinessChip` (handoff gate + inline guidance editing + Gemini "understanding" preview), and `ThreadView`. Components live in `src/components/run/` and `src/components/decision/` (`DecisionWorkspace`, `AiReviewDock` for reviewing AI predictions).
+- `KeybindProvider`/`useKeybinds` (`src/hooks/useKeybinds.tsx`) — single-label keyboard shortcuts (yes/no/skip/undo), defaults `a`/`d`/Space/`s`, persisted to `localStorage` and editable via `KeybindSettingsModal`.
 - `src/components/queue/` — `MessageCard`, `ConversationPanel`, `ProgressSidebar`, `NewLabelPopover`, `LabelContextMenu`, `LabelReviewOverlay`, `RecentHistory`, `ArchiveReviewBanner`/`ArchiveReviewSidebar`/`ArchiveConfirmModal` (label archive flow), `DiscoverSection`/`DiscoverModal` (concept induction UI).
+- `/summaries` and `/analysis` are **mode-aware**: each page picks a multi- or single-label variant at runtime (`SummariesPageMulti`/`SummariesPageSingle`, `MultiLabelAnalysis`/`SingleLabelAnalysis`). Single-label summaries also show a human-vs-AI provenance glyph (`AppliedByGlyph`).
 - All fetch calls in `src/services/api.ts` use `/api/...` — Vite proxies to `http://localhost:8000` (see `vite.config.ts`).
 - TypeScript types for all API shapes live in `src/types/index.ts`.
-- Markdown + LaTeX rendering via `react-markdown` + `remark-math` + `rehype-katex` (the AI tutor's responses contain both).
+- Markdown + LaTeX rendering via `react-markdown` + `remark-math` + `remark-gfm` + `rehype-katex` (the AI tutor's responses contain both). Charts via `recharts`; drag-and-drop (label reorder) via `@dnd-kit`; animation via `framer-motion`.
 - Tailwind v4 configured purely via `@tailwindcss/vite` plugin — no `tailwind.config.ts`. Default theme is dark (`bg-neutral-950`); single-label mode swaps in a warm palette via the `warm-flow` class.
 
 ### Key design decisions
 - **Queue mode (multi-label)**: Messages are shown one at a time. Instructors apply labels (toggle on/off), then advance. An undo toast allows reverting the last advance.
-- **Single-label mode**: A separate flow at `/run` where each message gets exactly one label; uses `binary_autolabel_service.py` and a warm-palette UI.
-- **AI thresholds**: Suggestions unlock at 20 human labels; auto-labeling unlocks at `min(40% of total, 100)` human labels.
+- **Single-label mode**: A separate flow at `/run` where each message gets exactly one yes/no/skip decision; uses `decision_service.py` + `binary_autolabel_service.py` and a warm-palette UI. The instructor labels a sample until `compute_readiness` says it's ready, then **hands off** to Gemini, which classifies the rest (inline or via the Batch API). Low-confidence AI predictions land in a review bucket gated by `LabelDefinition.review_threshold`; reviewing an AI row snapshots its prediction into `ai_value_at_review` for later agreement analysis.
+- **Instructor guidance**: single-labels carry a free-text `guidance` field (edited in `ReadinessChip`) that is threaded into the Gemini classification prompt; `definition_service` can also generate a "Gemini's Understanding" preview of how the model interprets the label.
+- **Hybrid explore sampling**: the single-label queue mixes ordinary picks with `explore_service` "explore" picks (student-message novelty) at ratio `hybrid_explore_fraction` (per-label override, else env `CHATSIGHT_HYBRID_EXPLORE_FRACTION`, default 0.35) to avoid drowning in generic "help" spam.
+- **AI thresholds (multi-label)**: Suggestions unlock at 20 human labels; auto-labeling unlocks at `min(40% of total, 100)` human labels.
 - `LabelApplication.applied_by` distinguishes `"human"` vs `"ai"` labels. AI labels include a `confidence` score.
 - Label archive flow: archiving a label returns its orphaned messages to the queue.
 - Concept induction: embedding + clustering discovers candidate labels from unlabeled data; instructor accepts/rejects candidates.
-- Frontend tests use `vitest` + React Testing Library + jsdom (`src/tests/`). Backend tests use `pytest` with in-memory SQLite (no external DB or API keys needed) — see `server/python/tests/conftest.py` for the fixture pattern.
+- Frontend tests use `vitest` + React Testing Library + jsdom (`src/tests/`). Backend tests use `pytest` with in-memory SQLite — no real external DB or Gemini calls, but importing the app needs `PG_PASSWORD` (conftest sets a dummy) and `GEMINI_API_KEY` (resolved from `.env`/shell; set any non-empty value if absent). See `server/python/tests/conftest.py` for the fixture pattern.
 
 ### Other docs in this repo
 - `README.md` — full setup and onboarding walkthrough (kubectl tunnel, env vars, common issues, full API table).
