@@ -59,3 +59,39 @@ test('accept button calls onAccept', () => {
   fireEvent.click(screen.getByText(/accept/i))
   expect(onAccept).toHaveBeenCalled()
 })
+
+test('shows the human glyph when applied by a human', () => {
+  render(
+    <VerdictBlock
+      verdict="no" confidence={0.42} appliedBy="human"
+      matchedPattern={null} rationale={null}
+      nearThreshold={false}
+      onAccept={vi.fn()} onFlip={vi.fn()} onFlag={vi.fn()}
+    />
+  )
+  expect(screen.getByTestId('verdict-applied-by-human')).toBeInTheDocument()
+})
+
+test('shows no human glyph when applied by AI', () => {
+  render(
+    <VerdictBlock
+      verdict="no" confidence={0.42} appliedBy="ai"
+      matchedPattern={null} rationale={null}
+      nearThreshold={false}
+      onAccept={vi.fn()} onFlip={vi.fn()} onFlag={vi.fn()}
+    />
+  )
+  expect(screen.queryByTestId('verdict-applied-by-human')).not.toBeInTheDocument()
+})
+
+test('shows no human glyph when applied_by is null', () => {
+  render(
+    <VerdictBlock
+      verdict={null} confidence={null} appliedBy={null}
+      matchedPattern={null} rationale={null}
+      nearThreshold={false}
+      onAccept={vi.fn()} onFlip={vi.fn()} onFlag={vi.fn()}
+    />
+  )
+  expect(screen.queryByTestId('verdict-applied-by-human')).not.toBeInTheDocument()
+})

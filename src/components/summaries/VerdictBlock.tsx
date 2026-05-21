@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { MessageVerdict } from '../../types'
+import { HUMAN_GLYPH, HUMAN_TITLE } from './AppliedByGlyph'
 
 interface VerdictBlockProps {
   verdict: MessageVerdict | null
@@ -20,7 +21,7 @@ function badgeStyles(v: MessageVerdict | null) {
 }
 
 export function VerdictBlock({
-  verdict, confidence, matchedPattern, rationale, nearThreshold,
+  verdict, confidence, appliedBy, matchedPattern, rationale, nearThreshold,
   onAccept, onFlip, onFlag,
 }: VerdictBlockProps) {
   const [whyOpen, setWhyOpen] = useState(false)
@@ -33,6 +34,17 @@ export function VerdictBlock({
           <strong>{(verdict ?? '').toUpperCase()}</strong>
           {confidence !== null && <span className="text-paper">· {confidence.toFixed(2)}</span>}
         </span>
+        {appliedBy === 'human' && (
+          <span
+            data-testid="verdict-applied-by-human"
+            title={HUMAN_TITLE}
+            aria-label={HUMAN_TITLE}
+            className="inline-flex items-center gap-1 font-mono text-[10.5px] text-muted"
+          >
+            {HUMAN_GLYPH}
+            <span className="uppercase tracking-[0.08em]">human</span>
+          </span>
+        )}
         {matchedPattern && (
           <span className="text-ochre text-[12.5px] underline decoration-dotted underline-offset-[3px] cursor-pointer">"{matchedPattern}"</span>
         )}
