@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from './test-utils'
 import { MemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 import { QueuePage } from '../pages/QueuePage'

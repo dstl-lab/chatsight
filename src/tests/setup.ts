@@ -1,5 +1,13 @@
 // src/tests/setup.ts
 import '@testing-library/jest-dom'
+import { beforeEach } from 'vitest'
+
+// Reset persisted UI state between tests so values like `chatsight-keybinds`
+// (set by keybind tests) and `chatsight-mode` don't leak across files and
+// cause order-dependent flakes. Runs before each test's own beforeEach.
+beforeEach(() => {
+  localStorage.clear()
+})
 
 // jsdom doesn't implement matchMedia — stub it for useTheme hook
 Object.defineProperty(window, 'matchMedia', {
