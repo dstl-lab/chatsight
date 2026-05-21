@@ -36,6 +36,7 @@ export function VerdictBlock({
         </span>
         {appliedBy === 'human' && (
           <span
+            role="img"
             data-testid="verdict-applied-by-human"
             title={HUMAN_TITLE}
             aria-label={HUMAN_TITLE}

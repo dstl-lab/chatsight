@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from '../test-utils'
 import { vi } from 'vitest'
 import { MessageList } from '../../components/summaries/MessageList'
 import type { MessageListItem } from '../../types'

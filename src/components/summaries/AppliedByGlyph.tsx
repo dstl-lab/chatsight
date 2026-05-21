@@ -11,6 +11,7 @@ export function AppliedByGlyph({ appliedBy, chatlogId, messageIndex }: AppliedBy
   if (appliedBy !== 'human') return null
   return (
     <span
+      role="img"
       data-testid={`applied-by-human-${chatlogId}-${messageIndex}`}
       title={HUMAN_TITLE}
       aria-label={HUMAN_TITLE}
