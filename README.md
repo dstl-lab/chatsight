@@ -83,18 +83,15 @@ Ask a team member for the pod name. This forwards the remote database to `localh
 
 ### 4. Start the app
 
-You need two terminal tabs:
+From the repo root, start everything with one command:
 
-**Terminal 1 — Backend** (runs on port 8000):
 ```bash
-cd server/python
-uv run uvicorn main:app --reload
+npm run dev:all
 ```
 
-**Terminal 2 — Frontend** (runs on port 5173):
-```bash
-npm run dev
-```
+This runs `bin/dev`, which starts the kubectl port-forward, the backend (`:8000`), and the frontend (`:5173`) together in a single terminal with color-prefixed logs (freeing those ports first if they're in use, and auto-reconnecting the tunnel if it drops). Press Ctrl+C to stop everything.
+
+> `dev:all` starts the database tunnel itself, so you can **skip [step 3](#3-start-the-database-tunnel)** when using it. To run the pieces separately instead, start the tunnel from step 3, then in two terminals run `cd server/python && uv run uvicorn main:app --reload` and `npm run dev`.
 
 Open http://localhost:5173 in your browser. The frontend automatically proxies API calls to the backend, so you don't need to configure anything else.
 
