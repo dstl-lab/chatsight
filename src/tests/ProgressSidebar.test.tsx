@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from './test-utils'
 import { ProgressSidebar } from '../components/queue/ProgressSidebar'
 import { mockApi } from '../mocks'
 

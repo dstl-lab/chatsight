@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from '../test-utils'
 import { vi, beforeEach } from 'vitest'
 import { DecisionWorkspace } from '../../components/decision/DecisionWorkspace'
 import type { ConversationTurn } from '../../types'
@@ -103,25 +103,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-test('pressing "y" fires onYes', () => {
-  const onYes = vi.fn()
-  render(
-    <DecisionWorkspace thread={thread} focusIndex={0} dock={<div />} onYes={onYes} />,
-  )
-  fireEvent.keyDown(window, { key: 'y' })
-  expect(onYes).toHaveBeenCalledTimes(1)
-})
-
-test('pressing "Y" (uppercase) also fires onYes', () => {
-  const onYes = vi.fn()
-  render(
-    <DecisionWorkspace thread={thread} focusIndex={0} dock={<div />} onYes={onYes} />,
-  )
-  fireEvent.keyDown(window, { key: 'Y' })
-  expect(onYes).toHaveBeenCalledTimes(1)
-})
-
-test('pressing "n", "s", "z", "Enter" fires the matching handlers', () => {
+// The yes-key bindings (a / A) are covered in DecisionWorkspaceKeybinds.test.tsx.
+// This asserts the remaining default decision keys dispatch to their handlers,
+// including plain Enter -> onAcceptAi (only covered here).
+test('default keys dispatch handlers: no=d, skip=Space, undo=s, acceptAi=Enter', () => {
   const onNo = vi.fn()
   const onSkip = vi.fn()
   const onUndo = vi.fn()
@@ -137,9 +122,9 @@ test('pressing "n", "s", "z", "Enter" fires the matching handlers', () => {
       onAcceptAi={onAcceptAi}
     />,
   )
-  fireEvent.keyDown(window, { key: 'n' })
+  fireEvent.keyDown(window, { key: 'd' })
+  fireEvent.keyDown(window, { key: ' ' })
   fireEvent.keyDown(window, { key: 's' })
-  fireEvent.keyDown(window, { key: 'z' })
   fireEvent.keyDown(window, { key: 'Enter' })
   expect(onNo).toHaveBeenCalledTimes(1)
   expect(onSkip).toHaveBeenCalledTimes(1)
