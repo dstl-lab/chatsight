@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import type { SamplingPick } from '../../types'
 import { HoverTip } from './HoverTip'
 
@@ -7,12 +6,15 @@ interface ConversationMetaProps {
   notebook: string | null
   turnCount: number
   samplingPick?: SamplingPick | null
-  explorePickSummary?: string | null
   conversationStudentMessages?: number | null
   pendingStudentMessageNumber?: number | null
 }
 
 const MONO = 'font-mono text-[10px] tracking-[0.14em] uppercase'
+
+/** One-sentence overview of Explore serving (hover on Explore in meta bar). */
+const EXPLORE_SERVE_TIP =
+  'Explore serves chats scored for specificity, novelty, and rarity, avoiding copy-paste and ambiguity, for efficient labeling.'
 
 function Sep() {
   return <span className="mx-1.5 opacity-50 shrink-0">·</span>
@@ -33,6 +35,8 @@ function pickLabel(pick: SamplingPick): string {
 
 function pickTip(pick: SamplingPick): string {
   switch (pick) {
+    case 'explore':
+      return EXPLORE_SERVE_TIP
     case 'round_robin':
       return 'Next new conversation in fair rotation (not Explore scoring).'
     case 'continue':
@@ -48,37 +52,11 @@ function pickTone(pick: SamplingPick): 'faint' | 'ochre' | 'paper' {
   return 'faint'
 }
 
-function firstWords(text: string, count: number): string {
-  const words = text.trim().split(/\s+/)
-  if (words.length <= count) return text.trim()
-  return `${words.slice(0, count).join(' ')}…`
-}
-
-function ExplorePickLine({ summary, preview }: { summary: string; preview: string }) {
-  const label: ReactNode = (
-    <>
-      <span className="text-ochre">Explore</span>
-      <span className="mx-1.5 opacity-50">·</span>
-      <span className="font-sans normal-case tracking-normal text-[11px] text-faint font-normal">
-        {preview}
-      </span>
-    </>
-  )
-  return (
-    <HoverTip
-      label={label}
-      tip={summary}
-      className="inline-flex items-baseline gap-0"
-    />
-  )
-}
-
 export function ConversationMeta({
   chatlogId,
   notebook,
   turnCount,
   samplingPick,
-  explorePickSummary,
   conversationStudentMessages,
   pendingStudentMessageNumber,
 }: ConversationMetaProps) {
@@ -87,18 +65,7 @@ export function ConversationMeta({
     conversationStudentMessages != null &&
     pendingStudentMessageNumber != null
 
-  const exploreSummary =
-    explorePickSummary != null && explorePickSummary.trim()
-      ? explorePickSummary.trim()
-      : null
-
-  const summaryPreview = exploreSummary ? firstWords(exploreSummary, 10) : null
-
-  const showExploreLine = summaryPreview != null && exploreSummary != null
-  const showPickChip =
-    showQueue &&
-    samplingPick != null &&
-    (!showExploreLine || samplingPick !== 'explore')
+  const showPickChip = showQueue && samplingPick != null
 
   return (
     <div className={`px-12 py-5 border-t border-b border-edge-subtle bg-canvas ${MONO} text-faint`}>
@@ -119,15 +86,11 @@ export function ConversationMeta({
               {showPickChip && (
                 <>
                   <Sep />
-                  {samplingPick === 'explore' ? (
-                    <span className="shrink-0 text-ochre">{pickLabel(samplingPick)}</span>
-                  ) : (
-                    <HoverTip
-                      label={pickLabel(samplingPick)}
-                      tip={pickTip(samplingPick)}
-                      tone={pickTone(samplingPick)}
-                    />
-                  )}
+                  <HoverTip
+                    label={pickLabel(samplingPick)}
+                    tip={pickTip(samplingPick)}
+                    tone={pickTone(samplingPick)}
+                  />
                 </>
               )}
               <Sep />
@@ -138,12 +101,6 @@ export function ConversationMeta({
                   `${conversationStudentMessages} in this conversation.`
                 }
               />
-              {showExploreLine && (
-                <>
-                  <Sep />
-                  <ExplorePickLine summary={exploreSummary} preview={summaryPreview} />
-                </>
-              )}
             </>
           )}
         </div>

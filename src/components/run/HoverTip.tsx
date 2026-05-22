@@ -52,7 +52,7 @@ export function HoverTip({
             id={id}
             role="tooltip"
             style={{ top: coords.top, left: coords.left }}
-            className="fixed z-[200] block w-[min(18rem,calc(100vw-3rem))] max-w-[18rem] rounded border border-edge bg-elevated px-2.5 py-2 text-[11px] font-sans normal-case tracking-normal leading-snug text-on-surface shadow-lg pointer-events-none"
+            className="fixed z-[200] block w-[min(18rem,calc(100vw-3rem))] max-w-[18rem] rounded border border-edge bg-elevated px-2.5 py-2 text-[11px] font-sans normal-case tracking-normal leading-snug text-on-surface shadow-lg pointer-events-none whitespace-pre-line"
           >
             {tip}
           </span>,
