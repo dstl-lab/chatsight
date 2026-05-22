@@ -311,12 +311,31 @@ export const api = {
   skipOnboardingBrowse: (
     chatlogId: number,
     messageIndex: number,
-  ): Promise<FocusedMessage> =>
+    exhaustedChatlogIds: number[] = [],
+    opts?: { skipConversation?: boolean },
+  ): Promise<{
+    focused: FocusedMessage
+    exhausted_chatlog_ids: number[]
+    browse_reset: boolean
+  }> =>
     USE_MOCK
-      ? Promise.resolve(mockFocusedMessage)
-      : req('/api/onboarding/browse/skip', {
+      ? Promise.resolve({
+          focused: mockFocusedMessage,
+          exhausted_chatlog_ids: exhaustedChatlogIds,
+          browse_reset: false,
+        })
+      : req<{
+          focused: FocusedMessage
+          exhausted_chatlog_ids: number[]
+          browse_reset: boolean
+        }>('/api/onboarding/browse/skip', {
           method: 'POST',
-          ...json({ chatlog_id: chatlogId, message_index: messageIndex }),
+          ...json({
+            chatlog_id: chatlogId,
+            message_index: messageIndex,
+            exhausted_chatlog_ids: exhaustedChatlogIds,
+            skip_conversation: opts?.skipConversation ?? false,
+          }),
         }),
 
   createSingleLabel: (body: {

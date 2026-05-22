@@ -28,6 +28,23 @@ describe('runTutorial session gating', () => {
     expect(localStorage.getItem('chatsight_onboarding_skipped')).toBeNull()
   })
 
+  it('first-run tutorial requires zero labels and a document-load gate', async () => {
+    sessionStorage.setItem('chatsight_run_tutorial_reload_gate', '1')
+    const { shouldOfferFirstRunTutorial, takeTutorialReloadGate } = await import(
+      '../components/run/runTutorial'
+    )
+    expect(shouldOfferFirstRunTutorial(0)).toBe(true)
+    takeTutorialReloadGate()
+    expect(shouldOfferFirstRunTutorial(0)).toBe(false)
+    expect(shouldOfferFirstRunTutorial(1)).toBe(false)
+  })
+
+  it('SPA return to /run does not re-open tutorial without a reload gate', async () => {
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([])
+    const { shouldOfferFirstRunTutorial } = await import('../components/run/runTutorial')
+    expect(shouldOfferFirstRunTutorial(0)).toBe(false)
+  })
+
   it('does not clear skip flag on SPA navigate', async () => {
     vi.resetModules()
     sessionStorage.clear()

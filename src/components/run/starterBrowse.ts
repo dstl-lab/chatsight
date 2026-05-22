@@ -3,6 +3,7 @@ const BROWSE_KEY = 'chatsight_starter_browse'
 export type StarterBrowsePosition = {
   chatlog_id: number
   message_index: number
+  exhausted_chatlog_ids?: number[]
 }
 
 function resetBrowseOnReload(): void {
@@ -29,7 +30,10 @@ export function getStarterBrowse(): StarterBrowsePosition | null {
       typeof parsed.chatlog_id === 'number' &&
       typeof parsed.message_index === 'number'
     ) {
-      return parsed
+      const exhausted = Array.isArray(parsed.exhausted_chatlog_ids)
+        ? parsed.exhausted_chatlog_ids.filter((id) => typeof id === 'number')
+        : []
+      return { ...parsed, exhausted_chatlog_ids: exhausted }
     }
   } catch {
     /* ignore */

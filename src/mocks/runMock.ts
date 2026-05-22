@@ -137,8 +137,13 @@ export const mockFocusedMessage: FocusedMessage = {
   thread: fullThread,
   focus_index: 10,  // position of the focused turn in the full thread
   sampling_pick: 'explore',
-  explore_pick_summary:
-    'Conversation was chosen because of unique student question specificity and uncommon course wording.',
+  explore_pick_summary: 'Strong specificity, rare wording.',
+  explore_pick_breakdown: [
+    'Specificity · high',
+    'Rare wording · med',
+    'Conv novelty · low',
+    'Theme novelty · med',
+  ],
   conversation_summary: null,
   pick_rationale: null,
   conversation_student_messages: 7,

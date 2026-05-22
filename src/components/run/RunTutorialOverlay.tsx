@@ -105,14 +105,10 @@ function TutorialCard({
         ))}
       </ol>
       <p className="mt-4 font-mono text-[10px] tracking-[0.12em] uppercase text-faint">
-        Click anywhere to continue · <kbd className="text-ochre">Space</kbd> skips tutorial
+        Click anywhere to continue · <kbd className="text-ochre">Esc</kbd> skips tutorial
       </p>
     </div>
   )
-}
-
-function isSpaceKey(e: KeyboardEvent): boolean {
-  return e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar'
 }
 
 export function RunTutorialOverlay({ step, onAdvance, onSkip }: RunTutorialOverlayProps) {
@@ -129,13 +125,12 @@ export function RunTutorialOverlay({ step, onAdvance, onSkip }: RunTutorialOverl
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isSpaceKey(e)) return
+      if (e.key !== 'Escape') return
       e.preventDefault()
-      e.stopPropagation()
       skip()
     }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [skip])
 
   const pad = meta.anchor === 'label-name' ? 4 : 8
