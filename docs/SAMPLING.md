@@ -106,11 +106,11 @@ Used for **explore utility** and/or **meta bar** via `build_sampling_meta` (`que
 
 **Blend:** `blended_explore_utility` (785) — weighted sum (env-tunable `CHATSIGHT_EXPLORE_*_WEIGHT`), × `(1 − spam_penalty)`.
 
-Meta bar UI: `src/components/run/ConversationMeta.tsx` — `HoverTip` labels (Explore / Robin / Continue + metrics).
+Meta bar UI: `src/components/run/ConversationMeta.tsx` — Explore shows a ≤20-word summary; hover lists score tiers (high/med/low) as bullets.
 
 ### Simple
 
-**Scores favor specific, uncommon, on-theme student help and borderline cases; they punish generic help and pasted assignments.** The bar shows percents for transparency, not for instructor manual control per message.
+**Scores favor specific, uncommon, on-theme student help and borderline cases; they punish generic help and pasted assignments.** Explore picks show a one-line summary plus hover bullets, not percent chips.
 
 ---
 

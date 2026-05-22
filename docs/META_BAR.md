@@ -63,23 +63,11 @@ This does not count tutor turns. `N turns` in the always-shown section **does** 
 
 ---
 
-## Explore pick sentence (frozen per conversation)
+## Explore chip (hover only)
 
-When the queue first opens a chat via **Explore**, the server builds one plain-language sentence and stores it on `ConversationCursor.explore_pick_summary`. That sentence is **frozen** for the whole chat. Message 2/7, 3/7, etc. in the **same** Explore walk still report `sampling_pick: explore` (not Continue). **Continue** appears only when you come back to an Explore-opened chat after labeling a different conversation.
+When `sampling_pick` is **explore**, the meta bar shows an **Explore** label (ochre) with a hover tip — one static sentence on what Explore optimizes for (specificity, novelty, rarity; avoids copy-paste and ambiguity). Per-conversation pick explanations are not shown in the UI.
 
-**Format (typical):**  
-`Conversation was chosen because of unique student question specificity and uncommon course wording.`
-
-If no signal crosses the thresholds, the fallback is:  
-`Conversation was chosen because it offers varied student help worth labeling next.`
-
-**How it is composed** (`queue_service.compose_explore_pick_summary`): same underlying scores that drive Explore (specificity, corpus rarity, conversation/theme novelty, neighbor ambiguity) are turned into short noun phrases, not percent chips.
-
-**UI** (`ConversationMeta.tsx`):
-
-- Queue order in the bar: optional **Continue**/**Robin** chip, then **Msg x/y**, then **Explore ·** plus the **first 10 words** of the sentence and `…`. Hover the Explore unit for the full frozen text. The separate **Explore** pick chip is omitted when the sentence is shown.
-- **Continue** appears only when resuming a different partial chat; it is not shown while you walk through messages in an Explore-opened chat (only **Explore ·** … and Msg x/y).
-- **Robin** and **Continue** chats with no frozen summary show only the pick chip (no explore line).
+**Robin** and **Continue** keep their own hover tips. **Msg x/y** is always shown when queue fields are present.
 
 Metric percent fields (`neighbor_uncertainty_pct`, `conversation_novelty_pct`, etc.) may still exist on the API for other features; they are **not** shown in the meta bar.
 
@@ -87,9 +75,9 @@ Metric percent fields (`neighbor_uncertainty_pct`, `conversation_novelty_pct`, e
 
 ## Why the meta bar changes from message to message
 
-- **Continue** only when you return to a different in-progress chat; **Explore ·** … stays for the whole Explore walk in one chat.
+- **Continue** only when you return to a different in-progress chat.
 - **Msg x/y** updates every time you advance to the next student message.
-- **Explore pick sentence** stays the same for the whole chat once set.
+- **Explore** hover text is the same for every Explore pick (not per chat).
 
 ---
 
