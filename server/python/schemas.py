@@ -265,10 +265,14 @@ class OnboardingStarterResponse(BaseModel):
 class OnboardingBrowseSkipRequest(BaseModel):
     chatlog_id: int
     message_index: int
+    exhausted_chatlog_ids: List[int] = []
+    skip_conversation: bool = False
 
 
 class OnboardingBrowseSkipResponse(BaseModel):
     focused: "FocusedMessageResponse"
+    exhausted_chatlog_ids: List[int] = []
+    browse_reset: bool = False
 
 
 class QueueLabelRequest(BaseModel):
@@ -316,6 +320,7 @@ class FocusedMessageResponse(BaseModel):
     focus_index: int
     sampling_pick: Optional[str] = None  # "continue" | "explore" | "round_robin"
     explore_pick_summary: Optional[str] = None
+    explore_pick_breakdown: Optional[List[str]] = None
     conversation_summary: Optional[str] = None
     pick_rationale: Optional[str] = None
     sampling_hint: Optional[str] = None  # deprecated; use conversation_summary / pick_rationale

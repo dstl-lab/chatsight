@@ -155,18 +155,19 @@ def test_explore_fraction_patch_changes_effective_rate(client, session):
     assert active["hybrid_explore_effective"] == 1.0
 
 
-def test_compose_explore_pick_summary_plain_language(session):
+def test_compose_explore_pick_explanation_short_summary_and_breakdown(session):
     label = LabelDefinition(name="summary", mode="single", is_active=True, phase="labeling")
     session.add(label)
     session.commit()
     session.refresh(label)
     session.add(MessageCache(chatlog_id=500, message_index=0, message_text="focus"))
     session.commit()
-    text = queue_service.compose_explore_pick_summary(
+    out = queue_service.compose_explore_pick_explanation(
         session, label.id, 500, 0, "Can you explain groupby with a concrete example?"
     )
-    assert text.startswith("Conversation was chosen because")
-    assert "unique" in text.lower() or "varied" in text.lower()
+    assert len(out["summary"].split()) <= 20
+    assert out["breakdown"]
+    assert any("Specificity" in line for line in out["breakdown"])
 
 
 def test_display_sampling_pick_explore_walk_not_continue(session):
@@ -174,8 +175,10 @@ def test_display_sampling_pick_explore_walk_not_continue(session):
     session.add(label)
     session.commit()
     session.refresh(label)
-    frozen = "Conversation was chosen because of unique student question specificity."
-    queue_service._ensure_explore_pick_summary(session, label.id, 600, frozen)
+    frozen = "Strong specificity."
+    queue_service._ensure_explore_pick_explanation(
+        session, label.id, 600, frozen, ["Specificity · high"]
+    )
     session.add(
         LabelApplication(
             label_id=label.id,
@@ -213,20 +216,26 @@ def test_explore_pick_summary_frozen_on_cursor(session):
     session.add(label)
     session.commit()
     session.refresh(label)
-    frozen = (
-        "Conversation was chosen because of unique student question specificity "
-        "and uncommon course wording."
+    frozen = "Strong specificity, rare wording."
+    bullets = ["Specificity · high", "Rare wording · med"]
+    queue_service._ensure_explore_pick_explanation(
+        session, label.id, 600, frozen, bullets
     )
-    queue_service._ensure_explore_pick_summary(session, label.id, 600, frozen)
     session.commit()
     meta = queue_service.build_sampling_meta(session, label.id, 600, 1, 2, "continue")
     assert meta["explore_pick_summary"] == frozen
-    queue_service._ensure_explore_pick_summary(
-        session, label.id, 600, "Conversation was chosen because of unique something else."
+    assert meta["explore_pick_breakdown"] == bullets
+    queue_service._ensure_explore_pick_explanation(
+        session,
+        label.id,
+        600,
+        "Strong something else entirely.",
+        ["Theme novelty · high"],
     )
     session.commit()
     meta2 = queue_service.build_sampling_meta(session, label.id, 600, 1, 2, "continue")
     assert meta2["explore_pick_summary"] == frozen
+    assert meta2["explore_pick_breakdown"] == bullets
 
 
 def test_explore_walk_msg2_stays_explore_after_decide(client, session, monkeypatch):

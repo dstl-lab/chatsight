@@ -3368,12 +3368,18 @@ def post_onboarding_browse_skip(
     """Next student message in the current starter conversation (pre-label browse)."""
     try:
         result = onboarding_service.next_starter_browse_message(
-            db, req.chatlog_id, req.message_index
+            db,
+            req.chatlog_id,
+            req.message_index,
+            exhausted_chatlog_ids=req.exhausted_chatlog_ids,
+            skip_conversation=req.skip_conversation,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     return OnboardingBrowseSkipResponse(
         focused=FocusedMessageResponse(**result["focused"]),
+        exhausted_chatlog_ids=result.get("exhausted_chatlog_ids", req.exhausted_chatlog_ids),
+        browse_reset=bool(result.get("browse_reset")),
     )
 
 

@@ -207,6 +207,10 @@ def _migrate_conversation_cursor(conn, inspect, text):
         conn.execute(
             text("ALTER TABLE conversationcursor ADD COLUMN explore_pick_summary TEXT")
         )
+    if "explore_pick_breakdown" not in cols:
+        conn.execute(
+            text("ALTER TABLE conversationcursor ADD COLUMN explore_pick_breakdown TEXT")
+        )
 
 
 def create_db_and_tables():

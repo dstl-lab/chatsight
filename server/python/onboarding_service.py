@@ -215,10 +215,17 @@ def _refined_score(msgs: list[MessageCache], fast_priority: float) -> float:
     return fast_priority * (1.0 - spam) + contrast + length_bonus + spread_bonus
 
 
-def _pick_best_chatlog(session: Session, by_conv: dict[int, list[MessageCache]]) -> Optional[int]:
+def _pick_best_chatlog(
+    session: Session,
+    by_conv: dict[int, list[MessageCache]],
+    *,
+    exclude_chatlog_ids: Optional[frozenset[int]] = None,
+) -> Optional[int]:
     """Two-phase pick: fast filter all convs, refine top cap only (like explore queue)."""
     fast: list[tuple[float, int]] = []
     for cid, msgs in by_conv.items():
+        if exclude_chatlog_ids and cid in exclude_chatlog_ids:
+            continue
         pri = _fast_priority(session, cid, msgs)
         if pri >= 0:
             fast.append((pri, cid))
@@ -249,19 +256,33 @@ def _cache_valid(session: Session, cache: OnboardingStarterCache) -> bool:
     return cache.message_cache_count == _message_cache_count(session)
 
 
-def pick_starter_conversation(session: Session, *, force_refresh: bool = False) -> Optional[dict]:
+def pick_starter_conversation(
+    session: Session,
+    *,
+    force_refresh: bool = False,
+    exclude_chatlog_id: Optional[int] = None,
+) -> Optional[dict]:
     """Return starter payload dict; uses cached pick when corpus size unchanged."""
     count = _message_cache_count(session)
     if count == 0:
         return None
 
     cache = session.get(OnboardingStarterCache, 1)
-    if cache and not force_refresh and _cache_valid(session, cache):
+    use_cache = (
+        cache
+        and not force_refresh
+        and exclude_chatlog_id is None
+        and _cache_valid(session, cache)
+    )
+    if use_cache:
         names, source = _load_suggestions_json(cache.preview_json)
         return _build_payload(session, cache.chatlog_id, cache.seed_message_index, names, source)
 
     by_conv = _load_conversations(session)
-    cid = _pick_best_chatlog(session, by_conv)
+    exclude = frozenset({exclude_chatlog_id}) if exclude_chatlog_id is not None else None
+    cid = _pick_best_chatlog(session, by_conv, exclude_chatlog_ids=exclude)
+    if cid is None and exclude:
+        cid = _pick_best_chatlog(session, by_conv)
     if cid is None:
         return None
 
@@ -396,12 +417,42 @@ def starter_focused_message(
     )
 
 
+def _browse_after_conversation_exhausted(
+    session: Session,
+    exhausted_chatlog_ids: list[int],
+) -> dict[str, Any]:
+    focused_payload = queue_service.next_message_for_onboarding_browse(
+        session, exhausted_chatlog_ids
+    )
+    if focused_payload is None:
+        payload = pick_starter_conversation(session, force_refresh=True)
+        if not payload:
+            raise ValueError("No starter conversations available")
+        focused_payload = starter_focused_message(session, payload)
+        return {
+            "starter": payload,
+            "focused": focused_payload,
+            "browse_reset": True,
+        }
+    return {
+        "focused": focused_payload,
+        "exhausted_chatlog_ids": exhausted_chatlog_ids,
+    }
+
+
 def next_starter_browse_message(
     session: Session,
     chatlog_id: int,
     message_index: int,
+    exhausted_chatlog_ids: Optional[list[int]] = None,
+    *,
+    skip_conversation: bool = False,
 ) -> dict[str, Any]:
     """Advance to the next student message in the same conversation (pre-label browse)."""
+    if skip_conversation:
+        exhausted = list({*(exhausted_chatlog_ids or []), chatlog_id})
+        return _browse_after_conversation_exhausted(session, exhausted)
+
     indices = list(
         session.exec(
             select(MessageCache.message_index)
@@ -413,7 +464,8 @@ def next_starter_browse_message(
         raise ValueError("No messages in conversation")
     next_index = next((i for i in indices if i > message_index), None)
     if next_index is None:
-        raise ValueError("No further messages in this conversation")
+        exhausted = list({*(exhausted_chatlog_ids or []), chatlog_id})
+        return _browse_after_conversation_exhausted(session, exhausted)
     starter = starter_payload_for_chatlog(session, chatlog_id, next_index)
     focused = starter_focused_message(session, starter, message_index=next_index)
     return {"starter": starter, "focused": focused}

@@ -103,6 +103,40 @@ def test_onboarding_browse_skip_advances_message(client, session):
     assert nxt["message_index"] > midx
 
 
+def test_onboarding_browse_skip_rolls_via_queue_at_end(client, session):
+    _seed_rich_corpus(session)
+    r = client.get("/api/onboarding/starter?chatlog_id=401&message_index=2")
+    assert r.status_code == 200
+    assert r.json()["focused"]["message_index"] == 2
+    r2 = client.post(
+        "/api/onboarding/browse/skip",
+        json={"chatlog_id": 401, "message_index": 2, "exhausted_chatlog_ids": []},
+    )
+    assert r2.status_code == 200
+    body = r2.json()
+    nxt = body["focused"]
+    assert 401 in body["exhausted_chatlog_ids"]
+    assert (nxt["chatlog_id"], nxt["message_index"]) != (401, 2)
+
+
+def test_onboarding_browse_skip_conversation_jumps_queue(client, session):
+    _seed_rich_corpus(session)
+    starter = client.get("/api/onboarding/starter").json()
+    cid = starter["chatlog_id"]
+    midx = starter["focused"]["message_index"]
+    r = client.post(
+        "/api/onboarding/browse/skip",
+        json={
+            "chatlog_id": cid,
+            "message_index": midx,
+            "exhausted_chatlog_ids": [],
+            "skip_conversation": True,
+        },
+    )
+    assert r.status_code == 200
+    assert cid in r.json()["exhausted_chatlog_ids"]
+
+
 def test_onboarding_starter_resume_position(client, session):
     _seed_rich_corpus(session)
     r = client.get("/api/onboarding/starter?chatlog_id=401&message_index=1")

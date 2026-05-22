@@ -1,13 +1,14 @@
 """Queue logic for the single-label flow: pick the next conversation + message
 that needs a decision for the active label."""
 import hashlib
+import json
 import logging
 import math
 import os
 import random
 import threading
 from collections import OrderedDict
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from sqlalchemy import text as sql_text
 from sqlmodel import Session, select
@@ -24,6 +25,9 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Virtual label id for pre-label /run browse: uses hybrid sampling without DB rows.
+ONBOARDING_BROWSE_LABEL_ID = 0
 
 # Conversation threads in `events` are immutable once ingested, so a per-process
 # cache keyed by chatlog_id removes redundant Postgres roundtrips during /run
@@ -80,24 +84,31 @@ def neighbor_uncertainty_novelty(
     return uncertainty, novelty
 
 
-def _join_phrases(parts: list[str]) -> str:
-    if not parts:
-        return ""
-    if len(parts) == 1:
-        return parts[0]
-    if len(parts) == 2:
-        return f"{parts[0]} and {parts[1]}"
-    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+def _truncate_words(text: str, max_words: int) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text.strip()
+    return " ".join(words[:max_words]).strip()
 
 
-def compose_explore_pick_summary(
+def _score_tier(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    if value >= 0.55:
+        return "high"
+    if value >= 0.35:
+        return "med"
+    return "low"
+
+
+def compose_explore_pick_explanation(
     session: Session,
     label_id: int,
     chatlog_id: int,
     message_index: int,
     pending_text: str,
-) -> str:
-    """Plain-language sentence for why Explore opened this conversation (frozen per chat)."""
+) -> dict:
+    """≤20-word summary + concise score bullets for Explore (frozen per chat)."""
     unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
     labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
     conv_nov = explore_service.conversation_novelty(
@@ -109,39 +120,73 @@ def compose_explore_pick_summary(
     spec = explore_service.student_help_specificity(
         pending_text or "", corpus_rarity=rarity
     )
+    paste = paste_score or 0.0
 
-    phrases: list[str] = []
-    if spec is not None and spec >= 0.55 and (paste_score or 0) < 0.65:
-        phrases.append("student question specificity")
-    if rarity is not None and rarity >= 0.5 and (paste_score or 0) < 0.65:
-        phrases.append("uncommon course wording")
+    breakdown: list[str] = []
+    if spec is not None:
+        breakdown.append(f"Specificity · {_score_tier(spec)}")
+    if rarity is not None:
+        breakdown.append(f"Rare wording · {_score_tier(rarity)}")
+    if conv_nov is not None:
+        breakdown.append(f"Conv novelty · {_score_tier(conv_nov)}")
+    if theme_nov is not None:
+        breakdown.append(f"Theme novelty · {_score_tier(theme_nov)}")
+    if unc_nov:
+        unc, nov = unc_nov
+        if nov is not None:
+            breakdown.append(f"Msg novelty · {_score_tier(nov)}")
+        if unc is not None:
+            breakdown.append(f"Ambiguity · {_score_tier(unc)}")
+    if paste >= 0.65:
+        breakdown.append("Paste risk · high")
+
+    strong: list[str] = []
+    if spec is not None and spec >= 0.55 and paste < 0.65:
+        strong.append("specificity")
+    if rarity is not None and rarity >= 0.5 and paste < 0.65:
+        strong.append("rare wording")
     if conv_nov is not None and conv_nov >= 0.5:
-        phrases.append("topics unlike your labeled chats")
+        strong.append("new topics")
     if theme_nov is not None and theme_nov >= 0.5:
-        phrases.append("themes new to your prior labels")
-    if unc_nov and (paste_score or 0) < 0.65:
-        phrases.append("wording near past ambiguous labels")
+        strong.append("new theme")
+    if unc_nov and unc_nov[0] is not None and unc_nov[0] >= 0.55 and paste < 0.65:
+        strong.append("neighbor ambiguity")
 
-    if not phrases:
-        return (
-            "Conversation was chosen because it offers varied student help "
-            "worth labeling next."
-        )
-    return f"Conversation was chosen because of unique {_join_phrases(phrases)}."
+    if strong:
+        summary = _truncate_words(f"Strong {', '.join(strong[:3])}.", 20)
+    else:
+        summary = _truncate_words("Varied student help; worth labeling next.", 20)
+
+    return {"summary": summary, "breakdown": breakdown}
 
 
-def _ensure_explore_pick_summary(
+def compose_explore_pick_summary(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+    pending_text: str,
+) -> str:
+    return compose_explore_pick_explanation(
+        session, label_id, chatlog_id, message_index, pending_text
+    )["summary"]
+
+
+def _ensure_explore_pick_explanation(
     session: Session,
     label_id: int,
     chatlog_id: int,
     summary: str,
+    breakdown: list[str],
 ) -> None:
     """Store pick explanation once per (label, chat); reused for every message in the chat."""
     row = session.get(ConversationCursor, (label_id, chatlog_id))
     if row and row.explore_pick_summary:
         return
+    payload = json.dumps(breakdown)
     if row:
         row.explore_pick_summary = summary
+        row.explore_pick_breakdown = payload
         session.add(row)
         return
     session.add(
@@ -151,8 +196,18 @@ def _ensure_explore_pick_summary(
             last_message_index=0,
             last_message_index_decided=0,
             explore_pick_summary=summary,
+            explore_pick_breakdown=payload,
         )
     )
+
+
+def _ensure_explore_pick_summary(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    summary: str,
+) -> None:
+    _ensure_explore_pick_explanation(session, label_id, chatlog_id, summary, [])
 
 
 def _last_human_labeled_chatlog_id(session: Session, label_id: int) -> Optional[int]:
@@ -216,12 +271,21 @@ def build_sampling_meta(
         if cursor and cursor.explore_pick_summary and cursor.explore_pick_summary.strip()
         else None
     )
+    explore_pick_breakdown: Optional[list[str]] = None
+    if cursor and cursor.explore_pick_breakdown:
+        try:
+            parsed = json.loads(cursor.explore_pick_breakdown)
+            if isinstance(parsed, list):
+                explore_pick_breakdown = [str(x) for x in parsed]
+        except (json.JSONDecodeError, TypeError):
+            explore_pick_breakdown = None
 
     return {
         "sampling_pick": sampling_pick,
         "conversation_student_messages": conversation_student_messages,
         "pending_student_message_number": message_index + 1,
         "explore_pick_summary": explore_pick_summary,
+        "explore_pick_breakdown": explore_pick_breakdown,
         "neighbor_scores_available": False,
         "neighbor_uncertainty_pct": None,
         "neighbor_novelty_pct": None,
@@ -386,11 +450,43 @@ def _select_next_chatlog_id(
     return random.choice(explore_choices), "explore"
 
 
+def _synthetic_decided_for_exhausted_conversations(
+    session: Session, chatlog_ids: Iterable[int]
+) -> set[tuple[int, int]]:
+    """Treat every student turn in these conversations as already visited (browse-only)."""
+    decided: set[tuple[int, int]] = set()
+    for cid in set(chatlog_ids):
+        for midx in session.exec(
+            select(MessageCache.message_index).where(MessageCache.chatlog_id == cid)
+        ).all():
+            decided.add((cid, midx))
+    return decided
+
+
+def next_message_for_onboarding_browse(
+    session: Session,
+    exhausted_chatlog_ids: list[int],
+    assignment_id: Optional[int] = None,
+    explore_fraction: Optional[float] = None,
+) -> Optional[dict]:
+    """After walking off the end of a conversation, pick the next message like labeled skip."""
+    extra = _synthetic_decided_for_exhausted_conversations(session, exhausted_chatlog_ids)
+    return next_message_for_label(
+        session,
+        ONBOARDING_BROWSE_LABEL_ID,
+        assignment_id=assignment_id,
+        explore_fraction=explore_fraction,
+        extra_decided=extra,
+    )
+
+
 def next_message_for_label(
     session: Session,
     label_id: int,
     assignment_id: Optional[int] = None,
     explore_fraction: Optional[float] = None,
+    *,
+    extra_decided: Optional[set[tuple[int, int]]] = None,
 ) -> Optional[dict]:
     eff_explore = (
         max(0.0, min(1.0, explore_fraction))
@@ -416,6 +512,8 @@ def next_message_for_label(
             .where(LabelApplication.label_id == label_id)
         ).all()
     )
+    if extra_decided:
+        decided |= extra_decided
 
     label = session.get(LabelDefinition, label_id)
     if (
@@ -496,10 +594,16 @@ def next_message_for_label(
         return None
     midx, text, notebook = tup
     if pick_mode == "explore":
-        summary = compose_explore_pick_summary(
+        explanation = compose_explore_pick_explanation(
             session, label_id, cid_pick, midx, text
         )
-        _ensure_explore_pick_summary(session, label_id, cid_pick, summary)
+        _ensure_explore_pick_explanation(
+            session,
+            label_id,
+            cid_pick,
+            explanation["summary"],
+            explanation["breakdown"],
+        )
     display_pick = _display_sampling_pick(session, label_id, cid_pick, pick_mode)
     sampling_meta = build_sampling_meta(
         session,
@@ -637,6 +741,7 @@ def _build_focus_payload(
         "student_rarity_pct": None,
         "conversation_summary": None,
         "explore_pick_summary": None,
+        "explore_pick_breakdown": None,
         "pick_rationale": None,
         "sampling_hint": None,
     }

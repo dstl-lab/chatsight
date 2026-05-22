@@ -125,6 +125,7 @@ class ConversationCursor(SQLModel, table=True):
     last_message_index: int = Field(default=0)
     last_message_index_decided: int
     explore_pick_summary: Optional[str] = Field(default=None)
+    explore_pick_breakdown: Optional[str] = Field(default=None)  # JSON list[str]
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
