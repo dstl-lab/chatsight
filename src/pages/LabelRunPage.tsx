@@ -7,6 +7,7 @@ import { DecisionDock } from '../components/run/DecisionDock'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
+import { OnboardingModal, onboardingSkipped } from '../components/run/OnboardingModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
 import { AiReviewDock } from '../components/decision/AiReviewDock'
 import { useKeybinds } from '../hooks/useKeybinds'
@@ -47,6 +48,7 @@ export function LabelRunPage() {
   const [abortOpen, setAbortOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
 
   // Mirrors activeLabel.id so async handlers can detect a label switch that
   // occurred while a decide/undo/skip was in flight, and avoid clobbering
@@ -156,6 +158,8 @@ export function LabelRunPage() {
         setReadiness(null)
         const q = await api.listSingleLabels({ phase: 'queued' })
         setQueued(q)
+        const all = await api.listSingleLabels()
+        setOnboardingOpen(all.length === 0 && !onboardingSkipped())
       }
     } catch (e) {
       console.error('LabelRunPage refresh failed', e)
@@ -415,7 +419,20 @@ export function LabelRunPage() {
   }
 
   if (!activeLabel) {
-    return <NoActiveLabel onCreated={refresh} />
+    return (
+      <>
+        {onboardingOpen && (
+          <OnboardingModal
+            onStarted={() => {
+              setOnboardingOpen(false)
+              void refresh()
+            }}
+            onSkipTutorial={() => setOnboardingOpen(false)}
+          />
+        )}
+        {!onboardingOpen && <NoActiveLabel onCreated={refresh} />}
+      </>
+    )
   }
 
   // ─── Review phase ───

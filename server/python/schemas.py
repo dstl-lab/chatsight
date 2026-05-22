@@ -241,6 +241,24 @@ class RecalibrationStatsResponse(BaseModel):
 class CreateSingleLabelRequest(BaseModel):
     name: str
     description: Optional[str] = None
+    seed_chatlog_id: Optional[int] = None
+    seed_message_index: Optional[int] = None
+
+
+class OnboardingPreviewTurn(BaseModel):
+    message_index: int
+    message_text: str
+    suggested_label_names: list[str]
+
+
+class OnboardingStarterResponse(BaseModel):
+    chatlog_id: int
+    seed_message_index: int
+    notebook: Optional[str] = None
+    conversation_student_messages: int
+    preview_turns: list[OnboardingPreviewTurn]
+    suggestions_source: str = "rules"  # "ai" | "rules"
+    score_summary: Optional[dict] = None
 
 
 class QueueLabelRequest(BaseModel):

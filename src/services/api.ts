@@ -12,7 +12,7 @@ import type {
   AssistResponse,
   SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
   SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
-  BrowseBucket,
+  BrowseBucket, OnboardingStarter,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -292,7 +292,17 @@ export const api = {
   getActiveSingleLabel: (): Promise<SingleLabel | null> =>
     USE_MOCK ? Promise.resolve(mockActiveLabel) : req('/api/single-labels/active'),
 
-  createSingleLabel: (body: { name: string; description?: string }): Promise<SingleLabel> =>
+  getOnboardingStarter: (refresh = false): Promise<OnboardingStarter> =>
+    USE_MOCK
+      ? Promise.resolve(mockApi.onboardingStarter)
+      : req(`/api/onboarding/starter${refresh ? '?refresh=true' : ''}`),
+
+  createSingleLabel: (body: {
+    name: string
+    description?: string
+    seed_chatlog_id?: number
+    seed_message_index?: number
+  }): Promise<SingleLabel> =>
     USE_MOCK
       ? Promise.resolve({ ...mockActiveLabel, id: Math.random(), name: body.name, description: body.description ?? null })
       : req('/api/single-labels', { method: 'POST', ...json(body) }),

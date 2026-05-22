@@ -383,4 +383,30 @@ export const mockApi = {
       ],
     },
   } satisfies SingleLabelRunDetail,
+
+  onboardingStarter: {
+    chatlog_id: 1,
+    seed_message_index: 0,
+    notebook: 'hw1.ipynb',
+    conversation_student_messages: 3,
+    suggestions_source: 'rules' as const,
+    preview_turns: [
+      {
+        message_index: 0,
+        message_text:
+          "Can you explain what a DataFrame is and how it's different from a regular Python list?",
+        suggested_label_names: ['Concept question', 'Specific ask'],
+      },
+      {
+        message_index: 1,
+        message_text: 'How do I filter rows where the grade column is above 90?',
+        suggested_label_names: ['Concept question', 'Homework logic'],
+      },
+      {
+        message_index: 2,
+        message_text: 'My loop keeps running forever — what did I do wrong?',
+        suggested_label_names: ['Debugging help', 'Specific ask'],
+      },
+    ],
+  },
 }

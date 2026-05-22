@@ -35,6 +35,7 @@ from schemas import (
     LabelReviewResponse,
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
     CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
+    OnboardingStarterResponse,
     SkipConversationRequest, SkipConversationResponse,
     SingleLabelResponse, FocusedMessageResponse, ReadinessResponse, DecideResponse,
     SummaryResponse, SummaryPattern, HandoffResponse,
@@ -50,6 +51,7 @@ from schemas import (
     GeminiPreviewResponse,
 )
 import decision_service
+import onboarding_service
 import queue_service
 import binary_autolabel_service
 import assignment_service
@@ -3316,6 +3318,18 @@ def get_single_label_message_detail(
     )
 
 
+@app.get("/api/onboarding/starter", response_model=OnboardingStarterResponse)
+def get_onboarding_starter(
+    refresh: bool = False,
+    db: Session = Depends(get_session),
+):
+    """Scored starter conversation + dynamic example framings for onboarding modal."""
+    payload = onboarding_service.pick_starter_conversation(db, force_refresh=refresh)
+    if not payload:
+        raise HTTPException(status_code=404, detail="No messages in cache for onboarding")
+    return OnboardingStarterResponse(**payload)
+
+
 @app.post("/api/single-labels", response_model=SingleLabelResponse)
 def create_single_label(
     req: CreateSingleLabelRequest,
@@ -3327,6 +3341,8 @@ def create_single_label(
         mode="single",
         phase="labeling",
         is_active=False,
+        onboarding_seed_chatlog_id=req.seed_chatlog_id,
+        onboarding_seed_message_index=req.seed_message_index,
     )
     db.add(label)
     db.commit()

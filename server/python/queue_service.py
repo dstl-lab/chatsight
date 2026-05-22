@@ -15,7 +15,13 @@ from sqlmodel import Session, select
 import assist_service
 import explore_service
 from database import ext_engine
-from models import ConversationCursor, ConversationProfile, LabelApplication, MessageCache
+from models import (
+    ConversationCursor,
+    ConversationProfile,
+    LabelApplication,
+    LabelDefinition,
+    MessageCache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -410,6 +416,48 @@ def next_message_for_label(
             .where(LabelApplication.label_id == label_id)
         ).all()
     )
+
+    label = session.get(LabelDefinition, label_id)
+    if (
+        label
+        and label.onboarding_seed_chatlog_id is not None
+        and len(decided) == 0
+    ):
+        seed_cid = label.onboarding_seed_chatlog_id
+        seed_midx = label.onboarding_seed_message_index or 0
+        seed_row = session.exec(
+            select(
+                MessageCache.message_text,
+                MessageCache.notebook,
+            )
+            .where(MessageCache.chatlog_id == seed_cid)
+            .where(MessageCache.message_index == seed_midx)
+        ).first()
+        if seed_row and (seed_cid, seed_midx) not in decided:
+            text, notebook = seed_row
+            sampling_meta = build_sampling_meta(
+                session,
+                label_id,
+                seed_cid,
+                seed_midx,
+                len(
+                    session.exec(
+                        select(MessageCache.message_index).where(
+                            MessageCache.chatlog_id == seed_cid
+                        )
+                    ).all()
+                ),
+                "round_robin",
+            )
+            return _build_focus_payload(
+                session,
+                label_id,
+                seed_cid,
+                seed_midx,
+                text,
+                notebook,
+                sampling_meta=sampling_meta,
+            )
 
     conv: dict[int, list[tuple[int, str, Optional[str]]]] = {}
     assign_by_cid: dict[int, Optional[int]] = {}

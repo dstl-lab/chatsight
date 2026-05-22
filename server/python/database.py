@@ -95,6 +95,18 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN guidance TEXT"))
     if "hybrid_explore_fraction" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN hybrid_explore_fraction FLOAT"))
+    if "onboarding_seed_chatlog_id" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_chatlog_id INTEGER"))
+    if "onboarding_seed_message_index" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_message_index INTEGER"))
+
+
+def _migrate_onboarding_starter_cache(conn, inspect, text):
+    if not inspect(conn).has_table("onboardingstartercache"):
+        return
+    cols = [c["name"] for c in inspect(conn).get_columns("onboardingstartercache")]
+    if "preview_json" not in cols:
+        conn.execute(text("ALTER TABLE onboardingstartercache ADD COLUMN preview_json TEXT"))
 
 
 def _migrate_label_application(conn, inspect, text):
@@ -178,6 +190,7 @@ def create_db_and_tables():
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
         _migrate_conversation_cursor(conn, inspect, text)
+        _migrate_onboarding_starter_cache(conn, inspect, text)
         _cleanup_polluted_multi_label_rows(conn, text)
         # Indexes
         conn.execute(text(
