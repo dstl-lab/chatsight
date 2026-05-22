@@ -6,18 +6,25 @@ import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
 
 interface StripBarProps {
-  label: SingleLabel
-  readiness: ReadinessState
+  label?: SingleLabel
+  readiness?: ReadinessState
   assignments: AssignmentMapping[]
   unmapped: UnmappedCount | null
   selectedAssignmentId: number | null
   onSelectAssignment: (id: number | null) => void
-  onHandoff: () => void
+  onHandoff?: () => void
   onSampleHandoff?: (n: number) => void
-  onAbort: () => void
+  onAbort?: () => void
   onLabelMetaUpdated?: () => void | Promise<void>
   readinessOpen?: boolean
   onReadinessOpenChange?: (open: boolean) => void
+  /** Awaiting label name: flashing prompt replaces the label title. */
+  pendingLabel?: {
+    draftName: string
+    onDraftNameChange: (name: string) => void
+    onCommit: () => void
+    busy?: boolean
+  }
 }
 
 export function StripBar({
@@ -33,7 +40,49 @@ export function StripBar({
   onLabelMetaUpdated,
   readinessOpen,
   onReadinessOpenChange,
+  pendingLabel,
 }: StripBarProps) {
+  if (pendingLabel) {
+    const { draftName, onDraftNameChange, onCommit, busy } = pendingLabel
+    return (
+      <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
+        <span className="font-serif font-medium text-[18px] tracking-[-0.01em] flex items-center gap-2.5 min-w-0">
+          <span className="text-ochre text-[11px] shrink-0">◆</span>
+          <span
+            className="rounded-sm border border-ochre/70 bg-ochre/10 px-2 py-0.5 animate-pulse"
+            title="Type a label name to start labeling"
+          >
+            <input
+              autoFocus
+              value={draftName}
+              onChange={(e) => onDraftNameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && draftName.trim() && !busy) {
+                  e.preventDefault()
+                  onCommit()
+                }
+              }}
+              placeholder="Label name…"
+              className="appearance-none bg-transparent text-paper placeholder:text-faint/80 focus:outline-none w-[min(280px,42vw)] font-serif"
+            />
+          </span>
+        </span>
+        <span className="flex-1" />
+        <span className="font-mono text-[10px] tracking-[0.06em] uppercase text-faint">
+          Yes / No unlock after you name this label
+        </span>
+        <AssignmentPicker
+          assignments={assignments}
+          unmapped={unmapped}
+          selectedId={selectedAssignmentId}
+          onSelect={onSelectAssignment}
+        />
+      </div>
+    )
+  }
+
+  if (!label || !readiness) return null
+
   return (
     <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
       <span className="font-serif font-medium text-[18px] text-paper tracking-[-0.01em] flex items-center gap-2.5">
@@ -63,22 +112,26 @@ export function StripBar({
       {import.meta.env.DEV && onSampleHandoff && (
         <SampleHandoffControl onSubmit={onSampleHandoff} />
       )}
-      <ReadinessChip
-        readiness={readiness}
-        labelId={label.id}
-        guidance={label.guidance}
-        onHandoff={onHandoff}
-        open={readinessOpen}
-        onOpenChange={onReadinessOpenChange}
-      />
-      <button
-        type="button"
-        onClick={onAbort}
-        title="Abort labeling — discard all decisions for this label"
-        className="appearance-none font-mono text-[10px] tracking-[0.06em] uppercase text-faint hover:text-brick transition-colors px-2 py-[5px]"
-      >
-        ✕ abort
-      </button>
+      {onHandoff && (
+        <ReadinessChip
+          readiness={readiness}
+          labelId={label.id}
+          guidance={label.guidance}
+          onHandoff={onHandoff}
+          open={readinessOpen}
+          onOpenChange={onReadinessOpenChange}
+        />
+      )}
+      {onAbort && (
+        <button
+          type="button"
+          onClick={onAbort}
+          title="Abort labeling — discard all decisions for this label"
+          className="appearance-none font-mono text-[10px] tracking-[0.06em] uppercase text-faint hover:text-brick transition-colors px-2 py-[5px]"
+        >
+          ✕ abort
+        </button>
+      )}
     </div>
   )
 }

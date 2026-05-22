@@ -294,7 +294,7 @@ export const api = {
 
   getOnboardingStarter: (refresh = false): Promise<OnboardingStarter> =>
     USE_MOCK
-      ? Promise.resolve(mockApi.onboardingStarter)
+      ? Promise.resolve({ ...mockApi.onboardingStarter, focused: mockFocusedMessage })
       : req(`/api/onboarding/starter${refresh ? '?refresh=true' : ''}`),
 
   createSingleLabel: (body: {

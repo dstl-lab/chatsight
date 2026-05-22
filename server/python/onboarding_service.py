@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 import explore_service
+import queue_service
 from models import MessageCache, OnboardingStarterCache
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,38 @@ def _load_suggestions_json(raw: Optional[str]) -> tuple[dict[int, list[str]], st
         return {int(k): list(v) for k, v in data.items()}, "rules"
     except (json.JSONDecodeError, TypeError, ValueError):
         return {}, "rules"
+
+
+def starter_focused_message(session: Session, starter: dict[str, Any]) -> dict[str, Any]:
+    """Full thread + focus for the starter conversation (no label required)."""
+    chatlog_id = int(starter["chatlog_id"])
+    message_index = int(starter["seed_message_index"])
+    row = session.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == chatlog_id,
+            MessageCache.message_index == message_index,
+        )
+    ).first()
+    if not row:
+        raise ValueError("Starter message not found in cache")
+    student_count = int(starter.get("conversation_student_messages") or 1)
+    meta = queue_service.build_sampling_meta(
+        session,
+        0,
+        chatlog_id,
+        message_index,
+        student_count,
+        "explore",
+    )
+    return queue_service._build_focus_payload(
+        session,
+        0,
+        chatlog_id,
+        message_index,
+        row.message_text,
+        row.notebook,
+        sampling_meta=meta,
+    )
 
 
 def _build_payload(

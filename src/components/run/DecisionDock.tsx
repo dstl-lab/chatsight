@@ -10,6 +10,8 @@ interface DecisionDockProps {
   onHandoff: () => void
   onSkipConversation: () => void
   disabled?: boolean
+  /** When true, Yes/No are disabled; only Skip is available (awaiting label name). */
+  skipOnly?: boolean
   /** When non-null, replaces the keyboard hints with a transient confirmation.
    *  Yes/No confirmation is handled visually by a flash on the matching button,
    *  so only Skip is expected to flow through here. */
@@ -24,9 +26,11 @@ export function DecisionDock({
   onHandoff,
   onSkipConversation,
   disabled,
+  skipOnly = false,
   recent,
   flash = null,
 }: DecisionDockProps) {
+  const yesNoDisabled = disabled || skipOnly
   const { keybinds } = useKeybinds()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -44,7 +48,7 @@ export function DecisionDock({
             kbd={formatKey(keybinds.yes)}
             tone="yes"
             onClick={() => onDecide('yes')}
-            disabled={disabled}
+            disabled={yesNoDisabled}
             flashing={flash === 'yes'}
           />
           <DecisionButton
@@ -52,7 +56,7 @@ export function DecisionDock({
             kbd={formatKey(keybinds.no)}
             tone="no"
             onClick={() => onDecide('no')}
-            disabled={disabled}
+            disabled={yesNoDisabled}
             flashing={flash === 'no'}
           />
           <DecisionButton
@@ -65,6 +69,10 @@ export function DecisionDock({
         </div>
         {recent ? (
           <RecentLine recent={recent} onUndo={onUndo} />
+        ) : skipOnly ? (
+          <p className="font-mono text-[10px] tracking-[0.08em] text-faint">
+            Skip picks another starter conversation until you name a label
+          </p>
         ) : (
           <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint items-center">
             <button onClick={onUndo} className="hover:text-on-canvas transition-colors">

@@ -259,6 +259,7 @@ class OnboardingStarterResponse(BaseModel):
     preview_turns: list[OnboardingPreviewTurn]
     suggestions_source: str = "rules"  # "ai" | "rules"
     score_summary: Optional[dict] = None
+    focused: Optional["FocusedMessageResponse"] = None
 
 
 class QueueLabelRequest(BaseModel):
@@ -318,6 +319,9 @@ class FocusedMessageResponse(BaseModel):
     theme_novelty_pct: Optional[int] = None
     student_specificity_pct: Optional[int] = None
     student_rarity_pct: Optional[int] = None
+
+
+OnboardingStarterResponse.model_rebuild()
 
 
 class ReadinessResponse(BaseModel):

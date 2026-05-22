@@ -84,6 +84,8 @@ def test_onboarding_starter_endpoint(client, session):
     assert body["chatlog_id"] == 401
     assert body["seed_message_index"] == 0
     assert len(body["preview_turns"]) == 3
+    assert body["focused"] is not None
+    assert len(body["focused"]["thread"]) >= 1
 
 
 def test_create_single_label_with_seed(client, session):

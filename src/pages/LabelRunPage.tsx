@@ -49,6 +49,9 @@ export function LabelRunPage() {
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const [pendingFocused, setPendingFocused] = useState<FocusedMessage | null>(null)
+  const [draftLabelName, setDraftLabelName] = useState('')
+  const [pendingBusy, setPendingBusy] = useState(false)
 
   // Mirrors activeLabel.id so async handlers can detect a label switch that
   // occurred while a decide/undo/skip was in flight, and avoid clobbering
@@ -129,6 +132,26 @@ export function LabelRunPage() {
 
   // Refetch the page state. Called on mount, after decisions, after undo, after queue add.
   const refresh = useCallback(async () => {
+    const applyActiveState = async (active: SingleLabel) => {
+      const [next, ready, q] = await Promise.all([
+        api.getNextFocused(active.id, selectedAssignmentId ?? undefined),
+        api.getReadiness(active.id),
+        api.listSingleLabels({ phase: 'queued' }),
+      ])
+      let rq: ReviewItem[] | null = null
+      if (active.phase === 'reviewing') {
+        rq = await api.getReviewQueue(active.id)
+      }
+      setActiveLabel(active)
+      setFocused(next)
+      setReadiness(ready)
+      setQueued(q)
+      setReviewQueue(rq)
+      setReviewIdx(0)
+      setPendingFocused(null)
+      setOnboardingOpen(false)
+    }
+
     try {
       setLoadError(null)
       const active = await api.getActiveSingleLabel()
@@ -136,37 +159,44 @@ export function LabelRunPage() {
       setAssignments(a)
       setUnmapped(um)
       if (active) {
-        const [next, ready, q] = await Promise.all([
-          api.getNextFocused(active.id, selectedAssignmentId ?? undefined),
-          api.getReadiness(active.id),
-          api.listSingleLabels({ phase: 'queued' }),
-        ])
-        let rq: ReviewItem[] | null = null
-        if (active.phase === 'reviewing') {
-          rq = await api.getReviewQueue(active.id)
-        }
-        // Apply active + focused together so we never render activeLabel with a
-        // stale/null focused (that path shows DoneWithLabel — queue exhausted).
-        setActiveLabel(active)
-        setFocused(next)
-        setReadiness(ready)
-        setQueued(q)
-        setReviewQueue(rq)
-        setReviewIdx(0)
-      } else {
-        setActiveLabel(null)
-        setFocused(null)
-        setReadiness(null)
-        setReviewQueue(null)
-        setReviewIdx(0)
-        const q = await api.listSingleLabels({ phase: 'queued' })
-        setQueued(q)
-        const all = await api.listSingleLabels()
-        setOnboardingOpen(all.length === 0 && !onboardingSkipped())
+        await applyActiveState(active)
+        return
       }
+
+      setActiveLabel(null)
+      setFocused(null)
+      setReadiness(null)
+      setReviewQueue(null)
+      setReviewIdx(0)
+
+      const q = await api.listSingleLabels({ phase: 'queued' })
+      setQueued(q)
+      if (q.length > 0) {
+        await api.activateSingleLabel(q[0].id)
+        const activeNow = await api.getActiveSingleLabel()
+        if (activeNow) {
+          await applyActiveState(activeNow)
+          return
+        }
+      }
+
+      const all = await api.listSingleLabels()
+      const showOnboarding = all.length === 0 && !onboardingSkipped()
+      setOnboardingOpen(showOnboarding)
+      if (showOnboarding) {
+        setPendingFocused(null)
+        return
+      }
+
+      const starter = await api.getOnboardingStarter()
+      if (!starter.focused) {
+        throw new Error('Could not load starter conversation for labeling')
+      }
+      setPendingFocused(starter.focused)
     } catch (e) {
       console.error('LabelRunPage refresh failed', e)
       setLoadError(e instanceof Error ? e.message : 'Failed to load run page')
+      setPendingFocused(null)
     }
   }, [selectedAssignmentId])
 
@@ -351,6 +381,41 @@ export function LabelRunPage() {
 
   const { keybinds } = useKeybinds()
 
+  const handleCommitPendingLabel = useCallback(async () => {
+    const name = draftLabelName.trim()
+    if (!name || !pendingFocused || pendingBusy) return
+    setPendingBusy(true)
+    try {
+      const created = await api.createSingleLabel({
+        name,
+        seed_chatlog_id: pendingFocused.chatlog_id,
+        seed_message_index: pendingFocused.message_index,
+      })
+      await api.activateSingleLabel(created.id)
+      setDraftLabelName('')
+      setPendingFocused(null)
+      setLoading(true)
+      await refresh()
+    } finally {
+      setPendingBusy(false)
+      setLoading(false)
+    }
+  }, [draftLabelName, pendingFocused, pendingBusy, refresh])
+
+  const handlePendingSkip = useCallback(async () => {
+    if (pendingBusy) return
+    setPendingBusy(true)
+    try {
+      const starter = await api.getOnboardingStarter(true)
+      if (starter.focused) setPendingFocused(starter.focused)
+    } catch (e) {
+      console.error('pending skip failed', e)
+      setLoadError(e instanceof Error ? e.message : 'Failed to load another starter conversation')
+    } finally {
+      setPendingBusy(false)
+    }
+  }, [pendingBusy])
+
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
@@ -373,12 +438,22 @@ export function LabelRunPage() {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (noteOpen || abortOpen || readinessOpen) return
       const k = e.key.toLowerCase()
-      if (k === 'l') {
+      if (k === 'l' && activeLabel) {
         e.preventDefault()
         setNoteOpen(true)
         return
       }
-      
+
+      if (!activeLabel && pendingFocused) {
+        const skipKey = keybinds.skip
+        const isSkip = k === skipKey || (e.shiftKey && `shift+${k}` === skipKey)
+        if (isSkip && !e.shiftKey) {
+          if (k === ' ') e.preventDefault()
+          void handlePendingSkip()
+        }
+        return
+      }
+
       const inReview = activeLabel?.phase === 'reviewing' && reviewQueue !== null
       const skipKey = keybinds.skip
       const isShiftSkip = e.shiftKey && (k === skipKey || `shift+${k}` === skipKey)
@@ -390,7 +465,17 @@ export function LabelRunPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [noteOpen, abortOpen, readinessOpen, activeLabel?.phase, reviewQueue, handleSkipConversation, keybinds.skip])
+  }, [
+    noteOpen,
+    abortOpen,
+    readinessOpen,
+    activeLabel,
+    pendingFocused,
+    reviewQueue,
+    handleSkipConversation,
+    handlePendingSkip,
+    keybinds.skip,
+  ])
 
   if (loading) {
     return (
@@ -422,26 +507,89 @@ export function LabelRunPage() {
   }
 
   if (!activeLabel) {
+    if (onboardingOpen) {
+      return (
+        <OnboardingModal
+          onStarted={() => {
+            setOnboardingOpen(false)
+            setLoading(true)
+            void refresh().finally(() => setLoading(false))
+          }}
+          onSkipTutorial={() => {
+            setOnboardingOpen(false)
+            setLoading(true)
+            void refresh().finally(() => setLoading(false))
+          }}
+        />
+      )
+    }
+    if (!pendingFocused) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
+          Loading conversation…
+        </div>
+      )
+    }
     return (
       <>
-        {onboardingOpen && (
-          <OnboardingModal
-            onStarted={() => {
-              setOnboardingOpen(false)
-              setLoading(true)
-              void refresh().finally(() => setLoading(false))
-            }}
-            onSkipTutorial={() => setOnboardingOpen(false)}
-          />
-        )}
-        {!onboardingOpen && (
-          <NoActiveLabel
-            onCreated={() => {
-              setLoading(true)
-              void refresh().finally(() => setLoading(false))
-            }}
-          />
-        )}
+        <DecisionWorkspace
+          thread={pendingFocused.thread}
+          focusIndex={pendingFocused.focus_index}
+          header={
+            <>
+              <div className="bg-canvas">
+                <StripBar
+                  assignments={assignments}
+                  unmapped={unmapped}
+                  selectedAssignmentId={selectedAssignmentId}
+                  onSelectAssignment={(id) => setSelectedAssignmentId(id)}
+                  pendingLabel={{
+                    draftName: draftLabelName,
+                    onDraftNameChange: setDraftLabelName,
+                    onCommit: () => void handleCommitPendingLabel(),
+                    busy: pendingBusy,
+                  }}
+                />
+                <QueueLine
+                  queued={queued}
+                  onAdd={() => setNoteOpen(true)}
+                  onRemove={handleRemoveQueued}
+                  onClearAll={handleClearQueue}
+                  onSwitch={handleSwitchToQueued}
+                />
+              </div>
+              <ConversationMeta
+                chatlogId={pendingFocused.chatlog_id}
+                notebook={pendingFocused.notebook}
+                turnCount={pendingFocused.conversation_turn_count}
+                samplingPick={pendingFocused.sampling_pick}
+                explorePickSummary={pendingFocused.explore_pick_summary}
+                conversationStudentMessages={pendingFocused.conversation_student_messages}
+                pendingStudentMessageNumber={pendingFocused.pending_student_message_number}
+              />
+            </>
+          }
+          flank={<AssistFlank neighbors={[]} />}
+          dock={
+            <DecisionDock
+              onDecide={(v) => {
+                if (v === 'skip') void handlePendingSkip()
+              }}
+              onUndo={() => {}}
+              onHandoff={() => {}}
+              onSkipConversation={() => {}}
+              skipOnly
+              disabled={pendingBusy}
+            />
+          }
+          onSkip={() => void handlePendingSkip()}
+          disabled={pendingBusy || noteOpen}
+        />
+        <NoteLabelPopover
+          open={noteOpen}
+          onClose={() => setNoteOpen(false)}
+          onSubmit={handleNoteSubmit}
+        />
       </>
     )
   }
@@ -640,52 +788,6 @@ function defaultReadiness(): ReadinessState {
     total_conversations: 0,
     hint: null,
   }
-}
-
-function NoActiveLabel({ onCreated }: { onCreated: () => void }) {
-  const [name, setName] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const submit = async () => {
-    if (!name.trim()) return
-    setBusy(true)
-    try {
-      const created = await api.createSingleLabel({ name: name.trim() })
-      await api.activateSingleLabel(created.id)
-      onCreated()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="flex-1 flex items-center justify-center bg-canvas">
-      <div className="max-w-md text-center">
-        <h1 className="font-serif text-3xl text-on-canvas mb-3 tracking-tight">
-          One label at a time. <span className="text-ochre">Begin with what you most want to find.</span>
-        </h1>
-        <p className="font-serif text-on-surface mb-7 leading-relaxed">
-          Pick or define a label, then walk conversations message-by-message answering yes or no.
-        </p>
-        <div className="flex gap-2 justify-center">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="e.g. help"
-            className="appearance-none bg-surface border border-edge text-on-canvas px-3 py-2 rounded-sm font-sans text-sm focus:outline-none focus:border-ochre-dim w-56"
-          />
-          <button
-            disabled={busy || !name.trim()}
-            onClick={submit}
-            className="appearance-none border border-ochre bg-ochre text-bg-warm px-4 py-2 rounded-sm cursor-pointer font-sans font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Start labeling
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function ReviewIntro({ item }: { item: ReviewItem }) {

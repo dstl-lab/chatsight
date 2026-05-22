@@ -3341,7 +3341,11 @@ def get_onboarding_starter(
     payload = onboarding_service.pick_starter_conversation(db, force_refresh=refresh)
     if not payload:
         raise HTTPException(status_code=404, detail="No messages in cache for onboarding")
-    return OnboardingStarterResponse(**payload)
+    focused = onboarding_service.starter_focused_message(db, payload)
+    return OnboardingStarterResponse(
+        **payload,
+        focused=FocusedMessageResponse(**focused),
+    )
 
 
 @app.post("/api/single-labels", response_model=SingleLabelResponse)

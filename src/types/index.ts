@@ -71,6 +71,7 @@ export interface OnboardingStarter {
   preview_turns: OnboardingPreviewTurn[]
   suggestions_source: 'ai' | 'rules'
   score_summary?: Record<string, number> | null
+  focused?: FocusedMessage | null
 }
 
 export interface LabelingSession {
