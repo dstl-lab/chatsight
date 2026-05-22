@@ -44,7 +44,8 @@ export function DecisionDock({
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
       <div data-tutorial="decision-dock" className="w-full">
-        <div className="relative w-full">
+        <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div />
           <div className="flex flex-wrap justify-center gap-3">
             <DecisionButton
               label="Yes"
@@ -70,10 +71,12 @@ export function DecisionDock({
               disabled={disabled}
             />
           </div>
-          {onAbort && (
-            <div className="absolute inset-y-0 right-0 z-10 flex items-center">
+          {onAbort ? (
+            <div className="flex items-center justify-start pl-4">
               <AbortButton onClick={onAbort} disabled={disabled} />
             </div>
+          ) : (
+            <div />
           )}
         </div>
         {recent ? (
