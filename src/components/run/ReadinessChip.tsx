@@ -154,14 +154,6 @@ export function ReadinessChip({
       >
         <span className={`inline-block w-1.5 h-1.5 rounded-full ${tierDot[readiness.tier]}`} />
         {tierLabel[readiness.tier]}
-        <span className="text-faint">·</span>
-        <span className="tabular-nums">
-          <span className="text-moss">{readiness.yes_count}</span>
-          <span className="text-faint">y</span>
-          <span className="text-faint"> / </span>
-          <span className="text-brick">{readiness.no_count}</span>
-          <span className="text-faint">n</span>
-        </span>
       </button>
 
       {open &&
