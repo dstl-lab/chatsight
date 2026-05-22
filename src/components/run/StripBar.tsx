@@ -4,6 +4,7 @@ import { api } from '../../services/api'
 import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
+import { isPlaceholderLabelName } from './labelPlaceholder'
 
 interface StripBarProps {
   label?: SingleLabel
@@ -18,12 +19,16 @@ interface StripBarProps {
   onLabelMetaUpdated?: () => void | Promise<void>
   readinessOpen?: boolean
   onReadinessOpenChange?: (open: boolean) => void
-  /** Awaiting label name: flashing prompt replaces the label title. */
-  pendingLabel?: {
+  labelNameDraft?: string
+  onLabelNameDraftChange?: (name: string) => void
+  onLabelNameCommit?: () => void
+  labelNameLocked?: boolean
+  /** No label in DB yet — show name field + assignment picker only. */
+  preLabel?: {
     draftName: string
     onDraftNameChange: (name: string) => void
     onCommit: () => void
-    busy?: boolean
+    locked?: boolean
   }
 }
 
@@ -40,37 +45,35 @@ export function StripBar({
   onLabelMetaUpdated,
   readinessOpen,
   onReadinessOpenChange,
-  pendingLabel,
+  labelNameDraft,
+  onLabelNameDraftChange,
+  onLabelNameCommit,
+  labelNameLocked = false,
+  preLabel,
 }: StripBarProps) {
-  if (pendingLabel) {
-    const { draftName, onDraftNameChange, onCommit, busy } = pendingLabel
+  if (preLabel) {
+    const { draftName, onDraftNameChange, onCommit, locked = false } = preLabel
     return (
       <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
-        <span className="font-serif font-medium text-[18px] tracking-[-0.01em] flex items-center gap-2.5 min-w-0">
-          <span className="text-ochre text-[11px] shrink-0">◆</span>
-          <span
-            className="rounded-sm border border-ochre/70 bg-ochre/10 px-2 py-0.5 animate-pulse"
-            title="Type a label name to start labeling"
-          >
-            <input
-              autoFocus
-              value={draftName}
-              onChange={(e) => onDraftNameChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && draftName.trim() && !busy) {
-                  e.preventDefault()
-                  onCommit()
-                }
-              }}
-              placeholder="Label name…"
-              className="appearance-none bg-transparent text-paper placeholder:text-faint/80 focus:outline-none w-[min(280px,42vw)] font-serif"
-            />
-          </span>
-        </span>
-        <span className="flex-1" />
-        <span className="font-mono text-[10px] tracking-[0.06em] uppercase text-faint">
-          Yes / No unlock after you name this label
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-ochre text-[11px]">◆</span>
+          <input
+            type="text"
+            data-tutorial="label-name"
+            value={draftName}
+            readOnly={locked}
+            onChange={(e) => onDraftNameChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && draftName.trim() && !locked) {
+                e.preventDefault()
+                onCommit()
+              }
+            }}
+            placeholder="Label name…"
+            className="box-border w-[13rem] max-w-[13rem] shrink-0 rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
+          />
+        </div>
+        <div className="flex-1 min-w-3" aria-hidden />
         <AssignmentPicker
           assignments={assignments}
           unmapped={unmapped}
@@ -83,14 +86,42 @@ export function StripBar({
 
   if (!label || !readiness) return null
 
+  const showNameInput =
+    isPlaceholderLabelName(label.name) &&
+    labelNameDraft != null &&
+    onLabelNameDraftChange != null
+
   return (
     <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
-      <span className="font-serif font-medium text-[18px] text-paper tracking-[-0.01em] flex items-center gap-2.5">
+      <div className="flex items-center gap-2 shrink-0">
         <span className="text-ochre text-[11px]">◆</span>
-        {label.name}
-      </span>
-      <span className="flex-1" />
-      <span className="inline-flex items-baseline gap-1.5 px-[11px] py-[5px] font-mono text-[11px] tracking-[0.04em] text-muted">
+        {showNameInput ? (
+          <input
+            type="text"
+            data-tutorial="label-name"
+            value={labelNameDraft}
+            readOnly={labelNameLocked}
+            onChange={(e) => onLabelNameDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && labelNameDraft.trim() && !labelNameLocked) {
+                e.preventDefault()
+                onLabelNameCommit?.()
+              }
+            }}
+            onBlur={() => {
+              if (!labelNameLocked) onLabelNameCommit?.()
+            }}
+            placeholder="Label name…"
+            className="box-border w-[13rem] max-w-[13rem] shrink-0 rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
+          />
+        ) : (
+          <span className="font-serif font-medium text-[18px] text-paper tracking-[-0.01em]">
+            {label.name}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 min-w-3" aria-hidden />
+      <span className="inline-flex shrink-0 items-baseline gap-1.5 px-[11px] py-[5px] font-mono text-[11px] tracking-[0.04em] text-muted">
         <span className="text-on-surface">{label.yes_count + label.no_count}</span>
         <span className="opacity-50 text-[11px]">labels</span>
         <span className="opacity-40 mx-1.5">·</span>
