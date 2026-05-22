@@ -262,6 +262,15 @@ class OnboardingStarterResponse(BaseModel):
     focused: Optional["FocusedMessageResponse"] = None
 
 
+class OnboardingBrowseSkipRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+
+
+class OnboardingBrowseSkipResponse(BaseModel):
+    focused: "FocusedMessageResponse"
+
+
 class QueueLabelRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -322,6 +331,7 @@ class FocusedMessageResponse(BaseModel):
 
 
 OnboardingStarterResponse.model_rebuild()
+OnboardingBrowseSkipResponse.model_rebuild()
 
 
 class ReadinessResponse(BaseModel):

@@ -88,6 +88,28 @@ def test_onboarding_starter_endpoint(client, session):
     assert len(body["focused"]["thread"]) >= 1
 
 
+def test_onboarding_browse_skip_advances_message(client, session):
+    _seed_rich_corpus(session)
+    starter = client.get("/api/onboarding/starter").json()
+    cid = starter["chatlog_id"]
+    midx = starter["focused"]["message_index"]
+    r = client.post(
+        "/api/onboarding/browse/skip",
+        json={"chatlog_id": cid, "message_index": midx},
+    )
+    assert r.status_code == 200
+    nxt = r.json()["focused"]
+    assert nxt["chatlog_id"] == cid
+    assert nxt["message_index"] > midx
+
+
+def test_onboarding_starter_resume_position(client, session):
+    _seed_rich_corpus(session)
+    r = client.get("/api/onboarding/starter?chatlog_id=401&message_index=1")
+    assert r.status_code == 200
+    assert r.json()["focused"]["message_index"] == 1
+
+
 def test_create_single_label_with_seed(client, session):
     _seed_rich_corpus(session)
     r = client.post(

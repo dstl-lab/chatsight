@@ -49,6 +49,8 @@ from schemas import (
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
     CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
     OnboardingStarterResponse,
+    OnboardingBrowseSkipRequest,
+    OnboardingBrowseSkipResponse,
     SkipConversationRequest, SkipConversationResponse,
     SingleLabelResponse, FocusedMessageResponse, ReadinessResponse, DecideResponse,
     SummaryResponse, SummaryPattern, HandoffResponse,
@@ -3335,16 +3337,43 @@ def get_single_label_message_detail(
 @app.get("/api/onboarding/starter", response_model=OnboardingStarterResponse)
 def get_onboarding_starter(
     refresh: bool = False,
+    chatlog_id: Optional[int] = None,
+    message_index: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Scored starter conversation + dynamic example framings for onboarding modal."""
-    payload = onboarding_service.pick_starter_conversation(db, force_refresh=refresh)
-    if not payload:
-        raise HTTPException(status_code=404, detail="No messages in cache for onboarding")
+    """Scored starter conversation + focused message for pre-label /run browse."""
+    if chatlog_id is not None and message_index is not None:
+        try:
+            payload = onboarding_service.starter_payload_for_chatlog(
+                db, chatlog_id, message_index
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+    else:
+        payload = onboarding_service.pick_starter_conversation(db, force_refresh=refresh)
+        if not payload:
+            raise HTTPException(status_code=404, detail="No messages in cache for onboarding")
     focused = onboarding_service.starter_focused_message(db, payload)
     return OnboardingStarterResponse(
         **payload,
         focused=FocusedMessageResponse(**focused),
+    )
+
+
+@app.post("/api/onboarding/browse/skip", response_model=OnboardingBrowseSkipResponse)
+def post_onboarding_browse_skip(
+    req: OnboardingBrowseSkipRequest,
+    db: Session = Depends(get_session),
+):
+    """Next student message in the current starter conversation (pre-label browse)."""
+    try:
+        result = onboarding_service.next_starter_browse_message(
+            db, req.chatlog_id, req.message_index
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return OnboardingBrowseSkipResponse(
+        focused=FocusedMessageResponse(**result["focused"]),
     )
 
 

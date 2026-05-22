@@ -310,10 +310,64 @@ def _load_suggestions_json(raw: Optional[str]) -> tuple[dict[int, list[str]], st
         return {}, "rules"
 
 
-def starter_focused_message(session: Session, starter: dict[str, Any]) -> dict[str, Any]:
+def starter_payload_for_chatlog(
+    session: Session,
+    chatlog_id: int,
+    message_index: int,
+) -> dict[str, Any]:
+    """Minimal starter dict for focusing a specific message in an existing chatlog."""
+    row = session.exec(
+        select(MessageCache).where(
+            MessageCache.chatlog_id == chatlog_id,
+            MessageCache.message_index == message_index,
+        )
+    ).first()
+    if not row:
+        raise ValueError("Message not found in cache")
+    count = session.exec(
+        select(func.count(MessageCache.id)).where(MessageCache.chatlog_id == chatlog_id)
+    ).one()
+    cache = session.get(OnboardingStarterCache, 1)
+    suggestions, suggestions_source = _load_suggestions_json(
+        cache.preview_json if cache else None
+    )
+    msgs = session.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .order_by(MessageCache.message_index)
+    ).all()
+    preview = msgs[:_PREVIEW_TURNS]
+    if not suggestions and preview:
+        suggestions, suggestions_source = build_suggested_label_names(preview)
+    notebook = next((m.notebook for m in msgs if m.notebook), None)
+    return {
+        "chatlog_id": chatlog_id,
+        "seed_message_index": message_index,
+        "notebook": notebook,
+        "conversation_student_messages": int(count),
+        "suggestions_source": suggestions_source,
+        "preview_turns": [
+            {
+                "message_index": m.message_index,
+                "message_text": m.message_text,
+                "suggested_label_names": suggestions.get(m.message_index)
+                or rule_based_label_suggestions(m.message_text or ""),
+            }
+            for m in preview
+        ],
+    }
+
+
+def starter_focused_message(
+    session: Session,
+    starter: dict[str, Any],
+    message_index: Optional[int] = None,
+) -> dict[str, Any]:
     """Full thread + focus for the starter conversation (no label required)."""
     chatlog_id = int(starter["chatlog_id"])
-    message_index = int(starter["seed_message_index"])
+    message_index = int(
+        message_index if message_index is not None else starter["seed_message_index"]
+    )
     row = session.exec(
         select(MessageCache).where(
             MessageCache.chatlog_id == chatlog_id,
@@ -340,6 +394,29 @@ def starter_focused_message(session: Session, starter: dict[str, Any]) -> dict[s
         row.notebook,
         sampling_meta=meta,
     )
+
+
+def next_starter_browse_message(
+    session: Session,
+    chatlog_id: int,
+    message_index: int,
+) -> dict[str, Any]:
+    """Advance to the next student message in the same conversation (pre-label browse)."""
+    indices = list(
+        session.exec(
+            select(MessageCache.message_index)
+            .where(MessageCache.chatlog_id == chatlog_id)
+            .order_by(MessageCache.message_index)
+        ).all()
+    )
+    if not indices:
+        raise ValueError("No messages in conversation")
+    next_index = next((i for i in indices if i > message_index), None)
+    if next_index is None:
+        raise ValueError("No further messages in this conversation")
+    starter = starter_payload_for_chatlog(session, chatlog_id, next_index)
+    focused = starter_focused_message(session, starter, message_index=next_index)
+    return {"starter": starter, "focused": focused}
 
 
 def _build_payload(
