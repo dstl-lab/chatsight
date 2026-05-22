@@ -79,6 +79,25 @@ def test_decide_records_value(client, session):
     assert apps[0].value == "yes"
 
 
+def test_abort_discards_decisions_and_clears_active(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    lid = label["id"]
+    client.post(f"/api/single-labels/{lid}/activate")
+    client.post(
+        f"/api/single-labels/{lid}/decide",
+        json={"chatlog_id": 200, "message_index": 0, "value": "yes"},
+    )
+    assert len(session.exec(select(LabelApplication)).all()) == 1
+
+    r = client.post(f"/api/single-labels/{lid}/abort")
+    assert r.status_code == 200
+    assert session.exec(select(LabelApplication)).all() == []
+    assert client.get("/api/single-labels/active").json() is None
+    listed = client.get("/api/single-labels").json()
+    assert all(lab["id"] != lid for lab in listed)
+
+
 def test_decide_rejects_bad_value(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()

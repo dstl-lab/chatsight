@@ -317,7 +317,7 @@ export function LabelRunPage() {
   const handleAbortActive = useCallback(async () => {
     if (!activeLabel) return
     setAbortOpen(false)
-    await api.deleteSingleLabel(activeLabel.id)
+    await api.abortSingleLabel(activeLabel.id)
     await refresh()
   }, [activeLabel, refresh])
 

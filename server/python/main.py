@@ -23,7 +23,20 @@ from sqlalchemy.engine import Connection
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
 import assist_service
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent, ConversationCursor
+from models import (
+    LabelDefinition,
+    LabelApplication,
+    LabelingSession,
+    SkippedMessage,
+    MessageCache,
+    ConceptCandidate,
+    SuggestionCache,
+    RecalibrationEvent,
+    ConversationCursor,
+    LabelPrediction,
+    ConversationProfile,
+    LabelExploreGradebook,
+)
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -58,7 +71,7 @@ import assignment_service
 from models import AssignmentMapping
 
 REVIEW_THRESHOLD = 0.75
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 
 def populate_message_cache():
@@ -3071,6 +3084,7 @@ def get_active_single_label(db: Session = Depends(get_session)):
         select(LabelDefinition)
         .where(LabelDefinition.mode == "single")
         .where(LabelDefinition.is_active == True)  # noqa: E712
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
     ).first()
     if not label:
         return None
@@ -4646,6 +4660,34 @@ def patch_single_label(
 
     # Return the freshly-computed detail by reusing the existing handler.
     return get_single_label_detail(label_id, db=db)
+
+
+def _purge_single_label_run(db: Session, label_id: int) -> None:
+    """Remove all per-run rows for a single label (decisions, cursors, assist cache, etc.)."""
+    for table in (
+        LabelApplication,
+        LabelPrediction,
+        ConversationCursor,
+        ConversationProfile,
+        LabelExploreGradebook,
+    ):
+        db.exec(delete(table).where(table.label_id == label_id))  # type: ignore[attr-defined]
+
+
+@app.post("/api/single-labels/{label_id}/abort")
+def abort_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Abort in-progress labeling: discard all decisions and deactivate the label."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    _purge_single_label_run(db, label_id)
+    label.is_active = False
+    label.archived_at = datetime.utcnow()
+    label.phase = "complete"
+    db.add(label)
+    db.commit()
+    return {"ok": True}
 
 
 @app.delete("/api/single-labels/{label_id}")

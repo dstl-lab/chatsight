@@ -374,6 +374,10 @@ export const api = {
       ? Promise.resolve({ summary: 'Responds to messages where a student asks for clarification on a specific concept.' })
       : req(`/api/single-labels/${labelId}/gemini-preview`),
 
+  abortSingleLabel: (id: number): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/single-labels/${id}/abort`, { method: 'POST' }),
+
   deleteSingleLabel: (id: number): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
              : req(`/api/single-labels/${id}`, { method: 'DELETE' }),
