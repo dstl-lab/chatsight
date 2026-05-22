@@ -18,6 +18,7 @@ import {
   buildDraftSingleLabel,
 } from '../components/run/labelPlaceholder'
 import { DecisionDock } from '../components/run/DecisionDock'
+import { RunProgressOverlay } from '../components/run/RunProgressOverlay'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
@@ -45,6 +46,7 @@ export function LabelRunPage() {
   const [loading, setLoading] = useState(true)
   const [noteOpen, setNoteOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [busyMessage, setBusyMessage] = useState('Working…')
   const [summary, setSummary] = useState<SingleLabelSummary | null>(null)
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [handoffPending, setHandoffPending] = useState(false)
@@ -255,6 +257,7 @@ export function LabelRunPage() {
     const name = labelNameDraft.trim()
     if (!name || !focused || busy || tutorialActive) return
     if (isPlaceholderLabelName(name)) return
+    setBusyMessage('Creating label…')
     setBusy(true)
     try {
       const created = await api.createSingleLabel({
@@ -266,6 +269,7 @@ export function LabelRunPage() {
       setLabelNameDraft('')
       clearStarterBrowse()
       setBrowseExhausted([])
+      setBusyMessage('Loading label…')
       await refresh()
     } finally {
       setBusy(false)
@@ -274,6 +278,7 @@ export function LabelRunPage() {
 
   const handleBrowseSkip = useCallback(async () => {
     if (busy || tutorialActive || !focused || activeLabel) return
+    setBusyMessage('Loading next message…')
     setBusy(true)
     try {
       const res = await api.skipOnboardingBrowse(
@@ -303,6 +308,7 @@ export function LabelRunPage() {
 
   const handleBrowseSkipConversation = useCallback(async () => {
     if (busy || tutorialActive || activeLabel) return
+    setBusyMessage('Loading conversation…')
     setBusy(true)
     try {
       const exhausted = focused
@@ -363,6 +369,7 @@ export function LabelRunPage() {
   const handleDecide = useCallback(
     async (value: DecisionValue) => {
       if (!activeLabel || !focused || busy || tutorialActive) return
+      setBusyMessage(value === 'skip' ? 'Loading next message…' : 'Saving…')
       setBusy(true)
       const decided = focused
       const labelId = activeLabel.id
@@ -542,9 +549,11 @@ export function LabelRunPage() {
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
+      setBusyMessage('Switching label…')
       setBusy(true)
       try {
         await api.switchToLabel(id)
+        setBusyMessage('Loading label…')
         await refresh()
       } finally {
         setBusy(false)
@@ -552,6 +561,13 @@ export function LabelRunPage() {
     },
     [busy, refresh]
   )
+
+  const progressActive = loading || busy || handoffPending
+  const progressMessage = handoffPending
+    ? 'Handing off to Gemini…'
+    : loading
+      ? 'Loading…'
+      : busyMessage
 
   // Shortcuts NOT owned by DecisionWorkspace: L (note popover) for both modes,
   // and Shift+[Skip] (skip conversation) for initial labeling only.
@@ -590,14 +606,6 @@ export function LabelRunPage() {
     tutorialActive,
   ])
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
-        Loading…
-      </div>
-    )
-  }
-
   if (loadError) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-8 text-center">
@@ -622,6 +630,8 @@ export function LabelRunPage() {
   if (!focused) {
     if (activeLabel) {
       return (
+        <>
+          {progressActive && <RunProgressOverlay message={progressMessage} />}
         <DoneWithLabel
           label={activeLabel}
           onClose={async () => {
@@ -629,12 +639,16 @@ export function LabelRunPage() {
             await refresh()
           }}
         />
+        </>
       )
     }
     return (
-      <div className="flex-1 flex items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
-        Loading…
-      </div>
+      <>
+        {progressActive && <RunProgressOverlay message={progressMessage} />}
+        <div className="flex flex-1 items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
+          Loading…
+        </div>
+      </>
     )
   }
 
@@ -663,6 +677,7 @@ export function LabelRunPage() {
     const item = reviewQueue[reviewIdx]
     return (
       <>
+        {progressActive && <RunProgressOverlay message={progressMessage} />}
         <DecisionWorkspace
           thread={[{ message_index: 0, role: 'student', text: item.text }]}
           focusIndex={0}
@@ -683,6 +698,8 @@ export function LabelRunPage() {
                 queued={queued}
                 onNoteAdd={() => setNoteOpen(true)}
                 onClearAll={handleClearQueue}
+                onSwitchQueued={(id) => void handleSwitchToQueued(id)}
+                onRemoveQueued={(id) => void handleRemoveQueued(id)}
               />
               <ConversationMeta
                 chatlogId={item.chatlog_id}
@@ -706,13 +723,13 @@ export function LabelRunPage() {
               onNo={() => handleReview('no')}
               onSkip={advanceReview}
               onAbort={() => setAbortOpen(true)}
-              disabled={busy || tutorialActive}
+              disabled={progressActive || tutorialActive}
             />
           }
           onYes={() => handleReview('yes')}
           onNo={() => handleReview('no')}
           onSkip={advanceReview}
-          disabled={busy || noteOpen || abortOpen}
+          disabled={progressActive || noteOpen || abortOpen}
         />
         <NoteLabelPopover
           open={noteOpen}
@@ -734,6 +751,7 @@ export function LabelRunPage() {
 
   return (
     <>
+      {progressActive && <RunProgressOverlay message={progressMessage} />}
       <DecisionWorkspace
         thread={thread}
         focusIndex={focusIndex}
@@ -762,6 +780,8 @@ export function LabelRunPage() {
                 if (!tutorialActive) setNoteOpen(true)
               }}
               onClearAll={handleClearQueue}
+              onSwitchQueued={(id) => void handleSwitchToQueued(id)}
+              onRemoveQueued={(id) => void handleRemoveQueued(id)}
             />
             <ConversationMeta
               chatlogId={focused.chatlog_id}
@@ -787,7 +807,7 @@ export function LabelRunPage() {
               !draftMode && activeLabel ? () => setAbortOpen(true) : undefined
             }
             skipOnly={draftMode}
-            disabled={busy || tutorialActive}
+            disabled={progressActive || tutorialActive}
             recent={recent}
             flash={flash}
           />
@@ -801,7 +821,7 @@ export function LabelRunPage() {
         onSkip={handleSkip}
         onUndo={handleUndo}
         onAcceptAi={draftMode || recent ? undefined : openHandoffPanel}
-        disabled={busy || noteOpen || abortOpen || readinessOpen || tutorialActive}
+        disabled={progressActive || noteOpen || abortOpen || readinessOpen || tutorialActive}
       />
       {tutorialStep !== null && (
         <RunTutorialOverlay
