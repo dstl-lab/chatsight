@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReadinessState } from '../../types'
 import { api } from '../../services/api'
 
@@ -51,6 +52,8 @@ export function ReadinessChip({
   const open = openProp ?? internalOpen
   const setOpen = onOpenChange ?? setInternalOpen
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0 })
   const [geminiPreview, setGeminiPreview] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const lastFetchedYesCount = useRef<number | null>(null)
@@ -82,8 +85,20 @@ export function ReadinessChip({
 
   useEffect(() => {
     if (!open) return
+    const anchor = ref.current
+    if (anchor) {
+      const r = anchor.getBoundingClientRect()
+      const panelW = 360
+      const left = Math.min(
+        Math.max(12, r.right - panelW),
+        window.innerWidth - panelW - 12,
+      )
+      setPanelPos({ top: r.bottom + 8, left })
+    }
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (ref.current?.contains(t) || panelRef.current?.contains(t)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
@@ -94,7 +109,7 @@ export function ReadinessChip({
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, setOpen])
 
   const handleStartEdit = () => {
     setDescDraft(geminiPreview ?? '')
@@ -149,8 +164,15 @@ export function ReadinessChip({
         </span>
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-2 z-30 w-[360px] bg-bg-warm border border-edge rounded-md shadow-2xl overflow-hidden">
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label="Hand off readiness"
+            style={{ top: panelPos.top, left: panelPos.left }}
+            className="fixed z-[250] w-[360px] max-w-[calc(100vw-24px)] bg-bg-warm border border-edge rounded-md shadow-2xl overflow-hidden"
+          >
           <div className="px-5 pt-4 pb-3 border-b border-edge-subtle">
             <div className={`font-mono text-[10px] tracking-[0.18em] uppercase mb-1.5 ${
               readiness.tier === 'green'
@@ -295,8 +317,9 @@ export function ReadinessChip({
               {readiness.tier === 'gray' ? 'Hand off to Gemini' : 'Hand off to Gemini →'}
             </button>
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
