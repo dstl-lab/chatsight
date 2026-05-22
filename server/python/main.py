@@ -23,7 +23,20 @@ from sqlalchemy.engine import Connection
 from database import create_db_and_tables, get_session, ext_engine, engine
 import json as json_mod
 import assist_service
-from models import LabelDefinition, LabelApplication, LabelingSession, SkippedMessage, MessageCache, ConceptCandidate, SuggestionCache, RecalibrationEvent, ConversationCursor
+from models import (
+    LabelDefinition,
+    LabelApplication,
+    LabelingSession,
+    SkippedMessage,
+    MessageCache,
+    ConceptCandidate,
+    SuggestionCache,
+    RecalibrationEvent,
+    ConversationCursor,
+    LabelPrediction,
+    ConversationProfile,
+    LabelExploreGradebook,
+)
 from schemas import (
     CreateLabelRequest, DeleteLabelResponse, UpdateLabelRequest, ApplyLabelRequest,
     ApplyBatchRequest, SkipMessageRequest, SuggestRequest, ConciseRequest, ConciseResponse,
@@ -35,6 +48,9 @@ from schemas import (
     LabelReviewResponse,
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
     CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
+    OnboardingStarterResponse,
+    OnboardingBrowseSkipRequest,
+    OnboardingBrowseSkipResponse,
     SkipConversationRequest, SkipConversationResponse,
     SingleLabelResponse, FocusedMessageResponse, ReadinessResponse, DecideResponse,
     SummaryResponse, SummaryPattern, HandoffResponse,
@@ -50,13 +66,14 @@ from schemas import (
     GeminiPreviewResponse,
 )
 import decision_service
+import onboarding_service
 import queue_service
 import binary_autolabel_service
 import assignment_service
 from models import AssignmentMapping
 
 REVIEW_THRESHOLD = 0.75
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 
 def populate_message_cache():
@@ -3069,6 +3086,7 @@ def get_active_single_label(db: Session = Depends(get_session)):
         select(LabelDefinition)
         .where(LabelDefinition.mode == "single")
         .where(LabelDefinition.is_active == True)  # noqa: E712
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
     ).first()
     if not label:
         return None
@@ -3316,6 +3334,55 @@ def get_single_label_message_detail(
     )
 
 
+@app.get("/api/onboarding/starter", response_model=OnboardingStarterResponse)
+def get_onboarding_starter(
+    refresh: bool = False,
+    chatlog_id: Optional[int] = None,
+    message_index: Optional[int] = None,
+    db: Session = Depends(get_session),
+):
+    """Scored starter conversation + focused message for pre-label /run browse."""
+    if chatlog_id is not None and message_index is not None:
+        try:
+            payload = onboarding_service.starter_payload_for_chatlog(
+                db, chatlog_id, message_index
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+    else:
+        payload = onboarding_service.pick_starter_conversation(db, force_refresh=refresh)
+        if not payload:
+            raise HTTPException(status_code=404, detail="No messages in cache for onboarding")
+    focused = onboarding_service.starter_focused_message(db, payload)
+    return OnboardingStarterResponse(
+        **payload,
+        focused=FocusedMessageResponse(**focused),
+    )
+
+
+@app.post("/api/onboarding/browse/skip", response_model=OnboardingBrowseSkipResponse)
+def post_onboarding_browse_skip(
+    req: OnboardingBrowseSkipRequest,
+    db: Session = Depends(get_session),
+):
+    """Next student message in the current starter conversation (pre-label browse)."""
+    try:
+        result = onboarding_service.next_starter_browse_message(
+            db,
+            req.chatlog_id,
+            req.message_index,
+            exhausted_chatlog_ids=req.exhausted_chatlog_ids,
+            skip_conversation=req.skip_conversation,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return OnboardingBrowseSkipResponse(
+        focused=FocusedMessageResponse(**result["focused"]),
+        exhausted_chatlog_ids=result.get("exhausted_chatlog_ids", req.exhausted_chatlog_ids),
+        browse_reset=bool(result.get("browse_reset")),
+    )
+
+
 @app.post("/api/single-labels", response_model=SingleLabelResponse)
 def create_single_label(
     req: CreateSingleLabelRequest,
@@ -3327,6 +3394,8 @@ def create_single_label(
         mode="single",
         phase="labeling",
         is_active=False,
+        onboarding_seed_chatlog_id=req.seed_chatlog_id,
+        onboarding_seed_message_index=req.seed_message_index,
     )
     db.add(label)
     db.commit()
@@ -3344,9 +3413,10 @@ def queue_single_label(
         select(LabelDefinition)
         .where(LabelDefinition.mode == "single")
         .where(LabelDefinition.name == req.name)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
     ).first()
     if existing:
-        # Idempotent: surface the existing label rather than create a duplicate.
+        # Idempotent: surface the existing live label rather than create a duplicate.
         return _label_to_response(db, existing)
 
     max_pos = db.exec(
@@ -3475,6 +3545,7 @@ def get_next_focused(
         assignment_id,
         explore_fraction=_effective_hybrid_explore_fraction(label),
     )
+    db.commit()
     if not payload:
         return None
     return FocusedMessageResponse(**payload)
@@ -3488,8 +3559,8 @@ def get_assist(
     assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Return cached nearest-neighbor decisions for the focused message.
-    The cache is built lazily by /next; if there is no row, returns [].
+    """Return nearest-neighbor human yes/no decisions for the focused message.
+    Missing pair-v1 embeddings are created on demand via Gemini before k-NN.
     When assignment_id is provided, neighbors are restricted to the same assignment
     so calibration stays within the lab/project context the run is scoped to."""
     label = db.get(LabelDefinition, label_id)
@@ -3522,6 +3593,7 @@ def _decide_response(
         assignment_id,
         explore_fraction=explore,
     )
+    db.commit()
     nxt = FocusedMessageResponse(**payload) if payload else None
     readiness = ReadinessResponse(**decision_service.compute_readiness(db, label_id))
     return DecideResponse(next=nxt, readiness=readiness)
@@ -4630,35 +4702,76 @@ def patch_single_label(
     return get_single_label_detail(label_id, db=db)
 
 
-@app.delete("/api/single-labels/{label_id}")
-def delete_single_label(label_id: int, db: Session = Depends(get_session)):
-    """Archives the label. If it was the active one, also clears is_active
-    and auto-promotes the next queued label so the Run page swaps cleanly
-    (mirrors the handoff flow). Without clearing is_active, the active-label
-    query keeps returning this archived row and abort appears broken."""
+def _purge_single_label_run(db: Session, label_id: int) -> None:
+    """Remove all per-run rows for a single label (decisions, cursors, assist cache, etc.)."""
+    for table in (
+        LabelApplication,
+        LabelPrediction,
+        ConversationCursor,
+        ConversationProfile,
+        LabelExploreGradebook,
+    ):
+        db.exec(delete(table).where(table.label_id == label_id))  # type: ignore[attr-defined]
+
+
+def _promote_next_queued_single_label(db: Session) -> None:
+    """Activate the next queued single label after the active one is removed."""
+    next_q = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .order_by(LabelDefinition.queue_position)
+    ).first()
+    if next_q:
+        next_q.is_active = True
+        next_q.phase = "labeling"
+        next_q.queue_position = None
+        db.add(next_q)
+
+
+def _hard_delete_single_label(db: Session, label_id: int) -> bool:
+    """Delete a single-mode label and all run data. Returns True if it existed."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
-        raise HTTPException(status_code=404, detail="single-label not found")
+        return False
 
     was_active = label.is_active
-    label.archived_at = datetime.utcnow()
-    label.is_active = False
-    db.add(label)
+    _purge_single_label_run(db, label_id)
+
+    for session_row in db.exec(
+        select(LabelingSession).where(LabelingSession.label_id == label_id)
+    ).all():
+        db.delete(session_row)
+
+    for paired in db.exec(
+        select(LabelDefinition).where(LabelDefinition.paired_label_id == label_id)
+    ).all():
+        paired.paired_label_id = None
+        db.add(paired)
+
+    db.delete(label)
 
     if was_active:
-        next_q = db.exec(
-            select(LabelDefinition)
-            .where(LabelDefinition.mode == "single")
-            .where(LabelDefinition.phase == "queued")
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .order_by(LabelDefinition.queue_position)
-        ).first()
-        if next_q:
-            next_q.is_active = True
-            next_q.phase = "labeling"
-            next_q.queue_position = None
-            db.add(next_q)
+        _promote_next_queued_single_label(db)
 
+    return True
+
+
+@app.post("/api/single-labels/{label_id}/abort")
+def abort_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Abort in-progress labeling: discard all decisions and remove the label."""
+    if not _hard_delete_single_label(db, label_id):
+        raise HTTPException(status_code=404, detail="single-label not found")
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/single-labels/{label_id}")
+def delete_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Remove a single-mode label and its run data. If it was active, promote the next queued label."""
+    if not _hard_delete_single_label(db, label_id):
+        raise HTTPException(status_code=404, detail="single-label not found")
     db.commit()
     return {"ok": True}
 

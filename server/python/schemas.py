@@ -241,6 +241,38 @@ class RecalibrationStatsResponse(BaseModel):
 class CreateSingleLabelRequest(BaseModel):
     name: str
     description: Optional[str] = None
+    seed_chatlog_id: Optional[int] = None
+    seed_message_index: Optional[int] = None
+
+
+class OnboardingPreviewTurn(BaseModel):
+    message_index: int
+    message_text: str
+    suggested_label_names: list[str]
+
+
+class OnboardingStarterResponse(BaseModel):
+    chatlog_id: int
+    seed_message_index: int
+    notebook: Optional[str] = None
+    conversation_student_messages: int
+    preview_turns: list[OnboardingPreviewTurn]
+    suggestions_source: str = "rules"  # "ai" | "rules"
+    score_summary: Optional[dict] = None
+    focused: Optional["FocusedMessageResponse"] = None
+
+
+class OnboardingBrowseSkipRequest(BaseModel):
+    chatlog_id: int
+    message_index: int
+    exhausted_chatlog_ids: List[int] = []
+    skip_conversation: bool = False
+
+
+class OnboardingBrowseSkipResponse(BaseModel):
+    focused: "FocusedMessageResponse"
+    exhausted_chatlog_ids: List[int] = []
+    browse_reset: bool = False
 
 
 class QueueLabelRequest(BaseModel):
@@ -287,6 +319,8 @@ class FocusedMessageResponse(BaseModel):
     thread: List[TurnResponse]
     focus_index: int
     sampling_pick: Optional[str] = None  # "continue" | "explore" | "round_robin"
+    explore_pick_summary: Optional[str] = None
+    explore_pick_breakdown: Optional[List[str]] = None
     conversation_summary: Optional[str] = None
     pick_rationale: Optional[str] = None
     sampling_hint: Optional[str] = None  # deprecated; use conversation_summary / pick_rationale
@@ -299,6 +333,10 @@ class FocusedMessageResponse(BaseModel):
     theme_novelty_pct: Optional[int] = None
     student_specificity_pct: Optional[int] = None
     student_rarity_pct: Optional[int] = None
+
+
+OnboardingStarterResponse.model_rebuild()
+OnboardingBrowseSkipResponse.model_rebuild()
 
 
 class ReadinessResponse(BaseModel):

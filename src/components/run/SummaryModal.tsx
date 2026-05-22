@@ -1,4 +1,5 @@
 import type { SingleLabelSummary, SummaryPattern } from '../../types'
+import { displayLabelName } from './labelPlaceholder'
 
 interface SummaryModalProps {
   summary: SingleLabelSummary | null
@@ -24,7 +25,7 @@ export function SummaryModal({ summary, open, loading, onContinue, onRefine }: S
               <>Hand-off in progress…</>
             ) : (
               <>
-                Here's what <span className="text-ochre">{summary?.label_name ?? 'this label'}</span>{' '}
+                Here's what <span className="text-ochre">{summary ? displayLabelName(summary.label_name) : 'this label'}</span>{' '}
                 looks like to me.
               </>
             )}

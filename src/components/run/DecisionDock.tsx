@@ -9,7 +9,10 @@ interface DecisionDockProps {
   onUndo: () => void
   onHandoff: () => void
   onSkipConversation: () => void
+  onAbort?: () => void
   disabled?: boolean
+  /** When true, Yes/No are disabled; only Skip is available (awaiting label name). */
+  skipOnly?: boolean
   /** When non-null, replaces the keyboard hints with a transient confirmation.
    *  Yes/No confirmation is handled visually by a flash on the matching button,
    *  so only Skip is expected to flow through here. */
@@ -23,10 +26,13 @@ export function DecisionDock({
   onUndo,
   onHandoff,
   onSkipConversation,
+  onAbort,
   disabled,
+  skipOnly = false,
   recent,
   flash = null,
 }: DecisionDockProps) {
+  const yesNoDisabled = disabled || skipOnly
   const { keybinds } = useKeybinds()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -37,36 +43,53 @@ export function DecisionDock({
 
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
-      <div className="max-w-[760px] mx-auto flex flex-col items-center gap-3.5">
-        <div className="flex gap-3 justify-center">
-          <DecisionButton
-            label="Yes"
-            kbd={formatKey(keybinds.yes)}
-            tone="yes"
-            onClick={() => onDecide('yes')}
-            disabled={disabled}
-            flashing={flash === 'yes'}
-          />
-          <DecisionButton
-            label="No"
-            kbd={formatKey(keybinds.no)}
-            tone="no"
-            onClick={() => onDecide('no')}
-            disabled={disabled}
-            flashing={flash === 'no'}
-          />
-          <DecisionButton
-            label="Skip"
-            kbd={formatKey(keybinds.skip)}
-            tone="skip"
-            onClick={() => onDecide('skip')}
-            disabled={disabled}
-          />
+      <div data-tutorial="decision-dock" className="w-full">
+        <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div />
+          <div className="flex flex-wrap justify-center gap-3">
+            <DecisionButton
+              label="Yes"
+              kbd={formatKey(keybinds.yes)}
+              tone="yes"
+              onClick={() => onDecide('yes')}
+              disabled={yesNoDisabled}
+              flashing={flash === 'yes'}
+            />
+            <DecisionButton
+              label="No"
+              kbd={formatKey(keybinds.no)}
+              tone="no"
+              onClick={() => onDecide('no')}
+              disabled={yesNoDisabled}
+              flashing={flash === 'no'}
+            />
+            <DecisionButton
+              label="Skip"
+              kbd={formatKey(keybinds.skip)}
+              tone="skip"
+              onClick={() => onDecide('skip')}
+              disabled={disabled}
+            />
+          </div>
+          {onAbort ? (
+            <div className="flex items-center justify-start pl-4">
+              <AbortButton onClick={onAbort} disabled={disabled} />
+            </div>
+          ) : (
+            <div />
+          )}
         </div>
         {recent ? (
-          <RecentLine recent={recent} onUndo={onUndo} />
+          <div className="mx-auto mt-3.5 flex max-w-[760px] justify-center">
+            <RecentLine recent={recent} onUndo={onUndo} />
+          </div>
+        ) : skipOnly ? (
+          <p className="mx-auto mt-3.5 max-w-[760px] text-center font-mono text-[10px] tracking-[0.08em] text-faint">
+            <KeyChip>{formatKey(keybinds.skip)}</KeyChip> next message ·{' '}
+            <KeyChip>⇧{formatKey(keybinds.skip)}</KeyChip> another conversation
+          </p>
         ) : (
-          <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint items-center">
+          <div className="mx-auto mt-3.5 flex max-w-[760px] flex-wrap justify-center gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint items-center">
             <button onClick={onUndo} className="hover:text-on-canvas transition-colors">
               <KeyChip>{formatKey(keybinds.undo)}</KeyChip> undo
             </button>
@@ -162,6 +185,27 @@ interface DecisionButtonProps {
   onClick: () => void
   disabled?: boolean
   flashing?: boolean
+}
+
+function AbortButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title="Abort labeling — discard all decisions for this label"
+      className="
+        appearance-none border border-brick bg-bg-warm text-brick
+        px-[26px] py-[13px] rounded-sm cursor-pointer
+        font-serif font-normal text-[18px] tracking-[-0.01em]
+        inline-flex items-baseline gap-[14px] justify-center min-w-[130px]
+        transition-colors duration-150 hover:bg-brick/10
+        disabled:opacity-50 disabled:cursor-not-allowed
+      "
+    >
+      Abort
+    </button>
+  )
 }
 
 function DecisionButton({ label, kbd, tone, onClick, disabled, flashing }: DecisionButtonProps) {

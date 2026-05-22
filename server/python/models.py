@@ -47,6 +47,9 @@ class LabelDefinition(SQLModel, table=True):
     # Hybrid queue: fraction [0,1] of picks that bias toward richer conversations;
     # None → use CHATSIGHT_HYBRID_EXPLORE_FRACTION env (default 0.35).
     hybrid_explore_fraction: Optional[float] = Field(default=None)
+    # Onboarding: first /next for this label starts on this message (cleared by use).
+    onboarding_seed_chatlog_id: Optional[int] = Field(default=None)
+    onboarding_seed_message_index: Optional[int] = Field(default=None)
 
 
 class LabelApplication(SQLModel, table=True):
@@ -93,6 +96,17 @@ class LabelPrediction(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class OnboardingStarterCache(SQLModel, table=True):
+    """Singleton (id=1): corpus-level starter conversation for first-time onboarding."""
+    id: int = Field(default=1, primary_key=True)
+    chatlog_id: int
+    seed_message_index: int = 0
+    message_cache_count: int = 0
+    # JSON: {message_index: [suggested label names]} — cached with starter pick
+    preview_json: Optional[str] = Field(default=None)
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LabelingSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     started_at: datetime = Field(default_factory=datetime.utcnow)
@@ -110,6 +124,8 @@ class ConversationCursor(SQLModel, table=True):
     chatlog_id: int = Field(primary_key=True)
     last_message_index: int = Field(default=0)
     last_message_index_decided: int
+    explore_pick_summary: Optional[str] = Field(default=None)
+    explore_pick_breakdown: Optional[str] = Field(default=None)  # JSON list[str]
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

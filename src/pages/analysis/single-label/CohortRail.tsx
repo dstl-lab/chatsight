@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../../services/api'
 import type { SingleLabelCohortRow } from '../../../types'
+import { displayLabelName } from '../../../components/run/labelPlaceholder'
 import { RailSparkline } from './RailSparkline'
 
 const DISAGREE_THRESHOLD = 15
@@ -138,7 +139,7 @@ function Entry({
         />
       )}
       <div className="font-serif font-medium text-[14.5px] text-paper tracking-[-0.005em]">
-        {row.label_name}
+        {displayLabelName(row.label_name)}
       </div>
       {row.description && (
         <div className="mt-0.5 text-[11.5px] text-muted leading-snug truncate">

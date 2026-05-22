@@ -4,20 +4,31 @@ import { api } from '../../services/api'
 import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
+import { isPlaceholderLabelName } from './labelPlaceholder'
 
-interface StripBarProps {
+export interface StripBarProps {
   label: SingleLabel
   readiness: ReadinessState
   assignments: AssignmentMapping[]
   unmapped: UnmappedCount | null
   selectedAssignmentId: number | null
   onSelectAssignment: (id: number | null) => void
-  onHandoff: () => void
-  onSampleHandoff?: (n: number) => void
-  onAbort: () => void
+  onHandoff?: () => void
   onLabelMetaUpdated?: () => void | Promise<void>
+  onSampleHandoff?: (n: number) => void
   readinessOpen?: boolean
   onReadinessOpenChange?: (open: boolean) => void
+  labelNameDraft?: string
+  onLabelNameDraftChange?: (name: string) => void
+  onLabelNameCommit?: () => void
+  draftMode?: boolean
+  onDraftNameCommit?: () => void
+  labelNameLocked?: boolean
+  queued?: SingleLabel[]
+  onNoteAdd?: () => void
+  onClearAll?: () => void
+  onSwitchQueued?: (id: number) => void
+  onRemoveQueued?: (id: number) => void
 }
 
 export function StripBar({
@@ -28,162 +39,278 @@ export function StripBar({
   selectedAssignmentId,
   onSelectAssignment,
   onHandoff,
-  onSampleHandoff,
-  onAbort,
   onLabelMetaUpdated,
+  onSampleHandoff,
   readinessOpen,
   onReadinessOpenChange,
+  labelNameDraft,
+  onLabelNameDraftChange,
+  onLabelNameCommit,
+  draftMode = false,
+  onDraftNameCommit,
+  labelNameLocked = false,
+  queued = [],
+  onNoteAdd,
+  onClearAll,
+  onSwitchQueued,
+  onRemoveQueued,
 }: StripBarProps) {
-  return (
-    <div className="flex items-center gap-[18px] px-12 pt-[14px] pb-2 text-muted text-[13px]">
-      <span className="font-serif font-medium text-[18px] text-paper tracking-[-0.01em] flex items-center gap-2.5">
-        <span className="text-ochre text-[11px]">◆</span>
-        {label.name}
-      </span>
-      <span className="flex-1" />
-      <span className="inline-flex items-baseline gap-1.5 px-[11px] py-[5px] font-mono text-[11px] tracking-[0.04em] text-muted">
-        <span className="text-on-surface">{label.yes_count + label.no_count}</span>
-        <span className="opacity-50 text-[11px]">labels</span>
-        <span className="opacity-40 mx-1.5">·</span>
-        <span className="text-moss">{label.yes_count}</span>
-        <span className="text-faint text-[9px] tracking-[0.14em] uppercase">yes</span>
-        <span className="opacity-40 mx-1.5">·</span>
-        <span className="text-brick">{label.no_count}</span>
-        <span className="text-faint text-[9px] tracking-[0.14em] uppercase">no</span>
-      </span>
-      <AssignmentPicker
-        assignments={assignments}
-        unmapped={unmapped}
-        selectedId={selectedAssignmentId}
-        onSelect={onSelectAssignment}
-      />
-      {onLabelMetaUpdated && (
-        <HybridExploreMix label={label} onSaved={onLabelMetaUpdated} />
-      )}
-      {import.meta.env.DEV && onSampleHandoff && (
-        <SampleHandoffControl onSubmit={onSampleHandoff} />
-      )}
-      <ReadinessChip
-        readiness={readiness}
-        labelId={label.id}
-        guidance={label.guidance}
-        onHandoff={onHandoff}
-        open={readinessOpen}
-        onOpenChange={onReadinessOpenChange}
-      />
-      <button
-        type="button"
-        onClick={onAbort}
-        title="Abort labeling — discard all decisions for this label"
-        className="appearance-none font-mono text-[10px] tracking-[0.06em] uppercase text-faint hover:text-brick transition-colors px-2 py-[5px]"
-      >
-        ✕ abort
-      </button>
-    </div>
-  )
-}
+  const showNameInput =
+    draftMode ||
+    (isPlaceholderLabelName(label.name) &&
+      labelNameDraft != null &&
+      onLabelNameDraftChange != null)
 
-function HybridExploreMix({
-  label,
-  onSaved,
-}: {
-  label: SingleLabel
-  onSaved: () => void | Promise<void>
-}) {
-  const [pct, setPct] = useState(0)
-  const [busy, setBusy] = useState(false)
+  const commitName = draftMode ? onDraftNameCommit : onLabelNameCommit
+
+  const [explorePct, setExplorePct] = useState(0)
+  const [exploreBusy, setExploreBusy] = useState(false)
+  const [sampleN, setSampleN] = useState(50)
 
   useEffect(() => {
     const eff = label.hybrid_explore_effective ?? 0.35
-    setPct(Math.round(eff * 100))
+    setExplorePct(Math.round(eff * 100))
   }, [label.hybrid_explore_effective, label.id])
 
-  const apply = async () => {
-    const v = Math.max(0, Math.min(100, pct)) / 100
-    setBusy(true)
+  const applyExplore = async () => {
+    if (!onLabelMetaUpdated) return
+    const v = Math.max(0, Math.min(100, explorePct)) / 100
+    setExploreBusy(true)
     try {
       await api.patchSingleLabel(label.id, { hybrid_explore_fraction: v })
-      await onSaved()
+      await onLabelMetaUpdated()
     } finally {
-      setBusy(false)
+      setExploreBusy(false)
     }
   }
 
-  const useDefault = async () => {
-    setBusy(true)
+  const resetExploreDefault = async () => {
+    if (!onLabelMetaUpdated) return
+    setExploreBusy(true)
     try {
       await api.patchSingleLabel(label.id, { hybrid_explore_fraction: null })
-      await onSaved()
+      await onLabelMetaUpdated()
     } finally {
-      setBusy(false)
+      setExploreBusy(false)
     }
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5 shrink-0 max-w-[200px] flex-wrap">
-      <HoverTip
-        label="new-chat explore"
-        className="text-[9px] tracking-[0.06em] uppercase"
-        tip={
-          'When choosing a new conversation (not while continuing one you started), this % ' +
-          'uses Explore scoring — favoring specific, uncommon student help. The rest use ' +
-          'round-robin order. Finishing an in-progress chat is never affected.'
-        }
-      />
-      <input
-        type="number"
-        min={0}
-        max={100}
-        value={pct}
-        onChange={(e) => setPct(parseInt(e.target.value, 10) || 0)}
-        className="w-10 bg-transparent border-b border-edge focus:border-ochre-dim focus:outline-none text-on-surface text-center tabular-nums text-[11px]"
-      />
-      <span className="text-faint text-[10px]">%</span>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void apply()}
-        className="text-ochre hover:text-paper text-[10px] disabled:opacity-40"
-      >
-        set
-      </button>
-      {label.hybrid_explore_fraction != null && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void useDefault()}
-          className="text-faint hover:text-muted text-[10px] disabled:opacity-40"
-        >
-          default
-        </button>
-      )}
+    <div className="border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
+      <div className="grid w-full min-w-0 grid-cols-1 gap-y-3 md:grid-cols-2 md:gap-x-10 md:gap-y-2">
+        {/* Labels: name, counts, queue, handoff, note */}
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="flex min-w-0 max-w-full items-center gap-2.5">
+              <span className="text-ochre text-[11px]">◆</span>
+              {showNameInput ? (
+                <input
+                  type="text"
+                  data-tutorial="label-name"
+                  value={labelNameDraft ?? ''}
+                  readOnly={labelNameLocked}
+                  onChange={(e) => onLabelNameDraftChange?.(e.target.value)}
+                  onKeyDown={(e) => {
+                    const name = (labelNameDraft ?? '').trim()
+                    if (e.key === 'Enter' && name && !isPlaceholderLabelName(name) && !labelNameLocked) {
+                      e.preventDefault()
+                      commitName?.()
+                    }
+                  }}
+                  onBlur={() => {
+                    if (draftMode || labelNameLocked) return
+                    onLabelNameCommit?.()
+                  }}
+                  placeholder="Label name…"
+                  className="box-border w-full min-w-[10rem] max-w-[18rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
+                />
+              ) : (
+                <span className="truncate font-serif text-[20px] font-medium leading-none tracking-[-0.01em] text-paper">
+                  {label.name}
+                </span>
+              )}
+            </div>
+            <span
+              className="inline-flex shrink-0 items-baseline gap-1 font-mono text-[11px] tabular-nums text-muted"
+              title="Human yes / no on this label"
+            >
+              <span className="text-moss">{label.yes_count}</span>
+              <span className="text-[9px] uppercase text-faint">y</span>
+              <span className="opacity-40">·</span>
+              <span className="text-brick">{label.no_count}</span>
+              <span className="text-[9px] uppercase text-faint">n</span>
+            </span>
+            <div className="relative z-50 flex shrink-0 flex-wrap items-center gap-4">
+              {!draftMode && onHandoff ? (
+                <ReadinessChip
+                  readiness={readiness}
+                  labelId={label.id}
+                  guidance={label.guidance}
+                  onHandoff={onHandoff}
+                  open={readinessOpen}
+                  onOpenChange={onReadinessOpenChange}
+                />
+              ) : (
+                <span className="font-mono text-[10px] tracking-[0.06em] uppercase text-faint">
+                  Not ready
+                </span>
+              )}
+              {onNoteAdd && (
+                <button
+                  type="button"
+                  data-tutorial="note-label"
+                  onClick={onNoteAdd}
+                  className="shrink-0 font-mono text-[11px] tracking-[0.04em] text-muted hover:text-ochre"
+                >
+                  + note a label{' '}
+                  <span className="ml-1 rounded-sm border border-edge px-1.5 py-px text-[9px] text-faint">
+                    L
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+          <LabelQueueStrip
+            queued={queued}
+            onSwitch={onSwitchQueued}
+            onRemove={onRemoveQueued}
+            onClearAll={onClearAll}
+          />
+        </div>
+
+        {/* Conversations: assignment filter + explore sampling */}
+        <div className="min-w-0 overflow-x-auto md:flex md:justify-end">
+          <div className="flex w-max max-w-full flex-wrap items-center gap-6 md:justify-end">
+            <AssignmentPicker
+              assignments={assignments}
+              unmapped={unmapped}
+              selectedId={selectedAssignmentId}
+              onSelect={onSelectAssignment}
+            />
+            {!draftMode && onLabelMetaUpdated && (
+              <div className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
+                <HoverTip
+                  label="new-chat explore"
+                  className="text-[9px] tracking-[0.06em] uppercase text-faint"
+                  tip={
+                    'Percent of new chats picked by Explore (unique, scored threads) versus ' +
+                    'round-robin (random fair rotation). In-progress chats are always finished first.'
+                  }
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={explorePct}
+                  onChange={(e) => setExplorePct(parseInt(e.target.value, 10) || 0)}
+                  className="w-10 border-b border-edge bg-transparent text-center tabular-nums text-on-surface focus:border-ochre-dim focus:outline-none"
+                />
+                <span className="text-faint">%</span>
+                <button
+                  type="button"
+                  disabled={exploreBusy}
+                  onClick={() => void applyExplore()}
+                  className="text-ochre hover:text-paper disabled:opacity-40"
+                >
+                  set
+                </button>
+                {label.hybrid_explore_fraction != null && (
+                  <button
+                    type="button"
+                    disabled={exploreBusy}
+                    onClick={() => void resetExploreDefault()}
+                    className="text-faint hover:text-muted disabled:opacity-40"
+                  >
+                    default
+                  </button>
+                )}
+              </div>
+            )}
+            {!draftMode && import.meta.env.DEV && onSampleHandoff && (
+              <div
+                className="inline-flex items-center gap-2 rounded-full border border-dashed border-edge px-2.5 py-1 font-mono text-[11px]"
+                title="Dev: sample handoff"
+              >
+                <span className="text-[9px] uppercase tracking-[0.06em] text-faint">dev</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={sampleN}
+                  onChange={(e) => setSampleN(parseInt(e.target.value, 10) || 0)}
+                  className="w-10 border-b border-edge bg-transparent text-center tabular-nums focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={!Number.isFinite(sampleN) || sampleN <= 0}
+                  onClick={() => onSampleHandoff(sampleN)}
+                  className="text-on-surface hover:text-ochre disabled:opacity-40"
+                >
+                  Sample →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
-function SampleHandoffControl({ onSubmit }: { onSubmit: (n: number) => void }) {
-  const [n, setN] = useState(50)
-  const valid = Number.isFinite(n) && n > 0
+function LabelQueueStrip({
+  queued,
+  onSwitch,
+  onRemove,
+  onClearAll,
+}: {
+  queued: SingleLabel[]
+  onSwitch?: (id: number) => void
+  onRemove?: (id: number) => void
+  onClearAll?: () => void
+}) {
   return (
-    <div
-      className="inline-flex items-center gap-1.5 pl-2 pr-1 py-[3px] rounded-full border border-dashed border-edge text-[11px] font-mono text-muted"
-      title="Dev-only: hand off a random sample of N pending messages"
-    >
-      <span className="opacity-60 tracking-[0.06em] uppercase text-[9px]">dev</span>
-      <input
-        type="number"
-        min={1}
-        value={n}
-        onChange={(e) => setN(parseInt(e.target.value, 10) || 0)}
-        className="w-12 bg-transparent border-b border-edge focus:border-ochre-dim focus:outline-none text-on-surface text-center tabular-nums"
-      />
-      <button
-        onClick={() => valid && onSubmit(n)}
-        disabled={!valid}
-        className="px-2 py-[3px] rounded-full text-on-surface hover:text-ochre transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        Sample →
-      </button>
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-serif text-[12px] tracking-[-0.005em] text-faint">
+      <span className="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-faint">
+        Up next
+      </span>
+      <span className="min-w-0 flex flex-wrap items-baseline gap-0">
+        {queued.length === 0 ? (
+          <span className="italic text-faint">— nothing queued —</span>
+        ) : (
+          queued.map((q, i) => (
+            <span key={q.id} className="group inline-flex items-baseline">
+              {i > 0 && <span className="mx-1.5 text-faint not-italic">·</span>}
+              <button
+                type="button"
+                onClick={() => onSwitch?.(q.id)}
+                disabled={!onSwitch}
+                className="border-b border-dashed border-transparent py-0.5 text-on-surface transition-colors hover:border-faint hover:text-on-canvas disabled:cursor-default disabled:opacity-70"
+              >
+                {q.name}
+              </button>
+              {onRemove && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(q.id)}
+                  title={`Remove "${q.name}" from queue`}
+                  aria-label={`Remove ${q.name} from queue`}
+                  className="ml-1 text-[11px] leading-none text-faint opacity-0 transition-all not-italic group-hover:opacity-100 hover:text-brick"
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))
+        )}
+      </span>
+      {queued.length > 1 && onClearAll && (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="shrink-0 font-mono text-[9px] tracking-[0.04em] text-faint transition-colors hover:text-brick"
+        >
+          clear all
+        </button>
+      )}
     </div>
   )
 }

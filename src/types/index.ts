@@ -57,6 +57,23 @@ export interface QueueItem {
   context_after: string | null
 }
 
+export interface OnboardingPreviewTurn {
+  message_index: number
+  message_text: string
+  suggested_label_names: string[]
+}
+
+export interface OnboardingStarter {
+  chatlog_id: number
+  seed_message_index: number
+  notebook: string | null
+  conversation_student_messages: number
+  preview_turns: OnboardingPreviewTurn[]
+  suggestions_source: 'ai' | 'rules'
+  score_summary?: Record<string, number> | null
+  focused?: FocusedMessage | null
+}
+
 export interface LabelingSession {
   id: number
   started_at: string
@@ -290,6 +307,8 @@ export interface FocusedMessage {
   thread: ConversationTurn[]
   focus_index: number
   sampling_pick: SamplingPick | null
+  explore_pick_summary: string | null
+  explore_pick_breakdown: string[] | null
   conversation_summary: string | null
   pick_rationale: string | null
   conversation_student_messages: number | null

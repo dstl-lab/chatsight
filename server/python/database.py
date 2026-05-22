@@ -95,6 +95,18 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN guidance TEXT"))
     if "hybrid_explore_fraction" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN hybrid_explore_fraction FLOAT"))
+    if "onboarding_seed_chatlog_id" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_chatlog_id INTEGER"))
+    if "onboarding_seed_message_index" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_message_index INTEGER"))
+
+
+def _migrate_onboarding_starter_cache(conn, inspect, text):
+    if not inspect(conn).has_table("onboardingstartercache"):
+        return
+    cols = [c["name"] for c in inspect(conn).get_columns("onboardingstartercache")]
+    if "preview_json" not in cols:
+        conn.execute(text("ALTER TABLE onboardingstartercache ADD COLUMN preview_json TEXT"))
 
 
 def _migrate_label_application(conn, inspect, text):
@@ -137,6 +149,34 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN created_at DATETIME"))
 
 
+def _purge_archived_single_labels(conn, text):
+    """Single-label abort/delete used to set archived_at instead of removing rows.
+    Hard-delete is the only path now; purge legacy archived single labels on startup."""
+    archived_ids = conn.execute(
+        text("SELECT id FROM labeldefinition WHERE mode = 'single' AND archived_at IS NOT NULL")
+    ).fetchall()
+    if not archived_ids:
+        return
+    id_list = ",".join(str(row[0]) for row in archived_ids)
+    for table in (
+        "labelapplication",
+        "labelprediction",
+        "conversationcursor",
+        "conversationprofile",
+        "labelexploregradebook",
+    ):
+        conn.execute(text(f"DELETE FROM {table} WHERE label_id IN ({id_list})"))
+    conn.execute(text(f"DELETE FROM labelingsession WHERE label_id IN ({id_list})"))
+    conn.execute(
+        text(f"UPDATE labeldefinition SET paired_label_id = NULL WHERE paired_label_id IN ({id_list})")
+    )
+    deleted = conn.execute(
+        text("DELETE FROM labeldefinition WHERE mode = 'single' AND archived_at IS NOT NULL")
+    )
+    n = deleted.rowcount if deleted is not None else len(archived_ids)
+    print(f"[chatsight] cleanup: removed {n} archived single-mode label(s) (legacy soft-delete)")
+
+
 def _cleanup_polluted_multi_label_rows(conn, text):
     """Pre-2026-05 an AI batch path wrote single-style decisions
     (value='yes'|'no'|'skip') against multi-mode labels. Those rows poison
@@ -163,6 +203,14 @@ def _migrate_conversation_cursor(conn, inspect, text):
                 "ADD COLUMN last_message_index INTEGER NOT NULL DEFAULT 0"
             )
         )
+    if "explore_pick_summary" not in cols:
+        conn.execute(
+            text("ALTER TABLE conversationcursor ADD COLUMN explore_pick_summary TEXT")
+        )
+    if "explore_pick_breakdown" not in cols:
+        conn.execute(
+            text("ALTER TABLE conversationcursor ADD COLUMN explore_pick_breakdown TEXT")
+        )
 
 
 def create_db_and_tables():
@@ -174,6 +222,8 @@ def create_db_and_tables():
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
         _migrate_conversation_cursor(conn, inspect, text)
+        _migrate_onboarding_starter_cache(conn, inspect, text)
+        _purge_archived_single_labels(conn, text)
         _cleanup_polluted_multi_label_rows(conn, text)
         # Indexes
         conn.execute(text(

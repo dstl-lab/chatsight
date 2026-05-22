@@ -12,7 +12,7 @@ import type {
   AssistResponse,
   SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
   SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
-  BrowseBucket,
+  BrowseBucket, OnboardingStarter,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -292,7 +292,58 @@ export const api = {
   getActiveSingleLabel: (): Promise<SingleLabel | null> =>
     USE_MOCK ? Promise.resolve(mockActiveLabel) : req('/api/single-labels/active'),
 
-  createSingleLabel: (body: { name: string; description?: string }): Promise<SingleLabel> =>
+  getOnboardingStarter: (opts?: {
+    refresh?: boolean
+    chatlogId?: number
+    messageIndex?: number
+  }): Promise<OnboardingStarter> => {
+    if (USE_MOCK) {
+      return Promise.resolve({ ...mockApi.onboardingStarter, focused: mockFocusedMessage })
+    }
+    const params = new URLSearchParams()
+    if (opts?.refresh) params.set('refresh', 'true')
+    if (opts?.chatlogId != null) params.set('chatlog_id', String(opts.chatlogId))
+    if (opts?.messageIndex != null) params.set('message_index', String(opts.messageIndex))
+    const qs = params.toString()
+    return req(`/api/onboarding/starter${qs ? `?${qs}` : ''}`)
+  },
+
+  skipOnboardingBrowse: (
+    chatlogId: number,
+    messageIndex: number,
+    exhaustedChatlogIds: number[] = [],
+    opts?: { skipConversation?: boolean },
+  ): Promise<{
+    focused: FocusedMessage
+    exhausted_chatlog_ids: number[]
+    browse_reset: boolean
+  }> =>
+    USE_MOCK
+      ? Promise.resolve({
+          focused: mockFocusedMessage,
+          exhausted_chatlog_ids: exhaustedChatlogIds,
+          browse_reset: false,
+        })
+      : req<{
+          focused: FocusedMessage
+          exhausted_chatlog_ids: number[]
+          browse_reset: boolean
+        }>('/api/onboarding/browse/skip', {
+          method: 'POST',
+          ...json({
+            chatlog_id: chatlogId,
+            message_index: messageIndex,
+            exhausted_chatlog_ids: exhaustedChatlogIds,
+            skip_conversation: opts?.skipConversation ?? false,
+          }),
+        }),
+
+  createSingleLabel: (body: {
+    name: string
+    description?: string
+    seed_chatlog_id?: number
+    seed_message_index?: number
+  }): Promise<SingleLabel> =>
     USE_MOCK
       ? Promise.resolve({ ...mockActiveLabel, id: Math.random(), name: body.name, description: body.description ?? null })
       : req('/api/single-labels', { method: 'POST', ...json(body) }),
@@ -363,6 +414,10 @@ export const api = {
     USE_MOCK
       ? Promise.resolve({ summary: 'Responds to messages where a student asks for clarification on a specific concept.' })
       : req(`/api/single-labels/${labelId}/gemini-preview`),
+
+  abortSingleLabel: (id: number): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req(`/api/single-labels/${id}/abort`, { method: 'POST' }),
 
   deleteSingleLabel: (id: number): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })

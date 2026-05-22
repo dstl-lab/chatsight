@@ -9,7 +9,9 @@ import numpy as np
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from concept_service import EMBED_MODEL
+from sqlalchemy import tuple_
+
+from concept_service import EMBED_MODEL, embed_messages
 from models import LabelApplication, MessageCache, MessageEmbedding
 
 
@@ -69,6 +71,71 @@ def _get_cache(db: Session) -> dict:
         return cache
 
 
+def _labeled_yes_no_keys(
+    db: Session,
+    label_id: int,
+    assignment_id: int | None = None,
+) -> list[tuple[int, int]]:
+    stmt = select(
+        LabelApplication.chatlog_id,
+        LabelApplication.message_index,
+    ).where(
+        LabelApplication.label_id == label_id,
+        LabelApplication.applied_by == "human",
+        LabelApplication.value.in_(["yes", "no"]),  # noqa: comparator
+    )
+    if assignment_id is not None:
+        stmt = stmt.join(
+            MessageCache,
+            (MessageCache.chatlog_id == LabelApplication.chatlog_id)
+            & (MessageCache.message_index == LabelApplication.message_index),
+        ).where(MessageCache.assignment_id == assignment_id)
+    return [(int(c), int(i)) for c, i in db.exec(stmt).all()]
+
+
+def _ensure_pair_embeddings(
+    db: Session,
+    keys: set[tuple[int, int]],
+) -> None:
+    """Embed any missing pair-v1 vectors needed for assist k-NN."""
+    if not keys:
+        return
+    key_list = list(keys)
+    existing = {
+        (int(c), int(i))
+        for c, i in db.exec(
+            select(MessageEmbedding.chatlog_id, MessageEmbedding.message_index).where(
+                MessageEmbedding.model_version == EMBED_MODEL,
+                tuple_(MessageEmbedding.chatlog_id, MessageEmbedding.message_index).in_(
+                    key_list
+                ),
+            )
+        ).all()
+    }
+    missing = keys - existing
+    if not missing:
+        return
+    rows = db.exec(
+        select(MessageCache).where(
+            tuple_(MessageCache.chatlog_id, MessageCache.message_index).in_(list(missing))
+        )
+    ).all()
+    if not rows:
+        return
+    embed_messages(
+        [
+            {
+                "chatlog_id": r.chatlog_id,
+                "message_index": r.message_index,
+                "message_text": r.message_text,
+                "context_before": r.context_before,
+            }
+            for r in rows
+        ],
+        db,
+    )
+
+
 def nearest_neighbors(
     db: Session,
     label_id: int,
@@ -78,10 +145,15 @@ def nearest_neighbors(
     assignment_id: int | None = None,
 ) -> list[dict]:
     """Up to k cosine-nearest human yes/no labeled neighbors of the focused message.
-    Returns [] if the focused message has no embedding or no labeled neighbors do.
-    When assignment_id is set, neighbors are restricted to messages tagged with the
-    same assignment so calibration anchors stay within the same lab/project context.
+    Returns [] if the focused message has no cache row, cannot be embedded, or no
+    other labeled yes/no neighbors exist. When assignment_id is set, neighbors are
+    restricted to messages tagged with the same assignment so calibration anchors
+    stay within the same lab/project context.
     Each result: {chatlog_id, message_index, value, similarity, message_text}."""
+    keys = {(chatlog_id, message_index)}
+    keys.update(_labeled_yes_no_keys(db, label_id, assignment_id))
+    _ensure_pair_embeddings(db, keys)
+
     cache = _get_cache(db)
     if cache["matrix"] is None:
         return []

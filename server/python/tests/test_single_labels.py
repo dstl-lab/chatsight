@@ -448,7 +448,7 @@ def test_patch_label_404_when_multi_mode(client, session):
     assert r.status_code == 404
 
 
-def test_delete_label_archives(client, session):
+def test_delete_label_removes_row(client, session):
     from models import LabelDefinition
     label = LabelDefinition(name="x", mode="single", phase="handed_off")
     session.add(label); session.commit(); session.refresh(label)
@@ -456,8 +456,7 @@ def test_delete_label_archives(client, session):
     assert r.status_code == 200
 
     session.expire_all()
-    refreshed = session.get(LabelDefinition, label.id)
-    assert refreshed.archived_at is not None
+    assert session.get(LabelDefinition, label.id) is None
 
 
 def test_delete_label_404_when_multi_mode(client, session):
