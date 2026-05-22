@@ -27,6 +27,8 @@ export interface StripBarProps {
   queued?: SingleLabel[]
   onNoteAdd?: () => void
   onClearAll?: () => void
+  onSwitchQueued?: (id: number) => void
+  onRemoveQueued?: (id: number) => void
 }
 
 export function StripBar({
@@ -50,6 +52,8 @@ export function StripBar({
   queued = [],
   onNoteAdd,
   onClearAll,
+  onSwitchQueued,
+  onRemoveQueued,
 }: StripBarProps) {
   const showNameInput =
     draftMode ||
@@ -92,53 +96,62 @@ export function StripBar({
   }
 
   return (
-    <div className="border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px] overflow-x-auto">
-      <div className="flex w-full min-w-[52rem] items-center justify-between gap-8">
-        {/* Label + progress — pinned left */}
-        <div className="flex shrink-0 items-center gap-8 pr-4">
-          <div className="flex min-w-[10rem] max-w-[18rem] items-center gap-2.5">
-            <span className="text-ochre text-[11px]">◆</span>
-            {showNameInput ? (
-              <input
-                type="text"
-                data-tutorial="label-name"
-                value={labelNameDraft ?? ''}
-                readOnly={labelNameLocked}
-                onChange={(e) => onLabelNameDraftChange?.(e.target.value)}
-                onKeyDown={(e) => {
-                  const name = (labelNameDraft ?? '').trim()
-                  if (e.key === 'Enter' && name && !isPlaceholderLabelName(name) && !labelNameLocked) {
-                    e.preventDefault()
-                    commitName?.()
-                  }
-                }}
-                onBlur={() => {
-                  if (draftMode || labelNameLocked) return
-                  onLabelNameCommit?.()
-                }}
-                placeholder="Label name…"
-                className="box-border w-full min-w-[12rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
-              />
-            ) : (
-              <span className="truncate font-serif text-[20px] font-medium leading-none tracking-[-0.01em] text-paper">
-                {label.name}
-              </span>
-            )}
+    <div className="border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
+      <div className="flex w-full min-w-0 items-center justify-between gap-8">
+        {/* Label, counts, and queue — pinned left */}
+        <div className="flex min-w-[12rem] max-w-[22rem] shrink-0 flex-col gap-2 pr-4">
+          <div className="flex items-center gap-8">
+            <div className="flex min-w-[10rem] max-w-[18rem] items-center gap-2.5">
+              <span className="text-ochre text-[11px]">◆</span>
+              {showNameInput ? (
+                <input
+                  type="text"
+                  data-tutorial="label-name"
+                  value={labelNameDraft ?? ''}
+                  readOnly={labelNameLocked}
+                  onChange={(e) => onLabelNameDraftChange?.(e.target.value)}
+                  onKeyDown={(e) => {
+                    const name = (labelNameDraft ?? '').trim()
+                    if (e.key === 'Enter' && name && !isPlaceholderLabelName(name) && !labelNameLocked) {
+                      e.preventDefault()
+                      commitName?.()
+                    }
+                  }}
+                  onBlur={() => {
+                    if (draftMode || labelNameLocked) return
+                    onLabelNameCommit?.()
+                  }}
+                  placeholder="Label name…"
+                  className="box-border w-full min-w-[12rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
+                />
+              ) : (
+                <span className="truncate font-serif text-[20px] font-medium leading-none tracking-[-0.01em] text-paper">
+                  {label.name}
+                </span>
+              )}
+            </div>
+            <span
+              className="inline-flex shrink-0 items-baseline gap-1 font-mono text-[11px] tabular-nums text-muted"
+              title="Human yes / no on this label"
+            >
+              <span className="text-moss">{label.yes_count}</span>
+              <span className="text-[9px] uppercase text-faint">y</span>
+              <span className="opacity-40">·</span>
+              <span className="text-brick">{label.no_count}</span>
+              <span className="text-[9px] uppercase text-faint">n</span>
+            </span>
           </div>
-          <span
-            className="inline-flex shrink-0 items-baseline gap-1 font-mono text-[11px] tabular-nums text-muted"
-            title="Human yes / no on this label"
-          >
-            <span className="text-moss">{label.yes_count}</span>
-            <span className="text-[9px] uppercase text-faint">y</span>
-            <span className="opacity-40">·</span>
-            <span className="text-brick">{label.no_count}</span>
-            <span className="text-[9px] uppercase text-faint">n</span>
-          </span>
+          <LabelQueueStrip
+            queued={queued}
+            onSwitch={onSwitchQueued}
+            onRemove={onRemoveQueued}
+            onClearAll={onClearAll}
+          />
         </div>
 
-        {/* Sampling + filter — center */}
-        <div className="flex shrink-0 items-center gap-6">
+        {/* Sampling + filter — center (scrolls horizontally without clipping dropdowns) */}
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div className="flex w-max min-w-full items-center justify-center gap-6 px-1">
           <AssignmentPicker
             assignments={assignments}
             unmapped={unmapped}
@@ -207,10 +220,11 @@ export function StripBar({
               </button>
             </div>
           )}
+          </div>
         </div>
 
-        {/* Status + queue — right */}
-        <div className="flex shrink-0 items-center gap-6 pl-4">
+        {/* Status — right; keep overflow visible for handoff panel */}
+        <div className="relative z-50 flex shrink-0 items-center gap-6 pl-4">
           {!draftMode && onHandoff ? (
             <ReadinessChip
               readiness={readiness}
@@ -225,23 +239,6 @@ export function StripBar({
               Not ready
             </span>
           )}
-          <div className="flex max-w-[14rem] items-baseline gap-2">
-            <span className="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-faint">
-              Up next
-            </span>
-            <span className="truncate font-serif text-[12px] italic text-faint">
-              {queued.length === 0 ? '—' : queued.map((q) => q.name).join(' · ')}
-            </span>
-            {queued.length > 1 && onClearAll && (
-              <button
-                type="button"
-                onClick={onClearAll}
-                className="shrink-0 font-mono text-[9px] text-faint hover:text-brick"
-              >
-                clear
-              </button>
-            )}
-          </div>
           {onNoteAdd && (
             <button
               type="button"
@@ -257,6 +254,65 @@ export function StripBar({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function LabelQueueStrip({
+  queued,
+  onSwitch,
+  onRemove,
+  onClearAll,
+}: {
+  queued: SingleLabel[]
+  onSwitch?: (id: number) => void
+  onRemove?: (id: number) => void
+  onClearAll?: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-serif text-[12px] tracking-[-0.005em] text-faint">
+      <span className="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-faint">
+        Up next
+      </span>
+      <span className="min-w-0 flex flex-wrap items-baseline gap-0">
+        {queued.length === 0 ? (
+          <span className="italic text-faint">— nothing queued —</span>
+        ) : (
+          queued.map((q, i) => (
+            <span key={q.id} className="group inline-flex items-baseline">
+              {i > 0 && <span className="mx-1.5 text-faint not-italic">·</span>}
+              <button
+                type="button"
+                onClick={() => onSwitch?.(q.id)}
+                disabled={!onSwitch}
+                className="border-b border-dashed border-transparent py-0.5 text-on-surface transition-colors hover:border-faint hover:text-on-canvas disabled:cursor-default disabled:opacity-70"
+              >
+                {q.name}
+              </button>
+              {onRemove && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(q.id)}
+                  title={`Remove "${q.name}" from queue`}
+                  aria-label={`Remove ${q.name} from queue`}
+                  className="ml-1 text-[11px] leading-none text-faint opacity-0 transition-all not-italic group-hover:opacity-100 hover:text-brick"
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))
+        )}
+      </span>
+      {queued.length > 1 && onClearAll && (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="shrink-0 font-mono text-[9px] tracking-[0.04em] text-faint transition-colors hover:text-brick"
+        >
+          clear all
+        </button>
+      )}
     </div>
   )
 }
