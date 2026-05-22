@@ -3559,8 +3559,8 @@ def get_assist(
     assignment_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Return cached nearest-neighbor decisions for the focused message.
-    The cache is built lazily by /next; if there is no row, returns [].
+    """Return nearest-neighbor human yes/no decisions for the focused message.
+    Missing pair-v1 embeddings are created on demand via Gemini before k-NN.
     When assignment_id is provided, neighbors are restricted to the same assignment
     so calibration stays within the lab/project context the run is scoped to."""
     label = db.get(LabelDefinition, label_id)

@@ -1,5 +1,6 @@
 """Unit tests for assist_service.nearest_neighbors."""
 import numpy as np
+from unittest.mock import patch
 
 import assist_service
 from models import (
@@ -82,19 +83,34 @@ def test_nearest_neighbors_returns_empty_when_no_labeled(session):
     assert out == []
 
 
-def test_nearest_neighbors_returns_empty_when_no_focused_embedding(session):
+@patch("concept_service.client")
+def test_nearest_neighbors_embeds_focused_message_when_missing(mock_client, session):
+    """Assist must not stay empty when pair-v1 embeddings have not been built yet."""
+    from unittest.mock import MagicMock
+
     label = _seed_label(session)
-    # Labeled message has an embedding; focused does not.
-    _seed_message(session, 200, 0, "labeled", [1.0, 0.0])
     _seed_decision(session, label.id, 200, 0, "yes")
-    # Focused message has only a MessageCache, no MessageEmbedding.
     session.add(MessageCache(chatlog_id=100, message_index=0, message_text="focused"))
+    session.add(MessageCache(chatlog_id=200, message_index=0, message_text="labeled"))
     session.commit()
+
+    def fake_embed(**kwargs):
+        result = MagicMock()
+        result.embeddings = [
+            MagicMock(values=[1.0] + [0.0] * 3071),
+            MagicMock(values=[0.99] + [0.14] + [0.0] * 3070),
+        ]
+        return result
+
+    mock_client.models.embed_content.side_effect = fake_embed
 
     out = assist_service.nearest_neighbors(
         session, label_id=label.id, chatlog_id=100, message_index=0, k=3
     )
-    assert out == []
+    assert len(out) == 1
+    assert out[0]["chatlog_id"] == 200
+    assert out[0]["value"] == "yes"
+    mock_client.models.embed_content.assert_called()
 
 
 def test_nearest_neighbors_excludes_focused_message_itself(session):
