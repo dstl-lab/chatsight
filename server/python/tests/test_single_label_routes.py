@@ -96,6 +96,22 @@ def test_abort_discards_decisions_and_clears_active(client, session):
     assert client.get("/api/single-labels/active").json() is None
     listed = client.get("/api/single-labels").json()
     assert all(lab["id"] != lid for lab in listed)
+    assert session.get(LabelDefinition, lid) is None
+
+
+def test_abort_allows_recreating_same_name(client, session):
+    """Abort must hard-delete, not archive — otherwise queue-by-name revives a dead label."""
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    client.post(f"/api/single-labels/{label['id']}/abort")
+    assert session.get(LabelDefinition, label["id"]) is None
+
+    again = client.post("/api/single-labels", json={"name": "help"}).json()
+    assert again["name"] == "help"
+    assert again["phase"] == "labeling"
+    assert again["yes_count"] == 0
+    assert session.get(LabelDefinition, again["id"]) is not None
 
 
 def test_decide_rejects_bad_value(client, session):
@@ -214,7 +230,7 @@ def test_undo_removes_last_decision(client, session):
     assert apps[0].message_index == 0
 
 
-def test_delete_single_label_archives(client, session):
+def test_delete_single_label_removes_row(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()
     client.post(f"/api/single-labels/{label['id']}/activate")
@@ -225,10 +241,8 @@ def test_delete_single_label_archives(client, session):
     r = client.delete(f"/api/single-labels/{label['id']}")
     assert r.status_code == 200
     assert r.json()["ok"] is True
-    from models import LabelDefinition
     session.expire_all()
-    refreshed = session.get(LabelDefinition, label["id"])
-    assert refreshed.archived_at is not None
+    assert session.get(LabelDefinition, label["id"]) is None
 
 
 def test_per_label_walk_order_differs(client, session):

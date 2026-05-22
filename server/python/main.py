@@ -3374,9 +3374,10 @@ def queue_single_label(
         select(LabelDefinition)
         .where(LabelDefinition.mode == "single")
         .where(LabelDefinition.name == req.name)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
     ).first()
     if existing:
-        # Idempotent: surface the existing label rather than create a duplicate.
+        # Idempotent: surface the existing live label rather than create a duplicate.
         return _label_to_response(db, existing)
 
     max_pos = db.exec(
@@ -4674,51 +4675,64 @@ def _purge_single_label_run(db: Session, label_id: int) -> None:
         db.exec(delete(table).where(table.label_id == label_id))  # type: ignore[attr-defined]
 
 
-@app.post("/api/single-labels/{label_id}/abort")
-def abort_single_label(label_id: int, db: Session = Depends(get_session)):
-    """Abort in-progress labeling: discard all decisions and deactivate the label."""
+def _promote_next_queued_single_label(db: Session) -> None:
+    """Activate the next queued single label after the active one is removed."""
+    next_q = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "single")
+        .where(LabelDefinition.phase == "queued")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .order_by(LabelDefinition.queue_position)
+    ).first()
+    if next_q:
+        next_q.is_active = True
+        next_q.phase = "labeling"
+        next_q.queue_position = None
+        db.add(next_q)
+
+
+def _hard_delete_single_label(db: Session, label_id: int) -> bool:
+    """Delete a single-mode label and all run data. Returns True if it existed."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
-        raise HTTPException(status_code=404, detail="single-label not found")
+        return False
 
+    was_active = label.is_active
     _purge_single_label_run(db, label_id)
-    label.is_active = False
-    label.archived_at = datetime.utcnow()
-    label.phase = "complete"
-    db.add(label)
+
+    for session_row in db.exec(
+        select(LabelingSession).where(LabelingSession.label_id == label_id)
+    ).all():
+        db.delete(session_row)
+
+    for paired in db.exec(
+        select(LabelDefinition).where(LabelDefinition.paired_label_id == label_id)
+    ).all():
+        paired.paired_label_id = None
+        db.add(paired)
+
+    db.delete(label)
+
+    if was_active:
+        _promote_next_queued_single_label(db)
+
+    return True
+
+
+@app.post("/api/single-labels/{label_id}/abort")
+def abort_single_label(label_id: int, db: Session = Depends(get_session)):
+    """Abort in-progress labeling: discard all decisions and remove the label."""
+    if not _hard_delete_single_label(db, label_id):
+        raise HTTPException(status_code=404, detail="single-label not found")
     db.commit()
     return {"ok": True}
 
 
 @app.delete("/api/single-labels/{label_id}")
 def delete_single_label(label_id: int, db: Session = Depends(get_session)):
-    """Archives the label. If it was the active one, also clears is_active
-    and auto-promotes the next queued label so the Run page swaps cleanly
-    (mirrors the handoff flow). Without clearing is_active, the active-label
-    query keeps returning this archived row and abort appears broken."""
-    label = db.get(LabelDefinition, label_id)
-    if not label or label.mode != "single":
+    """Remove a single-mode label and its run data. If it was active, promote the next queued label."""
+    if not _hard_delete_single_label(db, label_id):
         raise HTTPException(status_code=404, detail="single-label not found")
-
-    was_active = label.is_active
-    label.archived_at = datetime.utcnow()
-    label.is_active = False
-    db.add(label)
-
-    if was_active:
-        next_q = db.exec(
-            select(LabelDefinition)
-            .where(LabelDefinition.mode == "single")
-            .where(LabelDefinition.phase == "queued")
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .order_by(LabelDefinition.queue_position)
-        ).first()
-        if next_q:
-            next_q.is_active = True
-            next_q.phase = "labeling"
-            next_q.queue_position = None
-            db.add(next_q)
-
     db.commit()
     return {"ok": True}
 

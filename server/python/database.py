@@ -149,6 +149,34 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN created_at DATETIME"))
 
 
+def _purge_archived_single_labels(conn, text):
+    """Single-label abort/delete used to set archived_at instead of removing rows.
+    Hard-delete is the only path now; purge legacy archived single labels on startup."""
+    archived_ids = conn.execute(
+        text("SELECT id FROM labeldefinition WHERE mode = 'single' AND archived_at IS NOT NULL")
+    ).fetchall()
+    if not archived_ids:
+        return
+    id_list = ",".join(str(row[0]) for row in archived_ids)
+    for table in (
+        "labelapplication",
+        "labelprediction",
+        "conversationcursor",
+        "conversationprofile",
+        "labelexploregradebook",
+    ):
+        conn.execute(text(f"DELETE FROM {table} WHERE label_id IN ({id_list})"))
+    conn.execute(text(f"DELETE FROM labelingsession WHERE label_id IN ({id_list})"))
+    conn.execute(
+        text(f"UPDATE labeldefinition SET paired_label_id = NULL WHERE paired_label_id IN ({id_list})")
+    )
+    deleted = conn.execute(
+        text("DELETE FROM labeldefinition WHERE mode = 'single' AND archived_at IS NOT NULL")
+    )
+    n = deleted.rowcount if deleted is not None else len(archived_ids)
+    print(f"[chatsight] cleanup: removed {n} archived single-mode label(s) (legacy soft-delete)")
+
+
 def _cleanup_polluted_multi_label_rows(conn, text):
     """Pre-2026-05 an AI batch path wrote single-style decisions
     (value='yes'|'no'|'skip') against multi-mode labels. Those rows poison
@@ -191,6 +219,7 @@ def create_db_and_tables():
         _migrate_message_cache(conn, inspect, text)
         _migrate_conversation_cursor(conn, inspect, text)
         _migrate_onboarding_starter_cache(conn, inspect, text)
+        _purge_archived_single_labels(conn, text)
         _cleanup_polluted_multi_label_rows(conn, text)
         # Indexes
         conn.execute(text(
