@@ -41,7 +41,10 @@ export function DecisionDock({
 
   return (
     <div className="px-12 py-[18px] pb-[22px] bg-canvas border-t border-edge">
-      <div className="max-w-[760px] mx-auto flex flex-col items-center gap-3.5">
+      <div
+        data-tutorial="decision-dock"
+        className="max-w-[760px] mx-auto flex flex-col items-center gap-3.5"
+      >
         <div className="flex gap-3 justify-center">
           <DecisionButton
             label="Yes"
@@ -71,7 +74,8 @@ export function DecisionDock({
           <RecentLine recent={recent} onUndo={onUndo} />
         ) : skipOnly ? (
           <p className="font-mono text-[10px] tracking-[0.08em] text-faint">
-            Skip picks another starter conversation until you name a label
+            <KeyChip>{formatKey(keybinds.skip)}</KeyChip> next message ·{' '}
+            <KeyChip>⇧{formatKey(keybinds.skip)}</KeyChip> another conversation
           </p>
         ) : (
           <div className="flex gap-[22px] font-mono text-[10px] tracking-[0.08em] text-faint items-center">

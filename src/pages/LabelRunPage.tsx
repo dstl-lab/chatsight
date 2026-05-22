@@ -3,11 +3,21 @@ import { StripBar } from '../components/run/StripBar'
 import { QueueLine } from '../components/run/QueueLine'
 import { ConversationMeta } from '../components/run/ConversationMeta'
 import { AssistFlank } from '../components/run/AssistFlank'
+import { RunTutorialOverlay, type RunTutorialStep } from '../components/run/RunTutorialOverlay'
+import { shouldOfferTutorial, markRunTutorialDone } from '../components/run/runTutorial'
+import {
+  getStarterBrowse,
+  setStarterBrowse,
+  clearStarterBrowse,
+} from '../components/run/starterBrowse'
+import {
+  PLACEHOLDER_LABEL_NAME,
+  isPlaceholderLabelName,
+} from '../components/run/labelPlaceholder'
 import { DecisionDock } from '../components/run/DecisionDock'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
-import { OnboardingModal, onboardingSkipped } from '../components/run/OnboardingModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
 import { AiReviewDock } from '../components/decision/AiReviewDock'
 import { useKeybinds } from '../hooks/useKeybinds'
@@ -48,9 +58,9 @@ export function LabelRunPage() {
   const [abortOpen, setAbortOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const [tutorialStep, setTutorialStep] = useState<RunTutorialStep | null>(null)
+  const [labelNameDraft, setLabelNameDraft] = useState('')
   const [pendingFocused, setPendingFocused] = useState<FocusedMessage | null>(null)
-  const [draftLabelName, setDraftLabelName] = useState('')
   const [pendingBusy, setPendingBusy] = useState(false)
 
   // Mirrors activeLabel.id so async handlers can detect a label switch that
@@ -149,7 +159,9 @@ export function LabelRunPage() {
       setReviewQueue(rq)
       setReviewIdx(0)
       setPendingFocused(null)
-      setOnboardingOpen(false)
+      if (isPlaceholderLabelName(active.name)) {
+        setLabelNameDraft('')
+      }
     }
 
     try {
@@ -181,24 +193,124 @@ export function LabelRunPage() {
       }
 
       const all = await api.listSingleLabels()
-      const showOnboarding = all.length === 0 && !onboardingSkipped()
-      setOnboardingOpen(showOnboarding)
-      if (showOnboarding) {
-        setPendingFocused(null)
+      if (all.length === 0) {
+        const browse = getStarterBrowse()
+        const starter = await api.getOnboardingStarter(
+          browse
+            ? { chatlogId: browse.chatlog_id, messageIndex: browse.message_index }
+            : {},
+        )
+        if (!starter.focused) {
+          throw new Error('Could not load starter conversation for labeling')
+        }
+        setPendingFocused(starter.focused)
+        setStarterBrowse({
+          chatlog_id: starter.focused.chatlog_id,
+          message_index: starter.focused.message_index,
+        })
+        setLabelNameDraft('')
+        if (shouldOfferTutorial()) {
+          setTutorialStep(0)
+        }
         return
       }
 
-      const starter = await api.getOnboardingStarter()
-      if (!starter.focused) {
-        throw new Error('Could not load starter conversation for labeling')
-      }
-      setPendingFocused(starter.focused)
+      setPendingFocused(null)
+      setLoadError('No active label — create one from Summaries or note a label with L.')
     } catch (e) {
       console.error('LabelRunPage refresh failed', e)
       setLoadError(e instanceof Error ? e.message : 'Failed to load run page')
-      setPendingFocused(null)
     }
   }, [selectedAssignmentId])
+
+  const finishTutorial = useCallback(() => {
+    markRunTutorialDone()
+    setTutorialStep(null)
+  }, [])
+
+  const advanceTutorial = useCallback(() => {
+    setTutorialStep((step) => {
+      if (step === null) return null
+      if (step >= 3) {
+        markRunTutorialDone()
+        return null
+      }
+      return (step + 1) as RunTutorialStep
+    })
+  }, [])
+
+  const tutorialActive = tutorialStep !== null
+
+  const handleLabelNameCommit = useCallback(async () => {
+    if (!activeLabel || tutorialActive) return
+    const name = labelNameDraft.trim()
+    if (!name || isPlaceholderLabelName(name) || name === activeLabel.name) return
+    await api.patchSingleLabel(activeLabel.id, { name })
+    await refresh()
+  }, [activeLabel, labelNameDraft, tutorialActive, refresh])
+
+  const handleCreateFirstLabel = useCallback(async () => {
+    const name = labelNameDraft.trim()
+    if (!name || !pendingFocused || pendingBusy || tutorialActive) return
+    if (isPlaceholderLabelName(name)) return
+    setPendingBusy(true)
+    try {
+      const created = await api.createSingleLabel({
+        name,
+        seed_chatlog_id: pendingFocused.chatlog_id,
+        seed_message_index: pendingFocused.message_index,
+      })
+      await api.activateSingleLabel(created.id)
+      setLabelNameDraft('')
+      setPendingFocused(null)
+      clearStarterBrowse()
+      setLoading(true)
+      await refresh()
+    } finally {
+      setPendingBusy(false)
+      setLoading(false)
+    }
+  }, [labelNameDraft, pendingFocused, pendingBusy, tutorialActive, refresh])
+
+  const handlePendingSkip = useCallback(async () => {
+    if (pendingBusy || tutorialActive || !pendingFocused) return
+    setPendingBusy(true)
+    try {
+      const next = await api.skipOnboardingBrowse(
+        pendingFocused.chatlog_id,
+        pendingFocused.message_index,
+      )
+      setPendingFocused(next)
+      setStarterBrowse({
+        chatlog_id: next.chatlog_id,
+        message_index: next.message_index,
+      })
+    } catch (e) {
+      console.error('pending skip failed', e)
+      setLoadError(e instanceof Error ? e.message : 'Failed to advance to the next message')
+    } finally {
+      setPendingBusy(false)
+    }
+  }, [pendingBusy, tutorialActive, pendingFocused])
+
+  const handlePendingSkipConversation = useCallback(async () => {
+    if (pendingBusy || tutorialActive) return
+    setPendingBusy(true)
+    try {
+      const starter = await api.getOnboardingStarter({ refresh: true })
+      if (!starter.focused) return
+      setPendingFocused(starter.focused)
+      setStarterBrowse({
+        chatlog_id: starter.focused.chatlog_id,
+        message_index: starter.focused.message_index,
+      })
+    } catch (e) {
+      console.error('pending skip conversation failed', e)
+      setLoadError(e instanceof Error ? e.message : 'Failed to load another starter conversation')
+    } finally {
+      setPendingBusy(false)
+    }
+  }, [pendingBusy, tutorialActive])
 
   useEffect(() => {
     let cancelled = false
@@ -213,7 +325,7 @@ export function LabelRunPage() {
 
   const handleDecide = useCallback(
     async (value: DecisionValue) => {
-      if (!activeLabel || !focused || busy) return
+      if (!activeLabel || !focused || busy || tutorialActive) return
       setBusy(true)
       const decided = focused
       const labelId = activeLabel.id
@@ -240,7 +352,7 @@ export function LabelRunPage() {
         setBusy(false)
       }
     },
-    [activeLabel, focused, busy, selectedAssignmentId, syncActiveLabelCounts]
+    [activeLabel, focused, busy, tutorialActive, selectedAssignmentId, syncActiveLabelCounts]
   )
 
   const handleUndo = useCallback(async () => {
@@ -381,41 +493,6 @@ export function LabelRunPage() {
 
   const { keybinds } = useKeybinds()
 
-  const handleCommitPendingLabel = useCallback(async () => {
-    const name = draftLabelName.trim()
-    if (!name || !pendingFocused || pendingBusy) return
-    setPendingBusy(true)
-    try {
-      const created = await api.createSingleLabel({
-        name,
-        seed_chatlog_id: pendingFocused.chatlog_id,
-        seed_message_index: pendingFocused.message_index,
-      })
-      await api.activateSingleLabel(created.id)
-      setDraftLabelName('')
-      setPendingFocused(null)
-      setLoading(true)
-      await refresh()
-    } finally {
-      setPendingBusy(false)
-      setLoading(false)
-    }
-  }, [draftLabelName, pendingFocused, pendingBusy, refresh])
-
-  const handlePendingSkip = useCallback(async () => {
-    if (pendingBusy) return
-    setPendingBusy(true)
-    try {
-      const starter = await api.getOnboardingStarter(true)
-      if (starter.focused) setPendingFocused(starter.focused)
-    } catch (e) {
-      console.error('pending skip failed', e)
-      setLoadError(e instanceof Error ? e.message : 'Failed to load another starter conversation')
-    } finally {
-      setPendingBusy(false)
-    }
-  }, [pendingBusy])
-
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
@@ -434,22 +511,24 @@ export function LabelRunPage() {
   // and Shift+[Skip] (skip conversation) for initial labeling only.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (tutorialActive && (e.code === 'Space' || e.key === ' ')) return
       const tag = (document.activeElement as HTMLElement | null)?.tagName ?? ''
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (noteOpen || abortOpen || readinessOpen) return
       const k = e.key.toLowerCase()
-      if (k === 'l' && activeLabel) {
+      if (k === 'l' && (activeLabel || pendingFocused) && !tutorialActive) {
         e.preventDefault()
         setNoteOpen(true)
         return
       }
 
-      if (!activeLabel && pendingFocused) {
+      if (!activeLabel && pendingFocused && !tutorialActive) {
         const skipKey = keybinds.skip
         const isSkip = k === skipKey || (e.shiftKey && `shift+${k}` === skipKey)
-        if (isSkip && !e.shiftKey) {
+        if (isSkip) {
           if (k === ' ') e.preventDefault()
-          void handlePendingSkip()
+          if (e.shiftKey) void handlePendingSkipConversation()
+          else void handlePendingSkip()
         }
         return
       }
@@ -474,7 +553,9 @@ export function LabelRunPage() {
     reviewQueue,
     handleSkipConversation,
     handlePendingSkip,
+    handlePendingSkipConversation,
     keybinds.skip,
+    tutorialActive,
   ])
 
   if (loading) {
@@ -507,26 +588,10 @@ export function LabelRunPage() {
   }
 
   if (!activeLabel) {
-    if (onboardingOpen) {
-      return (
-        <OnboardingModal
-          onStarted={() => {
-            setOnboardingOpen(false)
-            setLoading(true)
-            void refresh().finally(() => setLoading(false))
-          }}
-          onSkipTutorial={() => {
-            setOnboardingOpen(false)
-            setLoading(true)
-            void refresh().finally(() => setLoading(false))
-          }}
-        />
-      )
-    }
     if (!pendingFocused) {
       return (
         <div className="flex-1 flex items-center justify-center text-faint text-xs tracking-widest uppercase animate-pulse">
-          Loading conversation…
+          Loading…
         </div>
       )
     }
@@ -543,16 +608,18 @@ export function LabelRunPage() {
                   unmapped={unmapped}
                   selectedAssignmentId={selectedAssignmentId}
                   onSelectAssignment={(id) => setSelectedAssignmentId(id)}
-                  pendingLabel={{
-                    draftName: draftLabelName,
-                    onDraftNameChange: setDraftLabelName,
-                    onCommit: () => void handleCommitPendingLabel(),
-                    busy: pendingBusy,
+                  preLabel={{
+                    draftName: labelNameDraft,
+                    onDraftNameChange: setLabelNameDraft,
+                    onCommit: () => void handleCreateFirstLabel(),
+                    locked: tutorialActive,
                   }}
                 />
                 <QueueLine
                   queued={queued}
-                  onAdd={() => setNoteOpen(true)}
+                  onAdd={() => {
+                    if (!tutorialActive) setNoteOpen(true)
+                  }}
                   onRemove={handleRemoveQueued}
                   onClearAll={handleClearQueue}
                   onSwitch={handleSwitchToQueued}
@@ -569,22 +636,30 @@ export function LabelRunPage() {
               />
             </>
           }
-          flank={<AssistFlank neighbors={[]} />}
           dock={
             <DecisionDock
               onDecide={(v) => {
-                if (v === 'skip') void handlePendingSkip()
+                if (!tutorialActive && v === 'skip') void handlePendingSkip()
               }}
               onUndo={() => {}}
               onHandoff={() => {}}
               onSkipConversation={() => {}}
               skipOnly
-              disabled={pendingBusy}
+              disabled={pendingBusy || tutorialActive}
             />
           }
-          onSkip={() => void handlePendingSkip()}
-          disabled={pendingBusy || noteOpen}
+          onSkip={() => {
+            if (!tutorialActive) void handlePendingSkip()
+          }}
+          disabled={pendingBusy || noteOpen || tutorialActive}
         />
+        {tutorialStep !== null && (
+          <RunTutorialOverlay
+            step={tutorialStep}
+            onAdvance={advanceTutorial}
+            onSkip={finishTutorial}
+          />
+        )}
         <NoteLabelPopover
           open={noteOpen}
           onClose={() => setNoteOpen(false)}
@@ -714,10 +789,16 @@ export function LabelRunPage() {
                 onLabelMetaUpdated={refresh}
                 readinessOpen={readinessOpen}
                 onReadinessOpenChange={setReadinessOpen}
+                labelNameDraft={labelNameDraft}
+                onLabelNameDraftChange={setLabelNameDraft}
+                onLabelNameCommit={() => void handleLabelNameCommit()}
+                labelNameLocked={tutorialActive}
               />
               <QueueLine
                 queued={queued}
-                onAdd={() => setNoteOpen(true)}
+                onAdd={() => {
+                  if (!tutorialActive) setNoteOpen(true)
+                }}
                 onRemove={handleRemoveQueued}
                 onClearAll={handleClearQueue}
                 onSwitch={handleSwitchToQueued}
@@ -741,7 +822,7 @@ export function LabelRunPage() {
             onUndo={handleUndo}
             onHandoff={openHandoffPanel}
             onSkipConversation={handleSkipConversation}
-            disabled={busy}
+            disabled={busy || tutorialActive}
             recent={recent}
             flash={flash}
           />
@@ -751,8 +832,15 @@ export function LabelRunPage() {
         onSkip={() => handleDecide('skip')}
         onUndo={handleUndo}
         onAcceptAi={recent ? undefined : openHandoffPanel}
-        disabled={busy || noteOpen || abortOpen || readinessOpen}
+        disabled={busy || noteOpen || abortOpen || readinessOpen || tutorialActive}
       />
+      {tutorialStep !== null && (
+        <RunTutorialOverlay
+          step={tutorialStep}
+          onAdvance={advanceTutorial}
+          onSkip={finishTutorial}
+        />
+      )}
       <NoteLabelPopover
         open={noteOpen}
         onClose={() => setNoteOpen(false)}

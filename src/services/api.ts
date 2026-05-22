@@ -292,10 +292,32 @@ export const api = {
   getActiveSingleLabel: (): Promise<SingleLabel | null> =>
     USE_MOCK ? Promise.resolve(mockActiveLabel) : req('/api/single-labels/active'),
 
-  getOnboardingStarter: (refresh = false): Promise<OnboardingStarter> =>
+  getOnboardingStarter: (opts?: {
+    refresh?: boolean
+    chatlogId?: number
+    messageIndex?: number
+  }): Promise<OnboardingStarter> => {
+    if (USE_MOCK) {
+      return Promise.resolve({ ...mockApi.onboardingStarter, focused: mockFocusedMessage })
+    }
+    const params = new URLSearchParams()
+    if (opts?.refresh) params.set('refresh', 'true')
+    if (opts?.chatlogId != null) params.set('chatlog_id', String(opts.chatlogId))
+    if (opts?.messageIndex != null) params.set('message_index', String(opts.messageIndex))
+    const qs = params.toString()
+    return req(`/api/onboarding/starter${qs ? `?${qs}` : ''}`)
+  },
+
+  skipOnboardingBrowse: (
+    chatlogId: number,
+    messageIndex: number,
+  ): Promise<FocusedMessage> =>
     USE_MOCK
-      ? Promise.resolve({ ...mockApi.onboardingStarter, focused: mockFocusedMessage })
-      : req(`/api/onboarding/starter${refresh ? '?refresh=true' : ''}`),
+      ? Promise.resolve(mockFocusedMessage)
+      : req('/api/onboarding/browse/skip', {
+          method: 'POST',
+          ...json({ chatlog_id: chatlogId, message_index: messageIndex }),
+        }),
 
   createSingleLabel: (body: {
     name: string

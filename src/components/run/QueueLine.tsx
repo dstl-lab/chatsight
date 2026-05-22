@@ -49,6 +49,8 @@ export function QueueLine({ queued, onAdd, onRemove, onClearAll, onSwitch }: Que
         </button>
       )}
       <button
+        type="button"
+        data-tutorial="note-label"
         onClick={onAdd}
         className="ml-auto font-mono text-[10px] tracking-[0.04em] text-muted hover:text-ochre transition-colors"
       >
