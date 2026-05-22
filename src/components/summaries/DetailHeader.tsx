@@ -1,4 +1,5 @@
 import type { SingleLabelDetail } from '../../types'
+import { displayLabelName } from '../run/labelPlaceholder'
 
 export type SummariesTab = 'browse' | 'settings'
 export type MenuAction = 'rename' | 'edit' | 'rehandoff' | 'delete'
@@ -20,7 +21,9 @@ export function DetailHeader({ detail, activeTab, onTabChange, onMenuAction }: D
     <div className="border-b border-edge px-7 pt-5">
       <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <div className="font-serif font-medium text-[26px] text-paper tracking-[-0.012em] truncate">{detail.name}</div>
+          <div className="font-serif font-medium text-[26px] text-paper tracking-[-0.012em] truncate">
+            {displayLabelName(detail.name)}
+          </div>
           {detail.description && (
             <div className="font-serif italic text-[13px] text-muted mt-0.5 truncate">{detail.description}</div>
           )}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../../services/api'
 import type { HandoffSummaryItem } from '../../types'
+import { displayLabelName } from '../run/labelPlaceholder'
 
 interface LabelRailProps {
   items: HandoffSummaryItem[]
@@ -97,7 +98,7 @@ export function LabelRail({ items, activeId, onSelect }: LabelRailProps) {
                   : 'bg-moss'
                 }`}
               />
-              {item.label_name}
+              {displayLabelName(item.label_name)}
             </div>
             <div className="font-mono text-[10px] text-muted mt-0.5">{subtitle(item)}</div>
           </button>

@@ -10,6 +10,7 @@ import { YesRateByPositionChart } from './YesRateByPositionChart'
 import { YesRateByHourOfDayChart } from './YesRateByHourOfDayChart'
 import { YesRateByConversationDepthChart } from './YesRateByConversationDepthChart'
 import { ExamplesDrawer } from './ExamplesDrawer'
+import { displayLabelName } from '../../../components/run/labelPlaceholder'
 
 type Subtab = 'health' | 'findings'
 
@@ -89,7 +90,7 @@ export function RunDetailPane({ runId }: Props) {
             RUN
           </span>
           <span className="font-serif font-medium text-[22px] text-paper tracking-[-0.012em] truncate">
-            {detail.run.label_name}
+            {displayLabelName(detail.run.label_name)}
           </span>
           <span className="text-[12px] text-muted italic ml-1 truncate">
             yes{' '}
@@ -155,7 +156,7 @@ export function RunDetailPane({ runId }: Props) {
       <ExamplesDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        runLabel={detail.run.label_name}
+        runLabel={displayLabelName(detail.run.label_name)}
         examples={detail.examples}
         totals={totals}
       />
