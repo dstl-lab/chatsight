@@ -132,7 +132,6 @@ export function LabelRunPage() {
     try {
       setLoadError(null)
       const active = await api.getActiveSingleLabel()
-      setActiveLabel(active)
       const [a, um] = await Promise.all([api.listAssignments(), api.getUnmappedCount()])
       setAssignments(a)
       setUnmapped(um)
@@ -142,20 +141,24 @@ export function LabelRunPage() {
           api.getReadiness(active.id),
           api.listSingleLabels({ phase: 'queued' }),
         ])
+        let rq: ReviewItem[] | null = null
+        if (active.phase === 'reviewing') {
+          rq = await api.getReviewQueue(active.id)
+        }
+        // Apply active + focused together so we never render activeLabel with a
+        // stale/null focused (that path shows DoneWithLabel — queue exhausted).
+        setActiveLabel(active)
         setFocused(next)
         setReadiness(ready)
         setQueued(q)
-        if (active.phase === 'reviewing') {
-          const rq = await api.getReviewQueue(active.id)
-          setReviewQueue(rq)
-          setReviewIdx(0)
-        } else {
-          setReviewQueue(null)
-          setReviewIdx(0)
-        }
+        setReviewQueue(rq)
+        setReviewIdx(0)
       } else {
+        setActiveLabel(null)
         setFocused(null)
         setReadiness(null)
+        setReviewQueue(null)
+        setReviewIdx(0)
         const q = await api.listSingleLabels({ phase: 'queued' })
         setQueued(q)
         const all = await api.listSingleLabels()
@@ -425,12 +428,20 @@ export function LabelRunPage() {
           <OnboardingModal
             onStarted={() => {
               setOnboardingOpen(false)
-              void refresh()
+              setLoading(true)
+              void refresh().finally(() => setLoading(false))
             }}
             onSkipTutorial={() => setOnboardingOpen(false)}
           />
         )}
-        {!onboardingOpen && <NoActiveLabel onCreated={refresh} />}
+        {!onboardingOpen && (
+          <NoActiveLabel
+            onCreated={() => {
+              setLoading(true)
+              void refresh().finally(() => setLoading(false))
+            }}
+          />
+        )}
       </>
     )
   }
@@ -525,6 +536,8 @@ export function LabelRunPage() {
     )
   }
 
+  // focused === null here means the walk queue is exhausted, not "still fetching"
+  // (refresh applies activeLabel and focused in the same turn).
   if (!focused) {
     return <DoneWithLabel label={activeLabel} onClose={async () => {
       await api.closeSingleLabel(activeLabel.id)
