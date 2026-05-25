@@ -13,6 +13,7 @@ import type {
   SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
   SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
   BrowseBucket, OnboardingStarter,
+  MultiLabelAutolabelSummaryItem,
 } from '../types'
 import { mockApi } from '../mocks'
 import {
@@ -660,6 +661,10 @@ export const api = {
       confidence_histogram: [],
     })
              : req(`/api/single-labels/${id}`, { method: 'PATCH', ...json(patch) }),
+
+  // ─── Multi-label auto-label summary ───
+  getMultiLabelAutolabelSummary: (): Promise<MultiLabelAutolabelSummaryItem[]> =>
+    USE_MOCK ? Promise.resolve([]) : req('/api/multi-labels/autolabel-summary'),
 
   // ─── Handoff summaries ───
   listHandoffSummaries: (): Promise<HandoffSummaryItem[]> =>

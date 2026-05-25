@@ -88,42 +88,30 @@ def test_get_chatlog_filters_by_tutor_events(client):
         _cleanup()
 
 
-def test_get_chatlog_messages_returns_structured(client):
-    """GET /api/chatlogs/{id}/messages should return student + assistant messages."""
-    mock_conn = _make_ext_conn([
-        {
-            "event_type": "tutor_query",
-            "question": "What is a DataFrame?",
-            "response": None,
-            "notebook": "nb1",
-            "created_at": "2026-01-01T00:00:00",
-            "user_email": "a@test.com",
-            "started_at": "2026-01-01T00:00:00",
-        },
-        {
-            "event_type": "tutor_response",
-            "question": None,
-            "response": "A DataFrame is a table.",
-            "notebook": "nb1",
-            "created_at": "2026-01-01T00:00:01",
-            "user_email": "a@test.com",
-            "started_at": "2026-01-01T00:00:00",
-        },
-    ])
-    _override_ext_conn(mock_conn)
-    try:
-        r = client.get("/api/chatlogs/200/messages")
-        assert r.status_code == 200
-        msgs = r.json()
-        assert len(msgs) == 2
-        assert msgs[0]["role"] == "student"
-        assert msgs[0]["text"] == "What is a DataFrame?"
-        assert msgs[0]["message_index"] == 0
-        assert msgs[1]["role"] == "assistant"
-        assert msgs[1]["text"] == "A DataFrame is a table."
-        assert msgs[1]["message_index"] is None
-    finally:
-        _cleanup()
+def test_get_chatlog_messages_returns_structured(client, session):
+    """GET /api/chatlogs/{id}/messages should return student + assistant messages
+    sourced from MessageCache (no external DB required)."""
+    from models import MessageCache
+    row = MessageCache(
+        chatlog_id=200,
+        message_index=0,
+        message_text="What is a DataFrame?",
+        context_after="A DataFrame is a table.",
+    )
+    session.add(row)
+    session.commit()
+
+    r = client.get("/api/chatlogs/200/messages")
+    assert r.status_code == 200
+    msgs = r.json()
+    # Expect: student turn + assistant (context_after) turn
+    assert len(msgs) == 2
+    assert msgs[0]["role"] == "student"
+    assert msgs[0]["text"] == "What is a DataFrame?"
+    assert msgs[0]["message_index"] == 0
+    assert msgs[1]["role"] == "assistant"
+    assert msgs[1]["text"] == "A DataFrame is a table."
+    assert msgs[1]["message_index"] is None
 
 
 def test_get_chatlog_messages_404_when_empty(client):
@@ -140,28 +128,24 @@ def test_get_chatlog_messages_404_when_empty(client):
 # ── notebook_info events should not affect chatlog_id ────────────────────────
 
 
-def test_notebook_info_excluded_from_messages(client):
-    """Non-tutor events like tutor_notebook_info should not appear in messages."""
-    mock_conn = _make_ext_conn([
-        {
-            "event_type": "tutor_query",
-            "question": "Help me",
-            "response": None,
-            "notebook": "nb1",
-            "created_at": "2026-01-01T00:00:01",
-            "user_email": "a@test.com",
-            "started_at": "2026-01-01T00:00:01",
-        },
-    ])
-    _override_ext_conn(mock_conn)
-    try:
-        r = client.get("/api/chatlogs/200/messages")
-        assert r.status_code == 200
-        msgs = r.json()
-        assert len(msgs) == 1
-        assert msgs[0]["role"] == "student"
-    finally:
-        _cleanup()
+def test_notebook_info_excluded_from_messages(client, session):
+    """Non-tutor events like tutor_notebook_info should not appear in messages.
+    The endpoint reads from MessageCache which only stores student turns,
+    so assistant-only metadata is never surfaced."""
+    from models import MessageCache
+    row = MessageCache(
+        chatlog_id=200,
+        message_index=0,
+        message_text="Help me",
+    )
+    session.add(row)
+    session.commit()
+
+    r = client.get("/api/chatlogs/200/messages")
+    assert r.status_code == 200
+    msgs = r.json()
+    assert len(msgs) == 1
+    assert msgs[0]["role"] == "student"
 
 
 # ── SQL consistency: all chatlog_id CTEs filter by event_type ────────────────

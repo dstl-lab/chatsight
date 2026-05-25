@@ -72,6 +72,8 @@ interface Props {
 	showConversation?: boolean;
 	onToggleConversation?: () => void;
 	onSelectConversationMessage?: (chatlogId: number, messageIndex: number) => void;
+	onToggleLabelForMessage?: (chatlogId: number, messageIndex: number, labelId: number, currentlyApplied: boolean) => void;
+	onCreateLabelForMessage?: (chatlogId: number, messageIndex: number, name: string) => Promise<number>;
 }
 
 export function MessageCard({
@@ -99,6 +101,8 @@ export function MessageCard({
 	showConversation,
 	onToggleConversation,
 	onSelectConversationMessage,
+	onToggleLabelForMessage,
+	onCreateLabelForMessage,
 }: Props) {
 	const [showRationale, setShowRationale] = useState(false);
 	const [beforeExpanded, setBeforeExpanded] = useState(false);
@@ -119,7 +123,7 @@ export function MessageCard({
 	}
 
 	return (
-		<div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto">
+		<div className="flex-1 flex flex-col gap-3 p-4 overflow-y-auto [scrollbar-gutter:stable]">
 			{isReviewing && (
 				<div className="bg-warning-surface border border-warning-border rounded px-3 py-2">
 					<span className="text-[10px] text-warning uppercase tracking-wide">
@@ -139,7 +143,7 @@ export function MessageCard({
 						</span>
 					</span>
 					{beforeExpanded ? (
-						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted max-w-none text-tertiary leading-relaxed">
+						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -155,7 +159,7 @@ export function MessageCard({
 				</div>
 			)}
 
-			<div className="bg-[#0d1f33] border border-message-border rounded-lg p-4">
+			<div className="bg-message-student border border-message-border rounded-lg p-4">
 				<div className="flex items-center justify-between mb-2">
 					<span className="text-[10px] uppercase tracking-wide text-accent-text">
 						Student · message {item.message_index}
@@ -280,7 +284,7 @@ export function MessageCard({
 						</span>
 					</span>
 					{afterExpanded ? (
-						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted max-w-none text-tertiary leading-relaxed">
+						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -365,6 +369,9 @@ export function MessageCard({
 						chatlogId={item.chatlog_id}
 						onClose={() => onToggleConversation?.()}
 						onSelectMessage={onSelectConversationMessage}
+						labels={labels}
+						onToggleLabelForMessage={onToggleLabelForMessage}
+						onCreateLabelForMessage={onCreateLabelForMessage}
 					/>
 				)}
 		</div>
