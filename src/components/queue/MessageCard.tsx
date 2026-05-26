@@ -306,19 +306,19 @@ export function MessageCard({
 						<button
 							onClick={onBack}
 							disabled={!canGoBack}
-							className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+							className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
 						>
 							← Back
 						</button>
 						<button
 							onClick={onForward}
-							className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
+							className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 						>
 							Forward →
 						</button>
 						<button
 							onClick={onNext}
-							className="text-xs text-white bg-accent rounded px-3 py-1.5 hover:bg-accent-hover transition-colors"
+							className="font-serif text-xs text-white bg-accent rounded px-3 py-1.5 hover:bg-accent-hover transition-colors"
 						>
 							Next →
 						</button>
@@ -328,7 +328,7 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && canGoBack && (
 							<button
 								onClick={onBack}
-								className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
+								className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 							>
 								← Back
 							</button>
@@ -336,7 +336,7 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && (
 							<button
 								onClick={onSkip}
-								className="text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
+								className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
 							>
 								Skip
 							</button>
@@ -344,7 +344,7 @@ export function MessageCard({
 						<button
 							onClick={onNext}
 							disabled={!isReviewing && !isRecalibrating && !hasLabelsApplied}
-							className={`text-xs text-white rounded px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+							className={`font-serif text-xs text-white rounded px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
 								isRecalibrating
 									? recalibrationPhase === 'reconcile'
 										? 'bg-warning hover:bg-warning'

@@ -26,9 +26,7 @@ function AppShell() {
   const { mode } = useMode()
   // Single-label mode wraps the entire app shell (including nav) in the warm
   // editorial palette so there's no cool-gray seam at the top.
-  const shellClasses = `h-screen bg-canvas text-on-canvas flex flex-col overflow-hidden ${
-    mode === 'single' ? 'warm-flow' : ''
-  }`
+  const shellClasses = 'h-screen bg-canvas text-on-canvas flex flex-col overflow-hidden warm-flow'
   return (
     <div className={shellClasses}>
       <Navigation />

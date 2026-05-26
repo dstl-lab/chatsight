@@ -108,7 +108,7 @@ function SortableLabelItem({
               : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
           }`}
         >
-          <span className="truncate flex-1">{label.name}</span>
+          <span className="font-serif truncate flex-1">{label.name}</span>
           {index < 9 && (
             <span
               {...attributes}
