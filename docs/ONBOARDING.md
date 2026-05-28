@@ -4,7 +4,7 @@
 
 The tutorial is an overlay on the **normal** `/run` labeling page — not a separate screen. It appears when:
 
-- There are **no single labels** in the database, and
+- You have **not started a single-label run** yet (no active/queued label, no yes/no/skip decisions, and no label past the draft `labeling` phase — abandoned name-only rows do not count), and
 - You have not skipped/finished the tutorial **this tab session**, and
 - You arrived via a **document load** (new tab, typed URL, or **F5 / refresh** on any page) — not by clicking **Run** in the nav after already using the app in this tab.
 

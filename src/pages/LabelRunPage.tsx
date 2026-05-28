@@ -217,7 +217,7 @@ export function LabelRunPage() {
       })
       setReadiness(defaultReadiness())
       setLabelNameDraft('')
-      if (shouldOfferFirstRunTutorial(existing.length)) {
+      if (shouldOfferFirstRunTutorial(existing)) {
         takeTutorialReloadGate()
         setTutorialStep(0)
       }
