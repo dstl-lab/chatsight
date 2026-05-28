@@ -82,21 +82,26 @@ export function QueuePage() {
 	const discoverPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	const [showLabelReview, setShowLabelReview] = useState(false);
-	const [labelReviewItems, setLabelReviewItems] = useState<
-		LabelReviewItem[]
-	>([]);
+	const [labelReviewItems, setLabelReviewItems] = useState<LabelReviewItem[]>(
+		[],
+	);
 	const [isSkippedReview, setIsSkippedReview] = useState(false);
 	const [skippedQueue, setSkippedQueue] = useState<QueueItem[]>([]);
 	const [skippedIdx, setSkippedIdx] = useState(0);
 
 	interface RecalibrationState {
 		item: RecalibrationItem;
-		phase: 'blind' | 'reconcile';
+		phase: "blind" | "reconcile";
 		relabelIds: Set<number>;
 	}
-	const [recalibration, setRecalibration] = useState<RecalibrationState | null>(null);
-	const [recalibrationStats, setRecalibrationStats] = useState<RecalibrationStats | null>(null);
-	const [recalibrationToast, setRecalibrationToast] = useState<'match' | null>(null);
+	const [recalibration, setRecalibration] = useState<RecalibrationState | null>(
+		null,
+	);
+	const [recalibrationStats, setRecalibrationStats] =
+		useState<RecalibrationStats | null>(null);
+	const [recalibrationToast, setRecalibrationToast] = useState<"match" | null>(
+		null,
+	);
 
 	const currentMessage = queue[currentIdx] ?? null;
 
@@ -116,20 +121,32 @@ export function QueuePage() {
 	// testing recalibration / backNav / reviewTarget — when those got out of
 	// sync, archive-review keyboard handlers used to apply labels to the
 	// wrong message.
-	type DisplayMode = 'recalibration' | 'backnav' | 'archive-review' | 'queue';
+	type DisplayMode = "recalibration" | "backnav" | "archive-review" | "queue";
 	const { displayedMessage, displayMode } = (() => {
 		if (recalibration?.item) {
-			return { displayedMessage: recalibration.item, displayMode: 'recalibration' as DisplayMode };
+			return {
+				displayedMessage: recalibration.item,
+				displayMode: "recalibration" as DisplayMode,
+			};
 		}
 		if (isBackNav) {
-			return { displayedMessage: navStack[navPos!], displayMode: 'backnav' as DisplayMode };
+			return {
+				displayedMessage: navStack[navPos!],
+				displayMode: "backnav" as DisplayMode,
+			};
 		}
 		if (reviewTarget) {
-			return { displayedMessage: reviewTarget, displayMode: 'archive-review' as DisplayMode };
+			return {
+				displayedMessage: reviewTarget,
+				displayMode: "archive-review" as DisplayMode,
+			};
 		}
-		return { displayedMessage: currentMessage, displayMode: 'queue' as DisplayMode };
+		return {
+			displayedMessage: currentMessage,
+			displayMode: "queue" as DisplayMode,
+		};
 	})();
-	const isReviewing = displayMode === 'archive-review';
+	const isReviewing = displayMode === "archive-review";
 	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
 
 	const loadQueue = useCallback(async () => {
@@ -164,15 +181,27 @@ export function QueuePage() {
 			if (cands.status === "fulfilled") setCandidates(cands.value);
 
 			const failures = [
-				["session", sess], ["labels", lbls], ["queue", q], ["stats", st],
-				["position", pos], ["history", hist], ["candidates", cands],
-			].filter(([, r]) => (r as PromiseSettledResult<unknown>).status === "rejected");
+				["session", sess],
+				["labels", lbls],
+				["queue", q],
+				["stats", st],
+				["position", pos],
+				["history", hist],
+				["candidates", cands],
+			].filter(
+				([, r]) => (r as PromiseSettledResult<unknown>).status === "rejected",
+			);
 			if (failures.length > 0) {
-				console.error("Queue load partial failure:",
-					failures.map(([k, r]) => [k, (r as PromiseRejectedResult).reason]));
+				console.error(
+					"Queue load partial failure:",
+					failures.map(([k, r]) => [k, (r as PromiseRejectedResult).reason]),
+				);
 			}
 			setLoading(false);
-			api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+			api
+				.getRecalibrationStats()
+				.then(setRecalibrationStats)
+				.catch(() => {});
 		});
 	}, []);
 
@@ -185,15 +214,30 @@ export function QueuePage() {
 	useEffect(() => {
 		if (!displayedMessage) return;
 		if (recalibration) return;
-		api.getAppliedLabels(displayedMessage.chatlog_id, displayedMessage.message_index)
-			.then(ids => setAppliedLabelIds(new Set(ids)));
+		api
+			.getAppliedLabels(
+				displayedMessage.chatlog_id,
+				displayedMessage.message_index,
+			)
+			.then((ids) => setAppliedLabelIds(new Set(ids)));
 		setSuggestion(null);
 		if (aiUnlocked) {
-			api.suggestLabel(displayedMessage.chatlog_id, displayedMessage.message_index)
-				.then(s => { if (s.label_name) setSuggestion(s); })
+			api
+				.suggestLabel(
+					displayedMessage.chatlog_id,
+					displayedMessage.message_index,
+				)
+				.then((s) => {
+					if (s.label_name) setSuggestion(s);
+				})
 				.catch(() => {});
 		}
-	}, [displayedMessage?.chatlog_id, displayedMessage?.message_index, aiUnlocked, recalibration]);
+	}, [
+		displayedMessage?.chatlog_id,
+		displayedMessage?.message_index,
+		aiUnlocked,
+		recalibration,
+	]);
 
 	// Show label review overlay once per browser session
 	useEffect(() => {
@@ -332,30 +376,46 @@ export function QueuePage() {
 		[displayedMessage, appliedLabelIds, archiveReview],
 	);
 
-	const handleApplySuggestionAndNext = useCallback(async (labelId: number) => {
-		if (!currentMessage) return;
-		await api.applyLabel({
-			chatlog_id: currentMessage.chatlog_id,
-			message_index: currentMessage.message_index,
-			label_id: labelId,
-		});
-		const appliedLabel = labels.find((l) => l.id === labelId);
-		const allLabelNames = [
-			...labels.filter((l) => appliedLabelIds.has(l.id)).map((l) => l.name),
-			...(appliedLabel ? [appliedLabel.name] : []),
-		];
-		setNavStack((prev) => [...prev, currentMessage]);
-		setNavPos(null);
-		setUndoState({ message: currentMessage, labelNames: allLabelNames, fromSkippedTab: false });
-		await api.advanceMessage(currentMessage.chatlog_id, currentMessage.message_index);
-		setStats((s) => (s ? { ...s, labeled_count: s.labeled_count + 1 } : s));
-		setTimeout(() => setUndoState((prev) => prev?.message === currentMessage ? null : prev), 8000);
-		setAppliedLabelIds(new Set());
-		advance();
-		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
-		api.getRecentHistory(5).then(setHistory);
-		api.getLabels().then(setLabels);
-	}, [currentMessage, labels, appliedLabelIds, advance]);
+	const handleApplySuggestionAndNext = useCallback(
+		async (labelId: number) => {
+			if (!currentMessage) return;
+			await api.applyLabel({
+				chatlog_id: currentMessage.chatlog_id,
+				message_index: currentMessage.message_index,
+				label_id: labelId,
+			});
+			const appliedLabel = labels.find((l) => l.id === labelId);
+			const allLabelNames = [
+				...labels.filter((l) => appliedLabelIds.has(l.id)).map((l) => l.name),
+				...(appliedLabel ? [appliedLabel.name] : []),
+			];
+			setNavStack((prev) => [...prev, currentMessage]);
+			setNavPos(null);
+			setUndoState({
+				message: currentMessage,
+				labelNames: allLabelNames,
+				fromSkippedTab: false,
+			});
+			await api.advanceMessage(
+				currentMessage.chatlog_id,
+				currentMessage.message_index,
+			);
+			setStats((s) => (s ? { ...s, labeled_count: s.labeled_count + 1 } : s));
+			setTimeout(
+				() =>
+					setUndoState((prev) =>
+						prev?.message === currentMessage ? null : prev,
+					),
+				8000,
+			);
+			setAppliedLabelIds(new Set());
+			advance();
+			api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
+			api.getRecentHistory(5).then(setHistory);
+			api.getLabels().then(setLabels);
+		},
+		[currentMessage, labels, appliedLabelIds, advance],
+	);
 
 	const handleCreateAndApply = async (name: string, description?: string) => {
 		if (!displayedMessage) return;
@@ -371,10 +431,12 @@ export function QueuePage() {
 
 	const handleNext = useCallback(async () => {
 		// Recalibration: blind phase → check match → reconcile or auto-advance
-		if (recalibration && recalibration.phase === 'blind') {
+		if (recalibration && recalibration.phase === "blind") {
 			const relabelIds = new Set(appliedLabelIds);
 			const originalSet = new Set(recalibration.item.original_label_ids);
-			const matched = relabelIds.size === originalSet.size && [...relabelIds].every(id => originalSet.has(id));
+			const matched =
+				relabelIds.size === originalSet.size &&
+				[...relabelIds].every((id) => originalSet.has(id));
 
 			if (matched) {
 				await api.saveRecalibration({
@@ -385,18 +447,23 @@ export function QueuePage() {
 					final_label_ids: [...relabelIds],
 				});
 				setRecalibration(null);
-				setRecalibrationToast('match');
+				setRecalibrationToast("match");
 				setTimeout(() => setRecalibrationToast(null), 2000);
 				setAppliedLabelIds(new Set());
-				api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+				api
+					.getRecalibrationStats()
+					.then(setRecalibrationStats)
+					.catch(() => {});
 			} else {
-				setRecalibration(prev => prev ? { ...prev, phase: 'reconcile', relabelIds } : prev);
+				setRecalibration((prev) =>
+					prev ? { ...prev, phase: "reconcile", relabelIds } : prev,
+				);
 			}
 			return;
 		}
 
 		// Recalibration: reconcile phase → save final labels and exit
-		if (recalibration && recalibration.phase === 'reconcile') {
+		if (recalibration && recalibration.phase === "reconcile") {
 			await api.saveRecalibration({
 				chatlog_id: recalibration.item.chatlog_id,
 				message_index: recalibration.item.message_index,
@@ -406,7 +473,10 @@ export function QueuePage() {
 			});
 			setRecalibration(null);
 			setAppliedLabelIds(new Set());
-			api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
+			api
+				.getRecalibrationStats()
+				.then(setRecalibrationStats)
+				.catch(() => {});
 			return;
 		}
 
@@ -458,12 +528,15 @@ export function QueuePage() {
 		api.getRecentHistory(5).then(setHistory);
 
 		// Check if recalibration is due after advancing
-		api.getRecalibration().then(item => {
-			if (item) {
-				setRecalibration({ item, phase: 'blind', relabelIds: new Set() });
-				setAppliedLabelIds(new Set());
-			}
-		}).catch(() => {});
+		api
+			.getRecalibration()
+			.then((item) => {
+				if (item) {
+					setRecalibration({ item, phase: "blind", relabelIds: new Set() });
+					setAppliedLabelIds(new Set());
+				}
+			})
+			.catch(() => {});
 	}, [
 		recalibration,
 		isBackNav,
@@ -556,9 +629,15 @@ export function QueuePage() {
 			const rawKey = e.key.toLowerCase();
 			const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey;
 
-			if (pressedKey === keybinds.yes || rawKey === "enter" || rawKey === "n") {
+			if (
+				pressedKey === keybinds.yes ||
+				rawKey === "enter" ||
+				rawKey === "n" ||
+				rawKey === "z"
+			) {
 				if (!isBackNav && (isReviewing || appliedLabelIds.size > 0)) {
 					e.preventDefault(); // prevent focused button from firing a click
+					(document.activeElement as HTMLElement)?.blur();
 					handleNext();
 				}
 				return;
@@ -570,7 +649,7 @@ export function QueuePage() {
 				}
 				return;
 			}
-			if (pressedKey === keybinds.undo || rawKey === "z" || (e.ctrlKey && rawKey === "z")) {
+			if (pressedKey === keybinds.undo || (e.ctrlKey && rawKey === "z")) {
 				handleUndo();
 				return;
 			}
@@ -579,15 +658,20 @@ export function QueuePage() {
 					setRecalibration(null);
 					setAppliedLabelIds(new Set());
 				} else {
-					api.saveRecalibration({
-						chatlog_id: recalibration.item.chatlog_id,
-						message_index: recalibration.item.message_index,
-						original_label_ids: recalibration.item.original_label_ids,
-						relabel_ids: [...recalibration.relabelIds],
-						final_label_ids: recalibration.item.original_label_ids,
-					}).then(() => {
-						api.getRecalibrationStats().then(setRecalibrationStats).catch(() => {});
-					});
+					api
+						.saveRecalibration({
+							chatlog_id: recalibration.item.chatlog_id,
+							message_index: recalibration.item.message_index,
+							original_label_ids: recalibration.item.original_label_ids,
+							relabel_ids: [...recalibration.relabelIds],
+							final_label_ids: recalibration.item.original_label_ids,
+						})
+						.then(() => {
+							api
+								.getRecalibrationStats()
+								.then(setRecalibrationStats)
+								.catch(() => {});
+						});
 					setRecalibration(null);
 					setAppliedLabelIds(new Set());
 				}
@@ -683,10 +767,12 @@ export function QueuePage() {
 		if (recalibration) return;
 		const item = await api.getRecalibration(true);
 		if (item) {
-			setRecalibration({ item, phase: 'blind', relabelIds: new Set() });
+			setRecalibration({ item, phase: "blind", relabelIds: new Set() });
 			setAppliedLabelIds(new Set());
 		} else {
-			console.warn('[DEV] Force recalibration returned null — no labeled messages yet?');
+			console.warn(
+				"[DEV] Force recalibration returned null — no labeled messages yet?",
+			);
 		}
 	}, [recalibration]);
 
@@ -854,6 +940,69 @@ export function QueuePage() {
 		[],
 	);
 
+	const handleToggleLabelForMessage = useCallback(
+		async (
+			chatlogId: number,
+			messageIndex: number,
+			labelId: number,
+			currentlyApplied: boolean,
+		) => {
+			if (currentlyApplied) {
+				await api
+					.unapplyLabel(chatlogId, messageIndex, labelId)
+					.catch(() => {});
+			} else {
+				await api
+					.applyLabel({
+						chatlog_id: chatlogId,
+						message_index: messageIndex,
+						label_id: labelId,
+					})
+					.catch(() => {});
+			}
+			// Keep the main card's applied state in sync when the toggled message is the one displayed
+			if (
+				chatlogId === displayedMessage?.chatlog_id &&
+				messageIndex === displayedMessage?.message_index
+			) {
+				setAppliedLabelIds((prev) => {
+					const next = new Set(prev);
+					if (currentlyApplied) next.delete(labelId);
+					else next.add(labelId);
+					return next;
+				});
+			}
+			api.getLabels().then(setLabels);
+		},
+		[displayedMessage],
+	);
+
+	const handleCreateLabelForMessage = useCallback(
+		async (
+			chatlogId: number,
+			messageIndex: number,
+			name: string,
+		): Promise<number> => {
+			const newLabel = await api.createLabel({ name });
+			setLabels((prev) => [...prev, newLabel]);
+			await api
+				.applyLabel({
+					chatlog_id: chatlogId,
+					message_index: messageIndex,
+					label_id: newLabel.id,
+				})
+				.catch(() => {});
+			if (
+				chatlogId === displayedMessage?.chatlog_id &&
+				messageIndex === displayedMessage?.message_index
+			) {
+				setAppliedLabelIds((prev) => new Set(prev).add(newLabel.id));
+			}
+			return newLabel.id;
+		},
+		[displayedMessage],
+	);
+
 	const reviewingKey = reviewTarget
 		? `${reviewTarget.chatlog_id}-${reviewTarget.message_index}`
 		: null;
@@ -870,10 +1019,7 @@ export function QueuePage() {
 					</div>
 					<div className="flex flex-col gap-1.5">
 						{[1, 2, 3, 4].map((i) => (
-							<div
-								key={i}
-								className="h-7 bg-elevated rounded animate-pulse"
-							/>
+							<div key={i} className="h-7 bg-elevated rounded animate-pulse" />
 						))}
 					</div>
 				</div>
@@ -902,36 +1048,69 @@ export function QueuePage() {
 
 	return (
 		<div className="flex-1 flex flex-col min-h-0">
-			{recalibration && recalibration.phase === 'blind' && (
+			{recalibration && recalibration.phase === "blind" && (
 				<div className="bg-ai-surface border-b border-purple-500/30 px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<span className="bg-ai-action text-white text-[10px] font-semibold px-2 py-0.5 rounded">RECALIBRATION</span>
-						<span className="text-ai-text text-xs">Re-label this previously seen message to check consistency</span>
+						<span className="bg-ai-action text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+							RECALIBRATION
+						</span>
+						<span className="text-ai-text text-xs">
+							Re-label this previously seen message to check consistency
+						</span>
 					</div>
 					<div className="flex gap-3 text-[10px] text-faint">
-						<span><kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd> toggle</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">{formatKey(keybinds.yes)}</kbd> submit</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd> cancel</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd>{" "}
+							toggle
+						</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">
+								{formatKey(keybinds.yes)}
+							</kbd>{" "}
+							submit
+						</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd>{" "}
+							cancel
+						</span>
 					</div>
 				</div>
 			)}
-			{recalibration && recalibration.phase === 'reconcile' && (
+			{recalibration && recalibration.phase === "reconcile" && (
 				<div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<span className="bg-amber-500 text-black text-[10px] font-semibold px-2 py-0.5 rounded">MISMATCH</span>
-						<span className="text-warning-name text-xs">Labels differ from original — toggle labels to reconcile, then press {formatKey(keybinds.yes)}</span>
+						<span className="bg-amber-500 text-black text-[10px] font-semibold px-2 py-0.5 rounded">
+							MISMATCH
+						</span>
+						<span className="text-warning-name text-xs">
+							Labels differ from original — toggle labels to reconcile, then
+							press {formatKey(keybinds.yes)}
+						</span>
 					</div>
 					<div className="flex gap-3 text-[10px] text-faint">
-						<span><kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd> toggle</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">{formatKey(keybinds.yes)}</kbd> confirm</span>
-						<span><kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd> keep original</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd>{" "}
+							toggle
+						</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">
+								{formatKey(keybinds.yes)}
+							</kbd>{" "}
+							confirm
+						</span>
+						<span>
+							<kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd>{" "}
+							keep original
+						</span>
 					</div>
 				</div>
 			)}
-			{recalibrationToast === 'match' && (
+			{recalibrationToast === "match" && (
 				<div className="bg-success-surface border-b border-green-500/30 px-4 py-2 flex items-center gap-2">
 					<span className="text-success text-sm">✓</span>
-					<span className="text-success text-xs font-medium">Consistent! Your labels matched your original labeling.</span>
+					<span className="text-success text-xs font-medium">
+						Consistent! Your labels matched your original labeling.
+					</span>
 				</div>
 			)}
 			{archiveReview && (
@@ -983,11 +1162,17 @@ export function QueuePage() {
 						onDiscover={handleDiscover}
 						onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
 						discovering={discovering}
-						recalibration={recalibration ? {
-							phase: recalibration.phase,
-							originalLabelIds: new Set(recalibration.item.original_label_ids),
-							relabelIds: recalibration.relabelIds,
-						} : null}
+						recalibration={
+							recalibration
+								? {
+										phase: recalibration.phase,
+										originalLabelIds: new Set(
+											recalibration.item.original_label_ids,
+										),
+										relabelIds: recalibration.relabelIds,
+									}
+								: null
+						}
 						recalibrationStats={recalibrationStats}
 					/>
 				)}
@@ -1013,7 +1198,9 @@ export function QueuePage() {
 						item={displayedMessage}
 						aiUnlocked={aiUnlocked}
 						suggestion={archiveReview || isRecalibrating ? null : suggestion}
-						suggestionLoading={!archiveReview && !isRecalibrating && suggestionLoading}
+						suggestionLoading={
+							!archiveReview && !isRecalibrating && suggestionLoading
+						}
 						onSkip={handleSkip}
 						onNext={handleNext}
 						onBack={handleNavBack}
@@ -1034,6 +1221,8 @@ export function QueuePage() {
 						showConversation={showConversation}
 						onToggleConversation={() => setShowConversation((v) => !v)}
 						onSelectConversationMessage={handleSelectConversationMessage}
+						onToggleLabelForMessage={handleToggleLabelForMessage}
+						onCreateLabelForMessage={handleCreateLabelForMessage}
 					/>
 				</div>
 			</div>
@@ -1067,7 +1256,7 @@ export function QueuePage() {
 			{import.meta.env.DEV && !recalibration && (
 				<button
 					onClick={handleForceRecalibration}
-					className="fixed bottom-4 right-4 z-50 text-[10px] font-mono text-ai-text bg-ai-surface border border-ai-border rounded px-2.5 py-1.5 hover:bg-ai-surface hover:border-ai-border transition-colors"
+					className="fixed bottom-4 left-57 z-50 text-[10px] font-mono text-ai-text bg-ai-surface border border-ai-border rounded px-2.5 py-1.5 hover:bg-ai-surface hover:border-ai-border transition-colors"
 					title="Dev-only: force-trigger a recalibration round"
 				>
 					DEV · trigger recalibration

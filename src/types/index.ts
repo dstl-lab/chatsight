@@ -423,6 +423,16 @@ export interface HandoffSummaryItem {
   batch_completed_count: number | null
 }
 
+export interface MultiLabelAutolabelSummaryItem {
+  label_id: number
+  label_name: string
+  description: string | null
+  human_count: number
+  ai_count: number
+  high_conf_count: number
+  low_conf_count: number
+}
+
 export interface AssistNeighbor {
   chatlog_id: number
   message_index: number

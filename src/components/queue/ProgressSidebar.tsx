@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import type { LabelDefinition, LabelingSession, QueueStats, UpdateLabelRequest, HistoryItem, ConceptCandidate, RecalibrationStats } from '../../types'
 import { NewLabelPopover } from './NewLabelPopover'
 import { RecentHistory } from './RecentHistory'
@@ -50,12 +50,10 @@ interface SortableLabelItemProps {
   index: number
   isApplied: boolean
   onToggle: () => void
-  isHovered: boolean
   isEditing: boolean
   editDesc: string
-  onStartHover: () => void
-  onCancelHover: () => void
-  onClearHoverTimer: () => void
+  onHover: (y: number) => void
+  onHoverEnd: () => void
   onSetEditDesc: (v: string) => void
   onCancelEditing: () => void
   onSaveDescription: () => void
@@ -69,8 +67,8 @@ interface SortableLabelItemProps {
 
 function SortableLabelItem({
   label, index, isApplied, onToggle,
-  isHovered, isEditing, editDesc,
-  onStartHover, onCancelHover, onClearHoverTimer,
+  isEditing, editDesc,
+  onHover, onHoverEnd,
   onSetEditDesc, onCancelEditing, onSaveDescription,
   onContextMenu, isRenaming, renameValue, onSetRenameValue, onConfirmRename, onCancelRename,
 }: SortableLabelItemProps) {
@@ -85,8 +83,8 @@ function SortableLabelItem({
     <div
       ref={setNodeRef}
       style={style}
-      onMouseEnter={onStartHover}
-      onMouseLeave={onCancelHover}
+      onMouseEnter={e => onHover(e.currentTarget.getBoundingClientRect().top + e.currentTarget.getBoundingClientRect().height / 2)}
+      onMouseLeave={onHoverEnd}
       onContextMenu={onContextMenu}
     >
       {isRenaming ? (
@@ -110,7 +108,7 @@ function SortableLabelItem({
               : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
           }`}
         >
-          <span className="truncate flex-1">{label.name}</span>
+          <span className="font-serif truncate flex-1">{label.name}</span>
           {index < 9 && (
             <span
               {...attributes}
@@ -124,39 +122,25 @@ function SortableLabelItem({
         </button>
       )}
 
-      {(isHovered || isEditing) && !isRenaming && (
-        <div
-          className="bg-elevated border border-edge rounded-lg p-2.5 mt-1"
-          onMouseEnter={onClearHoverTimer}
-          onMouseLeave={onCancelHover}
-        >
-          {isEditing ? (
-            <>
-              <textarea
-                autoFocus
-                value={editDesc}
-                onChange={e => onSetEditDesc(e.target.value)}
-                placeholder="Description..."
-                rows={2}
-                className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
-              />
-              <div className="flex gap-2 justify-end">
-                <button onClick={onCancelEditing} className="text-[10px] text-faint hover:text-tertiary">
-                  Cancel
-                </button>
-                <button onClick={onSaveDescription} className="text-[10px] text-accent-text hover:text-accent-on-surface">
-                  Save
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-[10px] text-faint mb-1.5">{label.count} labeled</p>
-              <p className="text-[11px] text-muted leading-relaxed">
-                {label.description || 'No description'}
-              </p>
-            </>
-          )}
+      {/* Inline editing form (only shown when actively editing via context menu) */}
+      {isEditing && !isRenaming && (
+        <div className="bg-elevated border border-edge rounded-lg p-2.5 mt-1">
+          <textarea
+            autoFocus
+            value={editDesc}
+            onChange={e => onSetEditDesc(e.target.value)}
+            placeholder="Description..."
+            rows={2}
+            className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
+          />
+          <div className="flex gap-2 justify-end">
+            <button onClick={onCancelEditing} className="text-[10px] text-faint hover:text-tertiary">
+              Cancel
+            </button>
+            <button onClick={onSaveDescription} className="text-[10px] text-accent-text hover:text-accent-on-surface">
+              Save
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -172,10 +156,9 @@ export function ProgressSidebar({
 }: Props) {
   const { keybinds } = useKeybinds()
   const [showPopover, setShowPopover] = useState(false)
-  const [hoveredLabelId, setHoveredLabelId] = useState<number | null>(null)
+  const [hovered, setHovered] = useState<{ id: number; y: number } | null>(null)
   const [editingLabelId, setEditingLabelId] = useState<number | null>(null)
   const [editDesc, setEditDesc] = useState('')
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [contextMenu, setContextMenu] = useState<{ labelId: number; x: number; y: number } | null>(null)
   const [renamingLabelId, setRenamingLabelId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -189,14 +172,14 @@ export function ProgressSidebar({
     return key.toUpperCase()
   }
 
-  const startHover = useCallback((labelId: number) => {
+  const handleHover = useCallback((labelId: number, midY: number) => {
     if (editingLabelId === labelId) return
-    hoverTimer.current = setTimeout(() => setHoveredLabelId(labelId), 750)
+    const clampedY = Math.min(Math.max(midY, 60), window.innerHeight - 100)
+    setHovered({ id: labelId, y: clampedY })
   }, [editingLabelId])
 
-  const cancelHover = useCallback((labelId: number) => {
-    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null }
-    if (editingLabelId !== labelId) setHoveredLabelId(null)
+  const handleHoverEnd = useCallback((labelId: number) => {
+    if (editingLabelId !== labelId) setHovered(null)
   }, [editingLabelId])
 
   const labeled = stats?.labeled_count ?? 0
@@ -214,7 +197,7 @@ export function ProgressSidebar({
   const handleSaveDescription = (labelId: number) => {
     onUpdateLabel(labelId, { description: editDesc })
     setEditingLabelId(null)
-    setHoveredLabelId(null)
+    setHovered(null)
   }
 
   const handleContextMenu = useCallback((labelId: number, e: React.MouseEvent) => {
@@ -243,7 +226,6 @@ export function ProgressSidebar({
     if (!label) return
     setEditingLabelId(labelId)
     setEditDesc(label.description || '')
-    setHoveredLabelId(labelId)
     setContextMenu(null)
   }, [labels])
 
@@ -369,14 +351,12 @@ export function ProgressSidebar({
                       index={idx}
                       isApplied={appliedLabelIds.has(label.id)}
                       onToggle={() => onToggleLabel(label.id)}
-                      isHovered={hoveredLabelId === label.id}
                       isEditing={editingLabelId === label.id}
                       editDesc={editDesc}
-                      onStartHover={() => startHover(label.id)}
-                      onCancelHover={() => cancelHover(label.id)}
-                      onClearHoverTimer={() => { if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null } }}
+                      onHover={y => handleHover(label.id, y)}
+                      onHoverEnd={() => handleHoverEnd(label.id)}
                       onSetEditDesc={setEditDesc}
-                      onCancelEditing={() => { setEditingLabelId(null); setHoveredLabelId(null) }}
+                      onCancelEditing={() => { setEditingLabelId(null); setHovered(null) }}
                       onSaveDescription={() => handleSaveDescription(label.id)}
                       onContextMenu={(e) => handleContextMenu(label.id, e)}
                       isRenaming={renamingLabelId === label.id}
@@ -465,6 +445,24 @@ export function ProgressSidebar({
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      {/* Floating description tooltip — renders to the right of the sidebar, no layout reflow */}
+      {hovered && !editingLabelId && (() => {
+        const label = labels.find(l => l.id === hovered.id)
+        if (!label) return null
+        return (
+          <div
+            style={{ top: hovered.y, left: '13.5rem', transform: 'translateY(-50%)' }}
+            className="fixed z-50 w-60 bg-elevated border border-edge-strong rounded-lg px-3 py-2.5 shadow-xl pointer-events-none"
+          >
+            <p className="text-[11px] font-medium text-on-surface mb-1 truncate">{label.name}</p>
+            <p className="text-[10px] text-faint mb-1.5">{label.count} labeled</p>
+            <p className="text-[11px] text-muted leading-relaxed">
+              {label.description || <span className="italic text-disabled">No description — right-click to add one</span>}
+            </p>
+          </div>
+        )
+      })()}
     </aside>
   )
 }

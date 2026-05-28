@@ -177,6 +177,8 @@
   --color-canvas: #F6EFDB;
   --color-surface: #F0E8CF;
   --color-elevated: #E8DFC0;
+  --color-elevated-hl: #DCCFAC;
+  --color-modal-deep: var(--color-surface);
   --color-edge: #D4C9AE;
   --color-edge-subtle: #E0D7BD;
   --color-on-canvas: #1A1408;
@@ -184,6 +186,41 @@
   --color-muted: #7B6E55;
   --color-faint: #A99B81;
   --color-bg-warm: #FAF3DF;
+
+  /* Accent: blue → ochre */
+  --color-accent:            var(--app-ochre);
+  --color-accent-hover:      var(--app-ochre-dim);
+  --color-accent-text:       var(--app-ochre);
+  --color-accent-surface:    rgba(184, 122, 14, 0.15);
+  --color-accent-border:     var(--app-ochre);
+  --color-accent-on-surface: var(--app-paper);
+  --color-accent-muted:      var(--app-ochre-dim);
+
+  /* Student message card: cool blue → warm */
+  --color-message-student: var(--app-bg-warm);
+  --color-message-border:  var(--app-edge-warm);
+
+  /* Success: green → moss */
+  --color-success:            var(--app-moss);
+  --color-success-surface:    rgba(107, 132, 86, 0.2);
+  --color-success-border:     var(--app-moss-dim);
+  --color-success-on-surface: var(--app-paper);
+
+  /* AI: purple → ochre */
+  --color-ai-action:   var(--app-ochre);
+  --color-ai-hover:    var(--app-ochre-dim);
+  --color-ai-text:     var(--app-ochre);
+  --color-ai-surface:  rgba(184, 122, 14, 0.12);
+  --color-ai-border:   var(--app-ochre-dim);
+  --color-ai-progress: var(--app-ochre);
+
+  /* Discover: violet → moss */
+  --color-discover-text:    var(--app-moss);
+  --color-discover-strong:  var(--app-moss);
+  --color-discover-surface: rgba(107, 132, 86, 0.1);
+  --color-discover-border:  var(--app-moss-dim);
+  --color-discover-dot:     var(--app-moss);
+
   background-color: var(--color-canvas);
   color: var(--color-on-canvas);
   position: relative;
@@ -193,6 +230,8 @@
   --color-canvas: #0F0E0C;
   --color-surface: #181613;
   --color-elevated: #1E1B17;
+  --color-elevated-hl: #252018;
+  --color-modal-deep: var(--color-canvas);
   --color-edge: #2A2620;
   --color-edge-subtle: #221E1A;
   --color-on-canvas: #ECE5D7;
@@ -200,6 +239,12 @@
   --color-muted: #948B7E;
   --color-faint: #6B6457;
   --color-bg-warm: #15130F;
+
+  /* Dark-adjusted rgba surfaces */
+  --color-accent-surface:   rgba(228, 181, 59, 0.15);
+  --color-ai-surface:       rgba(228, 181, 59, 0.12);
+  --color-success-surface:  rgba(143, 168, 118, 0.2);
+  --color-discover-surface: rgba(143, 168, 118, 0.1);
 }
 
 /* Subtle warm radial gradients evoke the mockup's editorial atmosphere */

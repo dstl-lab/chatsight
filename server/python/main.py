@@ -434,44 +434,64 @@ def get_chatlog(
 @app.get("/api/chatlogs/{chatlog_id}/messages")
 def get_chatlog_messages(
     chatlog_id: int,
-    conn: Connection = Depends(get_ext_conn),
     db: Session = Depends(get_session),
 ):
-    """Return the full conversation as a structured array with per-message label info."""
-    rows = _fetch_conversation_events(conn, chatlog_id)
-    if not rows:
+    """Return the full conversation from local MessageCache — no external DB required.
+    context_before/context_after stored at startup cover the full turn sequence."""
+    cached_rows = db.exec(
+        select(MessageCache)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .order_by(MessageCache.message_index)
+    ).all()
+
+    if not cached_rows:
         raise HTTPException(status_code=404, detail="Chatlog not found")
 
     messages = []
-    student_idx = 0
-    seen_query = False
-    for row in rows:
-        if row["event_type"] == "tutor_query" and row["question"]:
-            seen_query = True
-            apps = db.exec(
-                select(LabelApplication, LabelDefinition)
-                .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-                .where(
-                    LabelApplication.chatlog_id == chatlog_id,
-                    LabelApplication.message_index == student_idx,
-                    LabelDefinition.archived_at == None,  # noqa: E711
-                )
-            ).all()
-            labels = [{"label_name": ld.name, "applied_by": la.applied_by} for la, ld in apps]
-            messages.append({
-                "role": "student",
-                "text": row["question"],
-                "message_index": student_idx,
-                "labels": labels,
-            })
-            student_idx += 1
-        elif row["event_type"] == "tutor_response" and row["response"] and seen_query:
+    for i, row in enumerate(cached_rows):
+        # Emit the preceding AI turn only for the first student message; subsequent
+        # rows' context_before duplicates the previous row's context_after.
+        if i == 0 and row.context_before:
             messages.append({
                 "role": "assistant",
-                "text": row["response"],
+                "text": row.context_before,
                 "message_index": None,
                 "labels": [],
             })
+
+        apps = db.exec(
+            select(LabelApplication, LabelDefinition)
+            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+            .where(
+                LabelApplication.chatlog_id == chatlog_id,
+                LabelApplication.message_index == row.message_index,
+                LabelDefinition.archived_at == None,  # noqa: E711
+                LabelDefinition.mode == "multi",
+                _is_multi_application(),
+            )
+        ).all()
+        # Deduplicate by label name — a message can have both a human and an AI
+        # application for the same label; show each label once, preferring human.
+        seen: dict[str, str] = {}
+        for la, ld in apps:
+            if ld.name not in seen or la.applied_by == "human":
+                seen[ld.name] = la.applied_by
+        labels = [{"label_name": name, "applied_by": by} for name, by in seen.items()]
+        messages.append({
+            "role": "student",
+            "text": row.message_text,
+            "message_index": row.message_index,
+            "labels": labels,
+        })
+
+        if row.context_after:
+            messages.append({
+                "role": "assistant",
+                "text": row.context_after,
+                "message_index": None,
+                "labels": [],
+            })
+
     return messages
 
 
@@ -869,10 +889,13 @@ def unapply_label(
 def get_applied_labels(
     chatlog_id: int, message_index: int, db: Session = Depends(get_session)
 ):
+    # Only return human-applied labels so AI autolabel rows don't pre-populate
+    # the checkbox state and silently enable the Next button.
     rows = db.exec(
         select(LabelApplication).where(
             LabelApplication.chatlog_id == chatlog_id,
             LabelApplication.message_index == message_index,
+            LabelApplication.applied_by == "human",
         )
     ).all()
     return {"label_ids": [r.label_id for r in rows]}
@@ -928,6 +951,7 @@ def advance_message(req: AdvanceRequest, db: Session = Depends(get_session)):
         select(LabelApplication).where(
             LabelApplication.chatlog_id == req.chatlog_id,
             LabelApplication.message_index == req.message_index,
+            _is_multi_application(),
         )
     ).first()
 
@@ -952,6 +976,7 @@ def undo_labels(req: UndoRequest, db: Session = Depends(get_session)):
         select(LabelApplication).where(
             LabelApplication.chatlog_id == req.chatlog_id,
             LabelApplication.message_index == req.message_index,
+            _is_multi_application(),
         )
     ).all()
     removed = len(rows)
@@ -1198,7 +1223,9 @@ def get_queue_history(
     search: Optional[str] = None,
     db: Session = Depends(get_session),
 ):
-    # Gather labeled message keys with applied_by and confidence
+    # Gather labeled message keys with applied_by and confidence.
+    # Filter to multi-label rows only (value IS NULL) so single-label AI
+    # applications from prior sessions don't corrupt the applied_by aggregate.
     labeled_rows = db.exec(
         select(
             LabelApplication.chatlog_id,
@@ -1207,6 +1234,7 @@ def get_queue_history(
             func.min(LabelApplication.applied_by).label("applied_by"),
             func.min(LabelApplication.confidence).label("confidence"),
         )
+        .where(_is_multi_application())
         .group_by(LabelApplication.chatlog_id, LabelApplication.message_index)
     ).all()
     labeled_entries = [
@@ -1283,6 +1311,7 @@ def get_queue_history(
             )
             .join(LabelDefinition, LabelDefinition.id == LabelApplication.label_id)
             .where(LabelDefinition.archived_at == None)  # noqa: E711
+            .where(_is_multi_application())
         ).all()
         for cid, midx, name in label_rows:
             key = (cid, midx)
@@ -2172,6 +2201,46 @@ def get_embed_status(db: Session = Depends(get_session)):
     }
 
 
+@app.get("/api/multi-labels/autolabel-summary")
+def get_multi_label_autolabel_summary(db: Session = Depends(get_session)):
+    labels = db.exec(
+        select(LabelDefinition)
+        .where(LabelDefinition.mode == "multi")
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .order_by(LabelDefinition.display_order)
+    ).all()
+
+    results = []
+    for label in labels:
+        human_count = db.exec(
+            select(func.count()).select_from(
+                select(LabelApplication.chatlog_id, LabelApplication.message_index)
+                .where(LabelApplication.label_id == label.id)
+                .where(LabelApplication.applied_by == "human")
+                .where(_is_multi_application())
+                .distinct()
+                .subquery()
+            )
+        ).one()
+        ai_confidences = db.exec(
+            select(LabelApplication.confidence)
+            .where(LabelApplication.label_id == label.id)
+            .where(LabelApplication.applied_by == "ai")
+            .where(_is_multi_application())
+        ).all()
+        ai_count = len(ai_confidences)
+        high_conf = sum(1 for c in ai_confidences if c is not None and c >= 0.75)
+        results.append({
+            "label_id": label.id,
+            "label_name": label.name,
+            "description": label.description,
+            "human_count": human_count,
+            "ai_count": ai_count,
+            "high_conf_count": high_conf,
+            "low_conf_count": ai_count - high_conf,
+        })
+    return results
+
 
 @app.get("/api/analysis/summary")
 def get_analysis_summary(db: Session = Depends(get_session)):
@@ -2719,7 +2788,8 @@ def get_label_review(db: Session = Depends(get_session)):
 
     labels = db.exec(
         select(LabelDefinition)
-        .where(LabelDefinition.archived_at == None)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(LabelDefinition.mode == "multi")
         .order_by(LabelDefinition.created_at.desc())
     ).all()
 
@@ -2731,6 +2801,7 @@ def get_label_review(db: Session = Depends(get_session)):
             .where(
                 LabelApplication.label_id == label.id,
                 LabelApplication.applied_by == "human",
+                _is_multi_application(),
             )
             .order_by(LabelApplication.created_at.desc())
             .limit(20)
@@ -2841,6 +2912,7 @@ def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
         select(func.count()).select_from(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
             .where(LabelApplication.applied_by == "human")
+            .where(_is_multi_application())
             .where(LabelApplication.created_at > cutoff)
             .distinct()
             .subquery()
@@ -2862,6 +2934,7 @@ def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
             LabelApplication.created_at,
         )
         .where(LabelApplication.applied_by == "human")
+        .where(_is_multi_application())
         .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
         .where(LabelDefinition.archived_at == None)  # noqa: E711
     ).all()
@@ -2884,6 +2957,7 @@ def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
                 select(func.count()).select_from(
                     select(LabelApplication.chatlog_id, LabelApplication.message_index)
                     .where(LabelApplication.applied_by == "human")
+                    .where(_is_multi_application())
                     .where(LabelApplication.created_at > event.created_at)
                     .distinct()
                     .subquery()
