@@ -96,7 +96,7 @@ export function StripBar({
   }
 
   return (
-    <div className="border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
+    <div className="relative z-40 border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
       <div className="grid w-full min-w-0 grid-cols-1 gap-y-3 md:grid-cols-2 md:gap-x-10 md:gap-y-2">
         {/* Labels: name, counts, queue, handoff, note */}
         <div className="flex min-w-0 flex-col gap-2">
@@ -178,8 +178,8 @@ export function StripBar({
           />
         </div>
 
-        {/* Conversations: assignment filter + explore sampling */}
-        <div className="min-w-0 overflow-x-auto md:flex md:justify-end">
+        {/* Conversations: assignment filter + explore sampling (menu portals) */}
+        <div className="relative z-10 min-w-0 md:flex md:justify-end">
           <div className="flex w-max max-w-full flex-wrap items-center gap-6 md:justify-end">
             <AssignmentPicker
               assignments={assignments}
