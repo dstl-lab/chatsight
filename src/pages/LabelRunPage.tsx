@@ -461,11 +461,15 @@ export function LabelRunPage() {
   const handleSampleHandoff = useCallback(async (n: number) => {
     if (!activeLabel || handoffPending) return
     setHandoffPending(true)
+    setLoadError(null)
     try {
       await api.handoffSingleLabel(activeLabel.id, n)
       await refresh()
     } catch (e) {
       console.error('sample handoff failed', e)
+      setLoadError(
+        e instanceof Error ? e.message : 'Sample handoff failed. Check the server logs.',
+      )
     } finally {
       setHandoffPending(false)
     }
