@@ -184,7 +184,7 @@ function QuickRefineModal({
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main Workspace */}
-        <div className="flex-1 relative flex flex-col items-center justify-center p-12 bg-[#050505] overflow-hidden">
+        <div className="flex-1 relative flex flex-col items-center justify-center p-12 bg-canvas overflow-hidden">
           
           {/* Concise View Toggle */}
           {currentIndex < examples.length && currentEx && (
@@ -193,7 +193,7 @@ function QuickRefineModal({
               className={`
                 absolute bottom-12 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
                 ${showConcise 
-                  ? 'bg-ai-action border-purple-400 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)]' 
+                  ? 'bg-ochre border-ochre-dim text-bg-warm' 
                   : 'bg-surface border-edge text-muted hover:border-edge-strong hover:text-on-surface'}
               `}
             >
@@ -224,8 +224,8 @@ function QuickRefineModal({
                   w-32 h-20 rounded-lg border-2 flex flex-col items-center justify-center p-3 text-center transition-all cursor-pointer
                   ${slots[dir] 
                     ? (suggestion?.label_name === slots[dir]?.name 
-                        ? 'bg-accent-surface border-accent-border shadow-[0_0_30px_rgba(59,130,246,0.4)] scale-110' 
-                        : 'bg-surface border-accent shadow-[0_0_15px_rgba(37,99,235,0.2)]')
+                        ? 'bg-accent-surface border-ochre-dim ring-2 ring-ochre-dim scale-110'
+                        : 'bg-surface border-edge shadow-sm')
                     : 'bg-surface/20 border-dashed border-edge-subtle text-disabled'}
                   ${draggingSlot === dir ? 'opacity-50 scale-90' : 'hover:scale-105'}
                 `}
@@ -327,7 +327,7 @@ function QuickRefineModal({
                         ${showConcise ? 'z-10' : 'z-0'}
                       `}
                     >
-                      <div className="p-10 flex-1 flex flex-col items-center justify-center text-center bg-gradient-to-b from-purple-950/20 to-neutral-900 relative">
+                      <div className="p-10 flex-1 flex flex-col items-center justify-center text-center bg-gradient-to-b from-ai-surface/40 to-surface relative">
                         <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
                           <span className="text-[9px] font-black uppercase tracking-[0.2em] text-ai-text">AI Summary</span>
                         </div>
@@ -353,7 +353,7 @@ function QuickRefineModal({
                   <div className="flex flex-col gap-3">
                     <button 
                       onClick={() => onComplete(assignments)}
-                      className="px-8 py-2.5 bg-accent text-white text-sm font-bold rounded hover:bg-accent-hover transition-colors shadow-lg shadow-blue-900/20"
+                      className="px-8 py-2.5 border border-ochre bg-ochre text-bg-warm font-sans font-semibold rounded-sm hover:brightness-110 transition-all"
                     >
                       Save & Finish
                     </button>
@@ -391,7 +391,7 @@ function QuickRefineModal({
               </div>
             ))}
           </div>
-          <div className="mt-auto p-3 bg-accent-surface/40 border border-blue-900/30 rounded text-[10px] text-accent-text leading-relaxed italic">
+          <div className="mt-auto p-3 bg-accent-surface/40 border border-edge-warm rounded text-[10px] text-accent-text leading-relaxed italic">
             Tip: Drag labels into the directional slots, then use arrow keys to sort messages at high speed.
           </div>
         </aside>
@@ -399,7 +399,7 @@ function QuickRefineModal({
 
       {/* Footer Progress Bar */}
       <div className="h-1 bg-surface w-full overflow-hidden shrink-0">
-        <div className="h-full bg-accent transition-all duration-300" style={{ width: `${progress}%` }} />
+        <div className="h-full bg-ochre transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
     </div>
   )
@@ -410,7 +410,7 @@ function QuickRefineModal({
  */
 function DeleteConfirmModal({ label, onClose, onConfirm }: { label: LabelDefinition, onClose: () => void, onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay backdrop-blur-md p-4">
       <div className="bg-surface border border-red-900/50 rounded-lg p-8 max-w-sm w-full text-center shadow-2xl">
         <div className="w-16 h-16 bg-danger-surface text-danger-text border border-danger-surface rounded-full flex items-center justify-center mx-auto mb-6">
           <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -437,7 +437,7 @@ function PromoteConfirmModal({
   label, onClose, onConfirm,
 }: { label: LabelDefinition; onClose: () => void; onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay backdrop-blur-md p-4">
       <div className="bg-surface border border-edge-subtle rounded-lg p-8 max-w-sm w-full text-center shadow-2xl">
         <div className="w-16 h-16 bg-elevated text-accent-text border border-edge rounded-full flex items-center justify-center mx-auto mb-6">
           <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -455,7 +455,7 @@ function PromoteConfirmModal({
         </p>
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2 text-xs font-bold text-faint hover:text-tertiary">Cancel</button>
-          <button onClick={onConfirm} className="flex-1 py-2 bg-accent text-white text-xs font-bold rounded hover:bg-accent-hover transition-colors">Promote</button>
+          <button onClick={onConfirm} className="flex-1 py-2 border border-ochre bg-ochre text-bg-warm font-sans font-semibold rounded-sm hover:brightness-110 transition-all">Promote</button>
         </div>
       </div>
     </div>
@@ -576,7 +576,7 @@ function SplitSessionModal({
 
   if (step === 'names') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4">
         <div className="bg-surface rounded-xl shadow-2xl w-full max-w-md p-6 border border-edge">
           <h2 className="text-xl font-bold mb-4 text-on-canvas">Split "{label.name}"</h2>
           <p className="text-sm text-muted mb-6">Enter two sub-categories to split this label into. You can use existing labels as well.</p>
@@ -616,7 +616,7 @@ function SplitSessionModal({
             <button 
               disabled={!nameA || !nameB || loading}
               onClick={startSwiping} 
-              className="flex-1 py-2 text-xs font-bold bg-accent text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed rounded transition-all"
+              className="flex-1 py-2 text-xs font-semibold border border-ochre bg-ochre text-bg-warm hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-sm transition-all"
             >
               {loading ? 'Loading...' : 'Start Swiping'}
             </button>
@@ -663,7 +663,7 @@ function SplitSessionModal({
 
       {/* Progress Bar */}
       <div className="h-0.5 bg-elevated w-full overflow-hidden shrink-0">
-        <div className="h-full bg-accent transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />
+        <div className="h-full bg-ochre transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />
       </div>
 
       <div className="flex-1 flex overflow-hidden">
@@ -693,7 +693,7 @@ function SplitSessionModal({
               className={`
                 absolute bottom-12 left-1/2 -translate-x-1/2 z-20 px-5 py-2.5 rounded-full border transition-all flex items-center gap-2
                 ${showConcise 
-                  ? 'bg-ai-action border-purple-400 text-white shadow-[0_0_20px_rgba(168,85,247,0.4)]' 
+                  ? 'bg-ochre border-ochre-dim text-bg-warm' 
                   : 'bg-surface border-edge text-muted hover:border-edge-strong hover:text-on-surface'}
               `}
             >
@@ -752,7 +752,7 @@ function SplitSessionModal({
                     ${showConcise ? 'z-0' : 'z-10'}
                   `}
                 >
-                  <div className="p-10 flex-1 overflow-y-auto flex items-center justify-center text-center bg-[#0d1f33]/30 border-b border-blue-900/30">
+                  <div className="p-10 flex-1 overflow-y-auto flex items-center justify-center text-center bg-bg-warm/40 border-b border-edge-warm">
                     <p className="text-xl font-medium text-on-surface leading-relaxed italic">
                       "{currentEx.message_text}"
                     </p>
@@ -782,7 +782,7 @@ function SplitSessionModal({
                       className={`
                         flex-1 flex flex-col items-center gap-2 p-4 bg-canvas border rounded-lg hover:bg-accent-surface group transition-all
                         ${suggestion?.label_name === nameA 
-                          ? 'border-accent-border shadow-[0_0_25px_rgba(59,130,246,0.3)]' 
+                          ? 'border-ochre-dim ring-1 ring-ochre-dim' 
                           : 'border-edge-subtle hover:border-accent'}
                       `}
                     >
@@ -807,7 +807,7 @@ function SplitSessionModal({
                       className={`
                         flex-1 flex flex-col items-center gap-2 p-4 bg-canvas border rounded-lg hover:bg-ai-surface group transition-all
                         ${suggestion?.label_name === nameB 
-                          ? 'border-ai-border shadow-[0_0_25px_rgba(168,85,247,0.3)]' 
+                          ? 'border-ai-border ring-1 ring-ochre-dim/50' 
                           : 'border-edge-subtle hover:border-ai-border'}
                       `}
                     >
@@ -833,7 +833,7 @@ function SplitSessionModal({
                     ${showConcise ? 'z-10' : 'z-0'}
                   `}
                 >
-                  <div className="p-10 flex-1 flex flex-col items-center justify-center text-center bg-gradient-to-b from-purple-950/20 to-neutral-900 border-b border-ai-border relative">
+                  <div className="p-10 flex-1 flex flex-col items-center justify-center text-center bg-gradient-to-b from-ai-surface/40 to-surface border-b border-ai-border relative">
                     <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2">
                       <span className="text-[9px] font-black uppercase tracking-[0.2em] text-ai-text">AI Summary</span>
                     </div>
@@ -844,7 +844,7 @@ function SplitSessionModal({
                   
                   {/* Re-use buttons on concise card so user can sort from there too */}
                   <div className="p-6 bg-canvas/80 flex items-center justify-center gap-4">
-                     <button onClick={() => handleAssign(nameA, 'left')} className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-accent-text border border-blue-900/30 rounded hover:bg-accent-surface/60 transition-all">{nameA}</button>
+                     <button onClick={() => handleAssign(nameA, 'left')} className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-accent-text border border-edge-warm rounded hover:bg-accent-surface/60 transition-all">{nameA}</button>
                      <button onClick={() => toggleConcise()} className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-faint border border-edge-subtle rounded hover:bg-elevated transition-all">Back</button>
                      <button onClick={() => handleAssign(nameB, 'right')} className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-ai-text border border-ai-border rounded hover:bg-ai-surface transition-all">{nameB}</button>
                   </div>
@@ -864,7 +864,7 @@ function SplitSessionModal({
               <p className="text-sm text-faint mb-8 max-w-sm mx-auto">Assignments made: {Object.keys(assignments).length}</p>
               <button 
                 onClick={() => onComplete(nameA, nameB, assignments)}
-                className="px-8 py-2.5 bg-accent text-white text-sm font-bold rounded hover:bg-accent-hover transition-colors shadow-lg shadow-blue-900/20"
+                className="px-8 py-2.5 border border-ochre bg-ochre text-bg-warm font-sans font-semibold rounded-sm hover:brightness-110 transition-all"
               >
                 Finish & Relabel Rest
               </button>
@@ -927,7 +927,7 @@ function MergePreviewModal({
   }, [source.id, target.id])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4">
       <div className="bg-surface border border-edge-subtle rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-edge-subtle flex items-center justify-between shrink-0 bg-surface/50">
           <div>
@@ -949,7 +949,7 @@ function MergePreviewModal({
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {loading ? <div className="animate-pulse space-y-3"><div className="h-16 bg-elevated/50 rounded"/><div className="h-16 bg-elevated/50 rounded"/></div> :
                 sourceEx.map((ex, i) => (
-                  <div key={i} className="p-3 bg-[#0d1f33]/20 border border-blue-900/30 rounded text-xs text-muted italic">"{ex.message_text}"</div>
+                  <div key={i} className="p-3 bg-bg-warm/60 border border-edge-warm rounded text-xs text-muted italic">"{ex.message_text}"</div>
                 ))
               }
             </div>
@@ -964,7 +964,7 @@ function MergePreviewModal({
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {loading ? <div className="animate-pulse space-y-3"><div className="h-16 bg-elevated/50 rounded"/><div className="h-16 bg-elevated/50 rounded"/></div> :
                 targetEx.map((ex, i) => (
-                  <div key={i} className="p-3 bg-[#0d1f33]/40 border border-blue-800/40 rounded text-xs text-on-surface italic font-medium">"{ex.message_text}"</div>
+                  <div key={i} className="p-3 bg-bg-warm border border-edge-warm rounded text-xs text-on-surface italic font-medium">"{ex.message_text}"</div>
                 ))
               }
             </div>
@@ -973,7 +973,7 @@ function MergePreviewModal({
 
         <div className="p-6 bg-surface border-t border-edge-subtle flex gap-3 shrink-0">
           <button onClick={onClose} className="flex-1 py-2.5 text-xs font-bold text-faint hover:text-tertiary transition-colors">Cancel</button>
-          <button onClick={onConfirm} className="flex-1 py-2.5 text-xs font-bold bg-accent text-white hover:bg-accent-hover rounded transition-colors shadow-lg shadow-blue-900/20">Confirm & Merge</button>
+          <button onClick={onConfirm} className="flex-1 py-2.5 text-xs font-bold border border-ochre bg-ochre text-bg-warm font-sans font-semibold rounded-sm hover:brightness-110 transition-colors">Confirm & Merge</button>
         </div>
       </div>
     </div>
@@ -994,7 +994,7 @@ function LabelMessagesModal({ label, onClose }: { label: LabelDefinition; onClos
   }, [label.id])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm p-4" onClick={onClose}>
       <div
         className="bg-surface border border-edge-subtle rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
@@ -1127,14 +1127,14 @@ export function LabelsPage() {
     <div className="flex-1 flex overflow-hidden bg-canvas">
       
       {/* Sidebar */}
-      <aside className="w-56 border-r border-edge-subtle p-4 flex flex-col gap-6 shrink-0 bg-surface/20 overflow-y-auto">
+      <aside className="w-[220px] border-r border-edge p-5 flex flex-col gap-6 shrink-0 bg-canvas overflow-y-auto">
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-disabled font-bold mb-3">Filter Taxonomy</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-3">Filter taxonomy</p>
           <div className="flex flex-col gap-1.5">
             <button 
               onClick={() => setFilterLabelId(null)}
-              className={`w-full text-left rounded px-3 py-2 text-[11px] transition-colors ${
-                !filterLabelId ? 'bg-accent-surface border border-accent-border text-accent-on-surface' : 'text-faint hover:bg-elevated'
+              className={`w-full text-left rounded-sm px-3 py-2 font-serif text-[13px] transition-colors ${
+                !filterLabelId ? 'bg-elevated border border-ochre-dim text-paper' : 'text-muted hover:bg-elevated'
               }`}
             >
               All Labels
@@ -1143,8 +1143,8 @@ export function LabelsPage() {
               <button
                 key={l.id}
                 onClick={() => setFilterLabelId(l.id)}
-                className={`w-full text-left rounded px-3 py-2 text-[11px] transition-colors truncate ${
-                  filterLabelId === l.id ? 'bg-accent-surface border border-accent-border text-accent-on-surface' : 'text-faint hover:bg-elevated'
+                className={`w-full text-left rounded-sm px-3 py-2 font-serif text-[13px] transition-colors truncate ${
+                  filterLabelId === l.id ? 'bg-elevated border border-ochre-dim text-paper' : 'text-muted hover:bg-elevated'
                 }`}
               >
                 {l.name}
@@ -1155,33 +1155,46 @@ export function LabelsPage() {
 
         <button 
           onClick={() => setRefiningLabel({ id: -1, name: '', count: 0, description: '', created_at: '' })}
-          className="w-full py-2 bg-elevated text-tertiary text-[10px] font-bold uppercase tracking-widest rounded border border-edge hover:border-accent-border transition-all mt-auto"
+          className="w-full py-2 bg-elevated text-muted font-mono text-[10px] uppercase tracking-widest rounded-sm border border-edge hover:border-ochre-dim transition-all mt-auto"
         >
           Quick Refine
         </button>
       </aside>
 
       {/* Main Grid */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        <header className="mb-10 flex items-end justify-between max-w-6xl mx-auto">
+      <main className="flex-1 px-12 py-12 overflow-y-auto">
+        <header className="mb-10 flex items-end justify-between max-w-[960px]">
           <div>
-            <h1 className="text-2xl font-bold text-on-canvas tracking-tight">Label Taxonomy</h1>
-            <p className="text-sm text-faint mt-1.5">Organize and refine your tutoring interaction labels.</p>
-          </div>
-          <div className="bg-surface px-4 py-2 rounded border border-edge-subtle flex items-center gap-4">
-            <div className="flex flex-col items-end">
-              <span className="text-[9px] font-bold text-disabled uppercase tracking-widest">Applications</span>
-              <span className="text-sm font-bold text-accent-text">{labels.reduce((acc, l) => acc + l.count, 0)}</span>
+            <div className="flex items-center gap-2.5">
+              <h1 className="font-serif font-medium text-[32px] text-paper tracking-[-0.018em]">Label Taxonomy</h1>
+              <div className="relative group/help">
+                <span
+                  tabIndex={0}
+                  className="flex items-center justify-center w-5 h-5 rounded-full border border-edge text-faint text-[11px] font-mono leading-none cursor-help outline-none hover:text-ochre hover:border-ochre-dim focus-visible:text-ochre focus-visible:border-ochre-dim transition-colors"
+                >
+                  ?
+                </span>
+                <div className="absolute top-full left-0 mt-2 w-72 px-3 py-2.5 bg-elevated border border-edge text-on-surface text-[11px] font-sans leading-relaxed rounded-sm opacity-0 group-hover/help:opacity-100 group-focus-within/help:opacity-100 pointer-events-none transition-opacity shadow-lg z-50">
+                  Your full set of labels. Drag two together to merge them, split one to break it into separate labels, or promote a label to validate it in /run.
+                </div>
+              </div>
             </div>
-            <div className="w-px h-6 bg-elevated" />
+            <p className="font-serif text-on-surface text-[14px] leading-[1.6] mt-1.5">Organize and refine your tutoring interaction labels.</p>
+          </div>
+          <div className="bg-bg-warm px-4 py-2 rounded-sm border border-edge flex items-center gap-4">
             <div className="flex flex-col items-end">
-              <span className="text-[9px] font-bold text-disabled uppercase tracking-widest">Taxonomy Size</span>
-              <span className="text-sm font-bold text-tertiary">{labels.length}</span>
+              <span className="font-mono text-[9px] text-faint uppercase tracking-[0.14em]">Applications</span>
+              <span className="font-mono text-sm text-ochre tabular-nums">{labels.reduce((acc, l) => acc + l.count, 0)}</span>
+            </div>
+            <div className="w-px h-6 bg-edge" />
+            <div className="flex flex-col items-end">
+              <span className="font-mono text-[9px] text-faint uppercase tracking-[0.14em]">Taxonomy size</span>
+              <span className="font-mono text-sm text-paper tabular-nums">{labels.length}</span>
             </div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 max-w-6xl mx-auto pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-w-[960px] pb-20">
           {filteredLabels.map((label, idx) => (
             <div 
               key={label.id}
@@ -1195,9 +1208,9 @@ export function LabelsPage() {
                 setDraggedId(null)
               }}
               className={`
-                group relative bg-surface border border-edge-subtle rounded-lg p-6 transition-all duration-200 cursor-move
-                ${draggedId === label.id ? 'opacity-30 border-accent shadow-inner scale-95' : 'hover:border-edge-strong hover:shadow-2xl hover:shadow-black/40'}
-                ${draggedId && draggedId !== label.id ? 'hover:ring-2 hover:ring-blue-600' : ''}
+                group relative bg-bg-warm border border-edge rounded-sm p-5 min-w-0 overflow-hidden transition-all duration-200 cursor-move
+                ${draggedId === label.id ? 'opacity-30 border-ochre shadow-inner scale-95' : 'hover:border-edge-warm'}
+                ${draggedId && draggedId !== label.id ? 'hover:ring-2 hover:ring-ochre-dim' : ''}
               `}
             >
               {/* Delete Icon */}
@@ -1209,60 +1222,60 @@ export function LabelsPage() {
               </button>
 
               <div className="flex justify-between items-start mb-5">
-                <span className="text-2xl font-black text-disabled group-hover:text-disabled transition-colors">#{idx + 1}</span>
+                <span className="font-mono text-xl text-faint group-hover:text-muted transition-colors">#{idx + 1}</span>
                 {label.paired_summary && (
                   <Link
                     to="/run"
                     onClick={() => setMode('single')}
-                    className="px-2 py-0.5 bg-amber-950/40 text-amber-300 border border-amber-900/60 rounded text-[10px] font-bold tracking-wider hover:bg-amber-900/40 transition-colors flex items-center gap-1 mr-8"
+                    className="px-2 py-0.5 bg-ochre/10 text-ochre border border-ochre-dim rounded-sm text-[10px] font-mono tracking-wider hover:bg-ochre/20 transition-colors flex items-center gap-1 mr-8"
                     title={`Paired /run pass — phase: ${label.paired_summary.phase}`}
                   >
-                    {label.paired_summary.yes_count} <span className="text-amber-500/80 font-normal">validated</span>
-                    <span className="text-[8px] uppercase tracking-tighter text-amber-500/60 ml-0.5">· {label.paired_summary.phase.replace('_', ' ')}</span>
+                    {label.paired_summary.yes_count} <span className="text-ochre-dim font-normal">validated</span>
+                    <span className="text-[8px] uppercase tracking-tighter text-faint ml-0.5">· {label.paired_summary.phase.replace('_', ' ')}</span>
                   </Link>
                 )}
               </div>
 
-              <h3 className="text-base font-bold text-on-surface mb-2 leading-tight group-hover:text-on-canvas transition-colors">{label.name}</h3>
+              <h3 className="font-serif text-[17px] text-paper mb-2 leading-tight">{label.name}</h3>
               <p className="text-xs text-faint line-clamp-2 min-h-[3em] leading-relaxed italic">
                 {label.description || 'No description provided.'}
               </p>
 
-              <div className="mt-8 flex items-end justify-between gap-3">
+              <div className="mt-6 pt-3 border-t border-edge-subtle flex flex-col gap-2 min-w-0">
                 <button
                   onClick={(e) => { e.stopPropagation(); setViewingMessages(label) }}
-                  className="text-[10px] text-faint hover:text-on-surface transition-colors underline underline-offset-2 shrink-0"
+                  className="text-[10px] text-faint hover:text-on-surface transition-colors underline underline-offset-2 self-start"
                 >
                   {label.count} message{label.count !== 1 ? 's' : ''}
                 </button>
 
-              <div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
+              <div className="flex flex-wrap gap-1.5 min-w-0 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
                 <button
                   onClick={() => setRefiningLabel(label)}
-                  className="flex-1 py-1.5 bg-accent text-white text-[10px] font-black uppercase tracking-widest rounded hover:bg-accent-hover transition-colors shadow-lg shadow-blue-900/20"
+                  className="py-1.5 px-2.5 border border-ochre bg-ochre text-bg-warm text-[10px] font-mono uppercase tracking-widest rounded-sm hover:brightness-110 transition-colors shrink-0"
                 >
                   Refine
                 </button>
                 <button
                   onClick={() => setSplittingLabel(label)}
-                  className="px-3 py-1.5 bg-elevated text-tertiary text-[10px] font-black uppercase tracking-widest rounded border border-edge hover:bg-elevated-hl transition-colors"
+                  className="px-2.5 py-1.5 bg-elevated text-muted text-[10px] font-mono uppercase tracking-widest rounded-sm border border-edge hover:bg-elevated-hl transition-colors shrink-0"
                 >
                   Split
                 </button>
                 {!label.paired_label_id && (
                   <button
                     onClick={() => setPromotingLabel(label)}
-                    className="px-3 py-1.5 bg-elevated text-amber-300 text-[10px] font-black uppercase tracking-widest rounded border border-amber-900/60 hover:bg-amber-950/40 transition-colors"
+                    className="px-2.5 py-1.5 bg-elevated text-ochre text-[10px] font-mono uppercase tracking-widest rounded-sm border border-ochre-dim hover:bg-ochre/10 transition-colors shrink-0"
                     title="Promote to /run for deep validation"
                   >
                     Promote
                   </button>
                 )}
-                <div className="relative group/tooltip">
-                  <div className="p-1.5 bg-elevated text-muted rounded hover:bg-elevated-hl hover:text-accent-text transition-colors cursor-help border border-edge">
+                <div className="relative group/tooltip shrink-0">
+                  <div className="p-1.5 bg-elevated text-muted rounded-sm hover:bg-elevated-hl hover:text-ochre transition-colors cursor-help border border-edge">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                   </div>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-elevated border border-edge text-on-surface text-[9px] font-bold rounded opacity-0 group-hover/tooltip:opacity-100 pointer-events-none whitespace-nowrap transition-all uppercase tracking-tighter shadow-2xl">
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-elevated border border-edge text-on-surface text-[9px] font-mono rounded-sm opacity-0 group-hover/tooltip:opacity-100 pointer-events-none whitespace-nowrap transition-all uppercase tracking-tighter shadow-2xl">
                     Drag to merge
                   </div>
                 </div>

@@ -63,12 +63,32 @@ export function shouldOfferTutorial(): boolean {
   return !runTutorialDone()
 }
 
+/** Minimal label fields used to decide if first-run tutorial still applies. */
+export type TutorialLabelSnapshot = {
+  phase: string
+  is_active: boolean
+  yes_count: number
+  no_count: number
+  skip_count: number
+}
+
+/** True when the instructor has already started or finished at least one real run. */
+export function hasStartedSingleLabelRun(labels: TutorialLabelSnapshot[]): boolean {
+  return labels.some(
+    (l) =>
+      l.is_active ||
+      l.phase !== 'labeling' ||
+      l.yes_count + l.no_count + l.skip_count > 0,
+  )
+}
+
 /**
- * First-run overlay: empty DB, not skipped this session, and this visit came from
- * a document load (reload / new tab) — not from Summaries → Run inside the SPA.
+ * First-run overlay: no started runs yet, not skipped this session, and this visit
+ * came from a document load (reload / new tab) — not from Summaries → Run in-SPA.
+ * Unused labeling-phase rows (name typed then abandoned) do not block the tutorial.
  */
-export function shouldOfferFirstRunTutorial(existingSingleLabelCount: number): boolean {
-  if (existingSingleLabelCount !== 0 || !shouldOfferTutorial()) return false
+export function shouldOfferFirstRunTutorial(labels: TutorialLabelSnapshot[]): boolean {
+  if (hasStartedSingleLabelRun(labels) || !shouldOfferTutorial()) return false
   return peekTutorialReloadGate()
 }
 

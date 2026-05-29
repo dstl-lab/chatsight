@@ -97,15 +97,15 @@ function SortableLabelItem({
             if (e.key === 'Escape') onCancelRename()
           }}
           onBlur={onCancelRename}
-          className="w-full bg-surface border border-accent-border rounded px-2.5 py-1.5 text-[11px] text-on-canvas focus:outline-none"
+          className="w-full bg-surface border border-edge-warm rounded-sm px-2.5 py-1.5 text-[11px] text-paper focus:outline-none focus:border-ochre-dim"
         />
       ) : (
         <button
           onClick={onToggle}
-          className={`w-full text-left flex items-center rounded px-2.5 py-1.5 text-[11px] transition-colors ${
+          className={`w-full text-left flex items-center rounded-sm px-2.5 py-1.5 font-serif text-[12px] transition-colors ${
             isApplied
-              ? 'bg-accent-surface border border-accent-border text-accent-on-surface'
-              : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
+              ? 'bg-ochre/10 border border-ochre-dim text-paper'
+              : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-ochre-dim/50'
           }`}
         >
           <span className="font-serif truncate flex-1">{label.name}</span>
@@ -124,20 +124,20 @@ function SortableLabelItem({
 
       {/* Inline editing form (only shown when actively editing via context menu) */}
       {isEditing && !isRenaming && (
-        <div className="bg-elevated border border-edge rounded-lg p-2.5 mt-1">
+        <div className="bg-elevated border border-edge rounded-sm p-2.5 mt-1">
           <textarea
             autoFocus
             value={editDesc}
             onChange={e => onSetEditDesc(e.target.value)}
             placeholder="Description..."
             rows={2}
-            className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
+            className="w-full bg-surface border border-edge rounded-sm px-2 py-1.5 text-[11px] text-paper placeholder:text-faint mb-2 focus:outline-none focus:border-ochre-dim resize-none"
           />
           <div className="flex gap-2 justify-end">
             <button onClick={onCancelEditing} className="text-[10px] text-faint hover:text-tertiary">
               Cancel
             </button>
-            <button onClick={onSaveDescription} className="text-[10px] text-accent-text hover:text-accent-on-surface">
+            <button onClick={onSaveDescription} className="text-[10px] text-ochre hover:text-paper">
               Save
             </button>
           </div>
@@ -244,13 +244,13 @@ export function ProgressSidebar({
   }, [labels, onReorderLabels])
 
   return (
-    <aside className="w-52 shrink-0 border-r border-edge-subtle p-4 flex flex-col gap-5 overflow-y-auto">
+    <aside className="w-52 shrink-0 border-r border-edge bg-canvas p-4 flex flex-col gap-5 overflow-y-auto">
       <div>
-        <p className="text-[10px] uppercase tracking-widest text-faint mb-2">Labeled</p>
-        <div className="h-1.5 bg-elevated rounded-full mb-1.5">
-          <div className="h-1.5 bg-accent rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-2">Labeled</p>
+        <div className="h-1.5 bg-elevated rounded-sm mb-1.5">
+          <div className="h-1.5 bg-ochre rounded-sm transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <p className="text-sm text-on-surface font-medium">{labeled} <span className="text-faint font-normal">/ {total.toLocaleString()}</span></p>
+        <p className="font-serif text-sm text-paper">{labeled} <span className="text-faint font-normal">/ {total.toLocaleString()}</span></p>
         {skippedCount > 0 && (
           <p className="text-[10px] text-faint mt-1">Skipped: {skippedCount}</p>
         )}
@@ -261,9 +261,9 @@ export function ProgressSidebar({
 
       <div className="flex flex-col gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-faint mb-1.5">AI suggestions</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">AI suggestions</p>
           {suggestUnlocked ? (
-            <p className="text-[10px] text-success">Active</p>
+            <p className="text-[10px] text-ochre">Active</p>
           ) : (
             <>
               <div className="h-1 bg-elevated rounded-full mb-1">
@@ -274,16 +274,16 @@ export function ProgressSidebar({
           )}
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-faint mb-1.5">Auto-labeling</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">Auto-labeling</p>
           {autolabelStatus?.running ? (
             <>
               <div className="h-1 bg-elevated rounded-full mb-1">
                 <div
-                  className="h-1 bg-purple-500 rounded-full transition-all"
+                  className="h-1 bg-ochre rounded-full transition-all"
                   style={{ width: `${autolabelStatus.total > 0 ? Math.round((autolabelStatus.processed / autolabelStatus.total) * 100) : 0}%` }}
                 />
               </div>
-              <p className="text-[10px] text-ai-text">
+              <p className="text-[10px] text-ochre">
                 Labeling... {autolabelStatus.processed.toLocaleString()} / {autolabelStatus.total.toLocaleString()}
               </p>
             </>
@@ -291,7 +291,7 @@ export function ProgressSidebar({
             <>
               <button
                 onClick={onStartAutolabel}
-                className="w-full text-[10px] bg-ai-action text-white rounded px-2 py-1.5 hover:bg-ai-hover transition-colors"
+                className="w-full font-mono text-[10px] border border-ochre bg-ochre text-bg-warm rounded-sm px-2 py-1.5 hover:brightness-110 transition-all"
               >
                 Auto-label {(total - labeled).toLocaleString()} remaining
               </button>
@@ -302,7 +302,7 @@ export function ProgressSidebar({
           ) : (
             <>
               <div className="h-1 bg-elevated rounded-full mb-1">
-                <div className="h-1 bg-purple-500/50 rounded-full transition-all" style={{ width: `${autolabelPct}%` }} />
+                <div className="h-1 bg-ochre/50 rounded-full transition-all" style={{ width: `${autolabelPct}%` }} />
               </div>
               <p className="text-[10px] text-muted">{labeled} / {autolabelThreshold} to unlock</p>
             </>
@@ -340,7 +340,7 @@ export function ProgressSidebar({
                   } else if (wasOriginal && !wasRelabeled) {
                     diffBadge = { text: 'WAS ON', color: 'text-danger-text' }
                   } else if (!wasOriginal && wasRelabeled) {
-                    diffBadge = { text: 'NEW', color: 'text-accent-text' }
+                    diffBadge = { text: 'NEW', color: 'text-ochre' }
                   }
                 }
 
@@ -386,7 +386,7 @@ export function ProgressSidebar({
           ) : (
             <button
               onClick={() => setShowPopover(true)}
-              className="w-full text-left bg-transparent border border-dashed border-edge rounded px-2.5 py-1.5 text-[11px] text-accent-text hover:border-accent-border transition-colors"
+              className="w-full text-left bg-transparent border border-dashed border-edge rounded-sm px-2.5 py-1.5 text-[11px] text-muted hover:border-ochre-dim hover:text-ochre transition-colors"
             >
               + New label
             </button>

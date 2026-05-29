@@ -2207,7 +2207,7 @@ def get_multi_label_autolabel_summary(db: Session = Depends(get_session)):
         select(LabelDefinition)
         .where(LabelDefinition.mode == "multi")
         .where(LabelDefinition.archived_at == None)  # noqa: E711
-        .order_by(LabelDefinition.display_order)
+        .order_by(LabelDefinition.sort_order)
     ).all()
 
     results = []

@@ -35,7 +35,7 @@ export function RecentHistory({ items, onSelect, reviewingKey }: Props) {
                 onClick={() => onSelect(item)}
                 className={`rounded px-2 py-1.5 cursor-pointer transition-colors ${
                   isActive
-                    ? 'bg-accent-surface border border-accent'
+                    ? 'bg-ochre/15 border border-ochre-dim'
                     : isSkipped
                       ? 'bg-surface border-l-2 border-warning-border border-y border-r border-y-edge-subtle border-r-edge-subtle'
                       : 'bg-surface border border-edge-subtle hover:border-edge-strong'

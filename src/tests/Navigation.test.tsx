@@ -34,11 +34,12 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-test('renders Queue, Labels, and Analysis links in multi-label mode (default)', () => {
+test('renders Queue, Labels, and Summaries links in multi-label mode (default)', () => {
   renderNav()
   expect(screen.getByText('Queue')).toBeInTheDocument()
   expect(screen.getByText('Labels')).toBeInTheDocument()
-  expect(screen.getByText('Analysis')).toBeInTheDocument()
+  expect(screen.getByText('Summaries')).toBeInTheDocument()
+  expect(screen.queryByText('Analysis')).not.toBeInTheDocument()
 })
 
 test('shows mode toggle button', () => {

@@ -55,113 +55,133 @@ export function HistoryPage() {
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-6 overflow-y-auto">
-      {/* Summary cards */}
-      <div className="flex gap-3 mb-4">
-        {[
-          { label: 'Total', value: totalMessages, color: 'text-on-surface' },
-          { label: 'Labeled', value: totalLabeled, color: 'text-accent-text' },
-          { label: 'Skipped', value: totalSkipped, color: 'text-warning' },
-          { label: 'Remaining', value: remaining, color: 'text-faint' },
-        ].map(s => (
-          <div key={s.label} className="flex-1 bg-surface border border-edge-subtle rounded-lg p-3 text-center">
-            <div className={`text-xl font-bold tabular-nums ${s.color}`}>{s.value}</div>
-            <div className="text-[8px] text-faint uppercase tracking-widest mt-1">{s.label}</div>
-          </div>
-        ))}
-      </div>
+    <div className="flex-1 overflow-auto bg-canvas">
+      <div className="max-w-[880px] mx-auto px-12 py-12">
+        <header className="mb-8">
+          <h1 className="font-serif font-medium text-[32px] text-paper tracking-[-0.018em] m-0 mb-1.5">
+            History
+          </h1>
+          <p className="font-serif text-on-surface text-[14px] leading-[1.6] max-w-[600px] m-0">
+            Messages you have labeled or skipped in the multi-label queue. Click a row to reopen it in review mode.
+          </p>
+        </header>
 
-      {/* Progress bar */}
-      {totalMessages > 0 && (
-        <div className="h-2 bg-elevated rounded-full flex overflow-hidden gap-px mb-4">
-          <div className="bg-blue-500 rounded-full" style={{ width: `${(totalLabeled / totalMessages) * 100}%` }} />
-          <div className="bg-amber-500 rounded-full" style={{ width: `${(totalSkipped / totalMessages) * 100}%` }} />
-        </div>
-      )}
-
-      {/* Search + filter tabs */}
-      <div className="flex gap-3 mb-4 items-center">
-        <input
-          type="text"
-          placeholder="Search messages..."
-          value={search}
-          onChange={e => { setSearch(e.target.value); setPage(0) }}
-          className="flex-1 bg-surface border border-edge-subtle rounded-lg px-3 py-2 text-sm text-on-surface placeholder-disabled focus:outline-none focus:border-accent"
-        />
-        <div className="flex gap-1">
-          {(['all', 'human', 'ai', 'skipped'] as Filter[]).map(f => (
-            <button
-              key={f}
-              onClick={() => handleFilterChange(f)}
-              className={`text-[10px] px-3 py-1.5 rounded-full border transition-colors ${
-                filter === f
-                  ? 'bg-accent-surface border-accent text-accent-on-surface'
-                  : 'border-edge text-faint hover:text-tertiary'
-              }`}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* History list */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center text-faint text-sm">Loading...</div>
-      ) : items.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-faint text-sm">No messages found</div>
-      ) : (
-        <div className="flex flex-col gap-0.5">
-          {items.map((item, i) => (
-            <div
-              key={`${item.chatlog_id}-${item.message_index}-${i}`}
-              onClick={() => handleClick(item)}
-              className="flex items-center gap-2 px-3 py-2 rounded cursor-pointer hover:bg-surface transition-colors group"
-            >
-              <span className={`text-[7px] rounded px-1.5 py-0.5 uppercase tracking-wide font-semibold shrink-0 ${
-                item.applied_by === 'ai' ? 'bg-ai-surface text-ai-text border border-ai-border'
-                : item.status === 'skipped' ? 'bg-warning-surface text-warning border border-warning-border'
-                : 'bg-accent-surface text-accent-muted border border-accent-border'
-              }`}>
-                {item.applied_by === 'ai' ? 'AI' : item.status === 'skipped' ? 'S' : 'H'}
-              </span>
-              <span className="text-sm text-tertiary flex-1 truncate">{item.message_text}</span>
-              {item.labels.length > 0 ? (
-                <span className="text-[10px] text-disabled shrink-0 max-w-[140px] truncate">{item.labels.join(', ')}</span>
-              ) : (
-                <span className="text-[10px] text-warning-name shrink-0">&mdash;</span>
-              )}
-              {item.confidence !== null && (
-                <span className="text-[9px] text-disabled tabular-nums shrink-0 w-8 text-right">
-                  {Math.round(item.confidence * 100)}%
-                </span>
-              )}
-              <span className="text-[10px] text-disabled group-hover:text-faint shrink-0">&rarr;</span>
+        {/* Summary stats */}
+        <div className="grid grid-cols-4 gap-3 mb-6">
+          {[
+            { label: 'Total', value: totalMessages, color: 'text-paper' },
+            { label: 'Labeled', value: totalLabeled, color: 'text-ochre' },
+            { label: 'Skipped', value: totalSkipped, color: 'text-stone' },
+            { label: 'Remaining', value: remaining, color: 'text-faint' },
+          ].map(s => (
+            <div key={s.label} className="border border-edge rounded-sm bg-bg-warm px-4 py-3 text-center">
+              <div className={`font-mono text-[20px] tabular-nums ${s.color}`}>{s.value.toLocaleString()}</div>
+              <div className="font-mono text-[9px] text-faint uppercase tracking-[0.14em] mt-1">{s.label}</div>
             </div>
           ))}
         </div>
-      )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-4 text-[10px] text-faint">
-          <button
-            onClick={() => setPage(p => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="px-2 py-1 border border-edge-subtle rounded disabled:opacity-30"
-          >
-            &larr; Prev
-          </button>
-          <span>{page * limit + 1}&ndash;{Math.min((page + 1) * limit, total)} of {total}</span>
-          <button
-            onClick={() => setPage(p => p + 1)}
-            disabled={page >= totalPages - 1}
-            className="px-2 py-1 border border-edge-subtle rounded disabled:opacity-30"
-          >
-            Next &rarr;
-          </button>
+        {/* Progress bar */}
+        {totalMessages > 0 && (
+          <div className="h-1.5 bg-elevated rounded-sm flex overflow-hidden gap-px mb-8">
+            <div className="bg-ochre" style={{ width: `${(totalLabeled / totalMessages) * 100}%` }} />
+            <div className="bg-stone" style={{ width: `${(totalSkipped / totalMessages) * 100}%` }} />
+          </div>
+        )}
+
+        {/* Search + filter tabs */}
+        <div className="flex gap-3 mb-6 items-center">
+          <input
+            type="text"
+            placeholder="Search messages…"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(0) }}
+            className="flex-1 bg-surface border border-edge rounded-sm px-3 py-2 font-serif text-[14px] text-paper placeholder:text-faint focus:outline-none focus:border-ochre-dim"
+          />
+          <div className="flex gap-1.5">
+            {(['all', 'human', 'ai', 'skipped'] as Filter[]).map(f => (
+              <button
+                key={f}
+                onClick={() => handleFilterChange(f)}
+                className={`font-mono text-[10px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border transition-colors ${
+                  filter === f
+                    ? 'border-ochre-dim bg-elevated text-paper'
+                    : 'border-edge text-faint hover:text-on-surface'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+
+        {/* History list */}
+        {loading ? (
+          <div className="py-16 text-center font-mono text-[10px] tracking-[0.18em] uppercase text-faint animate-pulse">
+            Loading…
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-16 text-center">
+            <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-faint mb-2">No messages found</div>
+            <div className="font-serif text-on-surface text-[15px]">Try a different filter or search term.</div>
+          </div>
+        ) : (
+          <div className="flex flex-col border border-edge rounded-sm overflow-hidden">
+            {items.map((item, i) => (
+              <div
+                key={`${item.chatlog_id}-${item.message_index}-${i}`}
+                onClick={() => handleClick(item)}
+                className="flex items-center gap-3 px-4 py-3 border-b border-edge-subtle last:border-b-0 cursor-pointer hover:bg-elevated/60 transition-colors group"
+              >
+                <span className={`font-mono text-[9px] rounded-sm px-1.5 py-0.5 uppercase tracking-wide shrink-0 ${
+                  item.applied_by === 'ai' ? 'bg-ochre text-bg-warm border border-ochre'
+                  : item.status === 'skipped' ? 'bg-stone/15 text-stone border border-stone/50'
+                  : 'bg-ochre/15 text-ochre border border-ochre-dim'
+                }`}>
+                  {item.applied_by === 'ai' ? 'AI' : item.status === 'skipped' ? 'S' : 'H'}
+                </span>
+                {item.message_text?.trim() ? (
+                  <span className="font-serif text-[14px] text-on-surface flex-1 truncate">{item.message_text}</span>
+                ) : (
+                  <span className="font-serif italic text-[14px] text-faint flex-1 truncate">No message text</span>
+                )}
+                {item.labels.length > 0 ? (
+                  <span className="font-mono text-[10px] text-faint shrink-0 max-w-[160px] truncate">{item.labels.join(', ')}</span>
+                ) : (
+                  <span className="font-mono text-[10px] text-stone shrink-0">&mdash;</span>
+                )}
+                {item.confidence !== null && (
+                  <span className="font-mono text-[9px] text-faint tabular-nums shrink-0 w-8 text-right">
+                    {Math.round(item.confidence * 100)}%
+                  </span>
+                )}
+                <span className="font-mono text-[10px] text-faint group-hover:text-muted shrink-0">&rarr;</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 mt-6 font-mono text-[10px] text-faint tracking-[0.08em]">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1 border border-edge rounded-sm disabled:opacity-30 hover:border-ochre-dim transition-colors"
+            >
+              &larr; Prev
+            </button>
+            <span>{page * limit + 1}&ndash;{Math.min((page + 1) * limit, total)} of {total}</span>
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1 border border-edge rounded-sm disabled:opacity-30 hover:border-ochre-dim transition-colors"
+            >
+              Next &rarr;
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

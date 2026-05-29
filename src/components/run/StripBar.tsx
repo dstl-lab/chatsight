@@ -96,7 +96,7 @@ export function StripBar({
   }
 
   return (
-    <div className="border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
+    <div className="relative z-40 border-b border-edge-subtle bg-canvas px-12 py-3.5 text-muted text-[13px]">
       <div className="grid w-full min-w-0 grid-cols-1 gap-y-3 md:grid-cols-2 md:gap-x-10 md:gap-y-2">
         {/* Labels: name, counts, queue, handoff, note */}
         <div className="flex min-w-0 flex-col gap-2">
@@ -178,8 +178,8 @@ export function StripBar({
           />
         </div>
 
-        {/* Conversations: assignment filter + explore sampling */}
-        <div className="min-w-0 overflow-x-auto md:flex md:justify-end">
+        {/* Conversations: assignment filter + explore sampling (menu portals) */}
+        <div className="relative z-10 min-w-0 md:flex md:justify-end">
           <div className="flex w-max max-w-full flex-wrap items-center gap-6 md:justify-end">
             <AssignmentPicker
               assignments={assignments}
@@ -227,26 +227,41 @@ export function StripBar({
               </div>
             )}
             {!draftMode && import.meta.env.DEV && onSampleHandoff && (
-              <div
-                className="inline-flex items-center gap-2 rounded-full border border-dashed border-edge px-2.5 py-1 font-mono text-[11px]"
-                title="Dev: sample handoff"
-              >
-                <span className="text-[9px] uppercase tracking-[0.06em] text-faint">dev</span>
+              <div className="inline-flex items-center gap-2 rounded-full border border-dashed border-edge px-2.5 py-1 font-mono text-[11px]">
+                <HoverTip
+                  label="dev · sample handoff"
+                  className="text-[9px] tracking-[0.06em] uppercase text-faint"
+                  tip={
+                    'Developer smoke test for the Hand off pipeline. The number is how many ' +
+                    'random unlabeled messages Gemini classifies, not a new conversation sample.'
+                  }
+                />
                 <input
                   type="number"
                   min={1}
                   value={sampleN}
                   onChange={(e) => setSampleN(parseInt(e.target.value, 10) || 0)}
+                  aria-label="Sample handoff message count"
                   className="w-10 border-b border-edge bg-transparent text-center tabular-nums focus:outline-none"
                 />
-                <button
-                  type="button"
-                  disabled={!Number.isFinite(sampleN) || sampleN <= 0}
-                  onClick={() => onSampleHandoff(sampleN)}
-                  className="text-on-surface hover:text-ochre disabled:opacity-40"
-                >
-                  Sample →
-                </button>
+                <HoverTip
+                  label={
+                    <button
+                      type="button"
+                      disabled={!Number.isFinite(sampleN) || sampleN <= 0}
+                      onClick={() => onSampleHandoff(sampleN)}
+                      className="border-0 bg-transparent p-0 font-inherit text-inherit text-on-surface hover:text-ochre disabled:opacity-40 cursor-pointer"
+                    >
+                      Sample →
+                    </button>
+                  }
+                  className="normal-case tracking-normal"
+                  tip={
+                    'Runs Hand off on this label for N random pending messages, then deactivates it. ' +
+                    'Progress on Summaries. /run switches to the next queued label, or the draft ' +
+                    'screen if none is queued, not another explore pick.'
+                  }
+                />
               </div>
             )}
           </div>

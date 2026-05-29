@@ -129,6 +129,55 @@ def _migrate_label_application(conn, inspect, text):
         conn.execute(text("ALTER TABLE labelapplication ADD COLUMN note TEXT DEFAULT NULL"))
 
 
+def _migrate_label_application_value_nullable(conn, inspect, text):
+    """Pre-2026-05 the `value` column was created NOT NULL (DEFAULT 'yes') back
+    when single-label decisions were the only writer. Multi-label applications
+    insert value=NULL to distinguish themselves from single-label decisions, and
+    the stale NOT NULL constraint rejects that — every POST /api/queue/apply 500s
+    ("NOT NULL constraint failed: labelapplication.value"), so clicking a label
+    and the 1-9 keybinds silently do nothing.
+
+    SQLite can't DROP NOT NULL in place, so rebuild the table with `value`
+    nullable (and restore the model's uq_labelapp_msg unique constraint while we
+    have the table open). Idempotent: no-op once `value` is already nullable."""
+    cols = {c["name"]: c for c in inspect(conn).get_columns("labelapplication")}
+    # _migrate_label_application runs first and adds `value` (nullable) if missing.
+    if "value" not in cols or cols["value"]["nullable"]:
+        return
+    conn.execute(text("ALTER TABLE labelapplication RENAME TO labelapplication_old"))
+    conn.execute(text(
+        "CREATE TABLE labelapplication ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " label_id INTEGER NOT NULL REFERENCES labeldefinition(id),"
+        " chatlog_id INTEGER NOT NULL,"
+        " message_index INTEGER NOT NULL,"
+        " applied_by VARCHAR NOT NULL,"
+        " confidence FLOAT,"
+        " created_at DATETIME NOT NULL,"
+        " value VARCHAR,"
+        " ai_value_at_review VARCHAR,"
+        " ai_confidence_at_review FLOAT,"
+        " matched_pattern VARCHAR,"
+        " rationale TEXT,"
+        " flagged BOOLEAN NOT NULL DEFAULT 0,"
+        " note TEXT,"
+        " CONSTRAINT uq_labelapp_msg UNIQUE (label_id, chatlog_id, message_index)"
+        ")"
+    ))
+    conn.execute(text(
+        "INSERT INTO labelapplication"
+        " (id, label_id, chatlog_id, message_index, applied_by, confidence,"
+        "  created_at, value, ai_value_at_review, ai_confidence_at_review,"
+        "  matched_pattern, rationale, flagged, note)"
+        " SELECT id, label_id, chatlog_id, message_index, applied_by, confidence,"
+        "  created_at, value, ai_value_at_review, ai_confidence_at_review,"
+        "  matched_pattern, rationale, flagged, note"
+        " FROM labelapplication_old"
+    ))
+    conn.execute(text("DROP TABLE labelapplication_old"))
+    print("[chatsight] migrated labelapplication.value -> NULLable (multi-label apply fix)")
+
+
 def _migrate_labeling_session(conn, inspect, text):
     cols = [c["name"] for c in inspect(conn).get_columns("labelingsession")]
     if "label_id" not in cols:
@@ -219,6 +268,7 @@ def create_db_and_tables():
         from sqlalchemy import text, inspect
         _migrate_label_definition(conn, inspect, text)
         _migrate_label_application(conn, inspect, text)
+        _migrate_label_application_value_nullable(conn, inspect, text)
         _migrate_labeling_session(conn, inspect, text)
         _migrate_message_cache(conn, inspect, text)
         _migrate_conversation_cursor(conn, inspect, text)

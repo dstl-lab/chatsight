@@ -29,7 +29,6 @@ export function Navigation() {
           labelingLink,
           { to: '/assignments', label: 'Assignments' },
           { to: '/summaries', label: 'Summaries' },
-          { to: '/analysis', label: 'Analysis' },
         ]
       : [
           labelingLink,
@@ -37,7 +36,6 @@ export function Navigation() {
           { to: '/labels', label: 'Labels' },
           { to: '/assignments', label: 'Assignments' },
           { to: '/summaries', label: 'Summaries' },
-          { to: '/analysis', label: 'Analysis' },
         ]
 
   return (
@@ -67,11 +65,7 @@ export function Navigation() {
             setMode(next)
             navigate(modeLandingPath[next])
           }}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border font-mono text-[10px] tracking-[0.05em] transition-colors ${
-            mode === 'single'
-              ? 'border-ochre-dim text-ochre'
-              : 'border-edge text-on-surface hover:text-on-canvas hover:border-faint'
-          }`}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border font-mono text-[10px] tracking-[0.05em] transition-colors border-ochre-dim text-ochre`}
           title={`Mode: ${modeLabel[mode]} (click to switch)`}
         >
           <ModeIcon size={12} />

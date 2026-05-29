@@ -4,7 +4,6 @@ import { Navigation } from './components/Navigation'
 import { QueuePage } from './pages/QueuePage'
 import { HistoryPage } from './pages/HistoryPage'
 import { LabelsPage } from './pages/LabelsPage'
-import { AnalysisPage } from './pages/AnalysisPage'
 import { LabelRunPage } from './pages/LabelRunPage'
 import { AssignmentsPage } from './pages/AssignmentsPage'
 import { SummariesPage } from './pages/SummariesPage'
@@ -23,9 +22,8 @@ function LabelsRouteGuard() {
 }
 
 function AppShell() {
-  const { mode } = useMode()
-  // Single-label mode wraps the entire app shell (including nav) in the warm
-  // editorial palette so there's no cool-gray seam at the top.
+  // The whole app shell (including nav) uses the warm editorial palette so
+  // there's no cool-gray seam at the top in either mode.
   const shellClasses = 'h-screen bg-canvas text-on-canvas flex flex-col overflow-hidden warm-flow'
   return (
     <div className={shellClasses}>
@@ -39,7 +37,7 @@ function AppShell() {
           <Route path="/labels" element={<LabelsRouteGuard />} />
           <Route path="/assignments" element={<AssignmentsPage />} />
           <Route path="/summaries" element={<SummariesPage />} />
-          <Route path="/analysis" element={<AnalysisPage />} />
+          <Route path="/analysis" element={<Navigate to="/summaries" replace />} />
         </Routes>
       </main>
     </div>

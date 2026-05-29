@@ -49,7 +49,7 @@ export function ArchiveConfirmModal({
           {orphanedCount > 0 && (
             <button
               onClick={onReviewAndRelabel}
-              className="w-full bg-accent hover:bg-accent-hover text-white text-sm rounded-lg px-4 py-2 transition-colors"
+              className="w-full border border-ochre bg-ochre text-bg-warm font-sans font-semibold text-sm rounded-sm px-4 py-2 hover:brightness-110 transition-all"
             >
               Review & relabel ({orphanedCount} {orphanedCount === 1 ? 'message' : 'messages'})
             </button>
