@@ -62,3 +62,10 @@ test('clicking mode toggle from single navigates to /queue (multi landing)', () 
   fireEvent.click(screen.getByTitle(/Mode: Single-label/))
   expect(screen.getByTestId('path').textContent).toBe('/queue')
 })
+
+test('shows Analysis link in single-label mode only', () => {
+  localStorage.setItem('chatsight-mode', 'single')
+  renderNav()
+  expect(screen.getByText('Analysis')).toBeInTheDocument()
+  expect(screen.queryByText('History')).not.toBeInTheDocument()
+})

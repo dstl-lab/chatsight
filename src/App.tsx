@@ -7,6 +7,7 @@ import { LabelsPage } from './pages/LabelsPage'
 import { LabelRunPage } from './pages/LabelRunPage'
 import { AssignmentsPage } from './pages/AssignmentsPage'
 import { SummariesPage } from './pages/SummariesPage'
+import { AnalysisPage } from './pages/AnalysisPage'
 import { ModeProvider, useMode } from './hooks/useMode'
 import { KeybindProvider } from './hooks/useKeybinds'
 
@@ -19,6 +20,12 @@ function LabelsRouteGuard() {
   const { mode } = useMode()
   if (mode === 'single') return <Navigate to="/summaries" replace />
   return <LabelsPage />
+}
+
+function AnalysisRouteGuard() {
+  const { mode } = useMode()
+  if (mode === 'multi') return <Navigate to="/summaries" replace />
+  return <AnalysisPage />
 }
 
 function AppShell() {
@@ -37,7 +44,7 @@ function AppShell() {
           <Route path="/labels" element={<LabelsRouteGuard />} />
           <Route path="/assignments" element={<AssignmentsPage />} />
           <Route path="/summaries" element={<SummariesPage />} />
-          <Route path="/analysis" element={<Navigate to="/summaries" replace />} />
+          <Route path="/analysis" element={<AnalysisRouteGuard />} />
         </Routes>
       </main>
     </div>
