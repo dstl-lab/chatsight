@@ -244,8 +244,8 @@ export function ProgressSidebar({
   }, [labels, onReorderLabels])
 
   return (
-    <aside className="w-52 shrink-0 border-r border-edge bg-canvas p-4 flex flex-col gap-5 overflow-y-auto">
-      <div>
+    <aside className="w-52 shrink-0 border-r border-edge bg-canvas p-4 flex flex-col h-full min-h-0 gap-5">
+      <div className="shrink-0">
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-2">Labeled</p>
         <div className="h-1.5 bg-elevated rounded-sm mb-1.5">
           <div className="h-1.5 bg-ochre rounded-sm transition-all" style={{ width: `${pct}%` }} />
@@ -259,7 +259,7 @@ export function ProgressSidebar({
         )}
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="shrink-0 flex flex-col gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">AI suggestions</p>
           {suggestUnlocked ? (
@@ -310,16 +310,18 @@ export function ProgressSidebar({
         </div>
       </div>
 
-      <DiscoverSection
-        candidates={candidates}
-        aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
-        labeledCount={stats?.labeled_count ?? 0}
-        onDiscover={onDiscover}
-        onOpenModal={onOpenDiscoverModal}
-        discovering={discovering}
-      />
+      <div className="shrink-0">
+        <DiscoverSection
+          candidates={candidates}
+          aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
+          labeledCount={stats?.labeled_count ?? 0}
+          onDiscover={onDiscover}
+          onOpenModal={onOpenDiscoverModal}
+          discovering={discovering}
+        />
+      </div>
 
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <p className="text-[10px] uppercase tracking-widest text-faint mb-2">
           {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
         </p>
@@ -393,9 +395,11 @@ export function ProgressSidebar({
           )}
         </div>
       </div>
-      <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
-      {recalibrationStats && recalibrationStats.total_recalibrations > 0 && (
-        <div className="border-t border-edge-subtle pt-3">
+
+      <div className="shrink-0 flex flex-col gap-3">
+        <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
+        {recalibrationStats && recalibrationStats.total_recalibrations > 0 && (
+          <div className="border-t border-edge-subtle pt-3">
           <p className="text-[10px] uppercase tracking-widest text-disabled mb-2">Calibration</p>
           <div className="flex items-center gap-2">
             <span className={`text-sm ${
@@ -433,7 +437,8 @@ export function ProgressSidebar({
             </div>
           </div>
         </div>
-      )}
+        )}
+      </div>
       {contextMenu && (
         <LabelContextMenu
           x={contextMenu.x}
