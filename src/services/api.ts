@@ -67,7 +67,7 @@ export const api = {
 
   unskipMessage: (chatlog_id: number, message_index: number): Promise<{ ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
-             : req('/api/queue/skip', { method: 'DELETE', ...json({ chatlog_id, message_index }) }),
+             : req(`/api/queue/skip?chatlog_id=${chatlog_id}&message_index=${message_index}`, { method: 'DELETE' }),
 
   getQueue: (limit = 20): Promise<QueueItem[]> =>
     USE_MOCK ? Promise.resolve(mockApi.queue)
