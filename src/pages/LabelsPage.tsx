@@ -1165,7 +1165,20 @@ export function LabelsPage() {
       <main className="flex-1 px-12 py-12 overflow-y-auto">
         <header className="mb-10 flex items-end justify-between max-w-[960px]">
           <div>
-            <h1 className="font-serif font-medium text-[32px] text-paper tracking-[-0.018em]">Label Taxonomy</h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="font-serif font-medium text-[32px] text-paper tracking-[-0.018em]">Label Taxonomy</h1>
+              <div className="relative group/help">
+                <span
+                  tabIndex={0}
+                  className="flex items-center justify-center w-5 h-5 rounded-full border border-edge text-faint text-[11px] font-mono leading-none cursor-help outline-none hover:text-ochre hover:border-ochre-dim focus-visible:text-ochre focus-visible:border-ochre-dim transition-colors"
+                >
+                  ?
+                </span>
+                <div className="absolute top-full left-0 mt-2 w-72 px-3 py-2.5 bg-elevated border border-edge text-on-surface text-[11px] font-sans leading-relaxed rounded-sm opacity-0 group-hover/help:opacity-100 group-focus-within/help:opacity-100 pointer-events-none transition-opacity shadow-lg z-50">
+                  Your full set of labels. Drag two together to merge them, split one to break it into separate labels, or promote a label to validate it in /run.
+                </div>
+              </div>
+            </div>
             <p className="font-serif text-on-surface text-[14px] leading-[1.6] mt-1.5">Organize and refine your tutoring interaction labels.</p>
           </div>
           <div className="bg-bg-warm px-4 py-2 rounded-sm border border-edge flex items-center gap-4">
