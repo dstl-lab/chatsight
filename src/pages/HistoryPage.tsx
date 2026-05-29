@@ -140,7 +140,11 @@ export function HistoryPage() {
                 }`}>
                   {item.applied_by === 'ai' ? 'AI' : item.status === 'skipped' ? 'S' : 'H'}
                 </span>
-                <span className="font-serif text-[14px] text-on-surface flex-1 truncate">{item.message_text}</span>
+                {item.message_text?.trim() ? (
+                  <span className="font-serif text-[14px] text-on-surface flex-1 truncate">{item.message_text}</span>
+                ) : (
+                  <span className="font-serif italic text-[14px] text-faint flex-1 truncate">No message text</span>
+                )}
                 {item.labels.length > 0 ? (
                   <span className="font-mono text-[10px] text-faint shrink-0 max-w-[160px] truncate">{item.labels.join(', ')}</span>
                 ) : (
