@@ -39,7 +39,7 @@ test('renders Queue, Labels, and Summaries links in multi-label mode (default)',
   expect(screen.getByText('Queue')).toBeInTheDocument()
   expect(screen.getByText('Labels')).toBeInTheDocument()
   expect(screen.getByText('Summaries')).toBeInTheDocument()
-  expect(screen.queryByText('Analysis')).not.toBeInTheDocument()
+  expect(screen.getByText('Analysis')).toBeInTheDocument()
 })
 
 test('shows mode toggle button', () => {

@@ -269,7 +269,9 @@ app.add_middleware(
 )
 
 from analysis_single_label import router as single_label_analysis_router
+from analysis_multi_label import router as multi_label_analysis_router
 app.include_router(single_label_analysis_router)
+app.include_router(multi_label_analysis_router)
 
 
 from pathlib import Path

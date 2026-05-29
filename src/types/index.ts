@@ -562,6 +562,87 @@ export interface SingleLabelRunDetail {
   }
 }
 
+// ─── Multi-label analysis ───
+
+export interface MultiLabelCohortRow {
+  label_id: number
+  label_name: string
+  description: string | null
+  human_count: number
+  ai_count: number
+  total_count: number
+  /** 0–100 among AI rows with confidence; null when no AI rows */
+  high_conf_pct: number | null
+  low_conf_count: number
+  /** 0–100 of distinct labeled messages that are human; null when total_count == 0 */
+  human_pct: number | null
+  updated_at: string
+  /** ≤ 8 weekly values (0–100), oldest → newest, for the rail sparkline */
+  weekly_sparkline: number[]
+}
+
+export interface MultiLabelCohortResponse {
+  labels: MultiLabelCohortRow[]
+}
+
+export interface MultiLabelConfidenceBin {
+  lo: number
+  hi: number
+  count: number
+}
+
+export interface MultiLabelExampleMsg {
+  message_id: number
+  chatlog_id: number
+  message_index: number
+  text: string
+  applied_by: 'human' | 'ai' | null
+  confidence: number | null
+  assignment: string | null
+  position_bucket: 'early' | 'mid' | 'late'
+  co_labels: string[]
+  created_at: string
+  flag: 'low_confidence' | null
+}
+
+export interface MultiLabelDetail {
+  label: {
+    id: number
+    label_name: string
+    description: string | null
+    updated_at: string
+    human_count: number
+    ai_count: number
+    total_count: number
+    human_pct: number | null
+  }
+  confidence_histogram: {
+    bins: MultiLabelConfidenceBin[]
+    coverage: { with_confidence: number; total_ai: number }
+  }
+  provenance: {
+    human_applications: number
+    ai_applications: number
+    human_pct: number | null
+  }
+  position_distribution: { bucket: 'early' | 'mid' | 'late'; count: number; pct: number }[]
+  by_assignment: { key: string; human: number; ai: number; total: number; human_pct: number }[]
+  co_occurring_labels: { label_name: string; count: number; pct: number }[]
+  by_hour_of_day: { hour: number; count: number }[]
+  examples: {
+    human: MultiLabelExampleMsg[]
+    low_confidence: MultiLabelExampleMsg[]
+  }
+  paired_single_label: {
+    label_id: number
+    label_name: string
+    phase: string
+    yes: number
+    no: number
+    skip: number
+  } | null
+}
+
 export interface AssignmentMilestone {
   title: string
   /** YYYY-MM-DD */

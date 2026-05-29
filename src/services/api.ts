@@ -10,7 +10,7 @@ import type {
   SingleLabelSummary, HandoffResponse, ReviewItem,
   AssignmentMapping, UnmappedCount, InferAssignmentsResult, HandoffSummaryItem,
   AssistResponse,
-  SingleLabelCohortResponse, SingleLabelRunDetail, AssignmentMilestone,
+  SingleLabelCohortResponse, SingleLabelRunDetail, MultiLabelCohortResponse, MultiLabelDetail, AssignmentMilestone,
   SingleLabelDetail, MessageListItem, MessageListResponse, MessageDetail, ContextDepth,
   BrowseBucket, OnboardingStarter,
   MultiLabelAutolabelSummaryItem,
@@ -240,6 +240,14 @@ export const api = {
   getSingleLabelRunDetail: (runId: number): Promise<SingleLabelRunDetail> =>
     USE_MOCK ? Promise.resolve(mockApi.singleLabelRunDetail)
              : req(`/api/analysis/single-label/runs/${runId}`),
+
+  getMultiLabelCohort: (): Promise<MultiLabelCohortResponse> =>
+    USE_MOCK ? Promise.resolve(mockApi.multiLabelCohort)
+             : req('/api/analysis/multi-label/cohort'),
+
+  getMultiLabelDetail: (labelId: number): Promise<MultiLabelDetail> =>
+    USE_MOCK ? Promise.resolve(mockApi.multiLabelDetail)
+             : req(`/api/analysis/multi-label/labels/${labelId}`),
 
   getMilestones: (course?: string): Promise<AssignmentMilestone[]> => {
     if (USE_MOCK) return Promise.resolve([])

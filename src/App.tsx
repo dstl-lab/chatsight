@@ -23,8 +23,6 @@ function LabelsRouteGuard() {
 }
 
 function AnalysisRouteGuard() {
-  const { mode } = useMode()
-  if (mode === 'multi') return <Navigate to="/summaries" replace />
   return <AnalysisPage />
 }
 
