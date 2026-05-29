@@ -66,8 +66,9 @@ test('shows count in hover popover', async () => {
 test('shows selected state for applied labels', () => {
   render(<ProgressSidebar {...defaultProps} appliedLabelIds={new Set([1])} />)
   const btn = screen.getByRole('button', { name: /Concept Question/ })
-  // Selected/applied state uses the accent token (was 'blue-500' pre-theming).
-  expect(btn.className).toContain('accent')
+  // Selected/applied state uses the warm ochre token (was 'accent'/'blue-500'
+  // before the multi-label palette was aligned to single-label).
+  expect(btn.className).toContain('ochre')
 })
 
 test('shows + New label button', () => {
@@ -137,6 +138,7 @@ test('highlights the currently reviewed item', () => {
   render(<ProgressSidebar {...defaultProps} history={historyItems} reviewingKey="1-0" />)
   fireEvent.click(screen.getByText(/recent/i))
   const item = screen.getByText('Short message').closest('[data-history-item]')
-  // The accent token drives the highlight (was 'blue' before theming).
-  expect(item?.className).toContain('accent')
+  // The warm ochre token drives the highlight (was 'accent'/'blue' before the
+  // multi-label palette was aligned to single-label).
+  expect(item?.className).toContain('ochre')
 })

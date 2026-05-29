@@ -98,7 +98,7 @@ export default function DiscoverModal({
                     <div className="flex gap-1 shrink-0">
                       <button
                         onClick={() => onAccept(c.id)}
-                        className="px-2 py-0.5 rounded text-[10px] bg-success-surface text-success hover:bg-success-surface transition-colors"
+                        className="px-2 py-0.5 rounded text-[10px] bg-ochre/15 text-ochre hover:bg-ochre/25 transition-colors"
                       >
                         Accept
                       </button>
@@ -113,8 +113,8 @@ export default function DiscoverModal({
 
                   {/* Similarity tag */}
                   {c.similar_to && (
-                    <p className="text-[9px] text-discover-text mb-1">
-                      similar to: <span className="text-discover-strong">{c.similar_to}</span>
+                    <p className="text-[9px] text-faint mb-1">
+                      similar to: <span className="text-ochre">{c.similar_to}</span>
                     </p>
                   )}
 
@@ -131,7 +131,7 @@ export default function DiscoverModal({
           <button
             onClick={onDiscover}
             disabled={discovering}
-            className="px-3 py-1.5 rounded-md text-[11px] bg-discover-surface text-discover-text border border-discover-border hover:bg-discover-surface transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 rounded-md text-[11px] bg-ochre/10 text-ochre border border-ochre-dim hover:bg-ochre/15 transition-colors disabled:opacity-50"
           >
             {discovering ? 'Discovering...' : '↻ Discover more'}
           </button>

@@ -21,7 +21,7 @@ function AssistantMessage({ text }: { text: string }) {
   return (
     <div className="bg-surface/60 rounded px-3 py-2">
       <span className="text-[9px] uppercase tracking-wide text-faint block mb-1">AI Tutor</span>
-      <div className={`prose prose-sm dark:prose-invert prose-p:text-muted prose-headings:text-tertiary prose-li:text-muted prose-strong:text-tertiary prose-code:text-accent-muted prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-muted leading-relaxed text-xs ${expanded ? '' : 'line-clamp-6'}`}>
+      <div className={`prose prose-sm prose-p:text-muted prose-headings:text-tertiary prose-li:text-muted prose-strong:text-tertiary prose-code:text-ochre prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-muted leading-relaxed text-xs ${expanded ? '' : 'line-clamp-6'}`}>
         <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
           {text}
         </ReactMarkdown>
@@ -150,13 +150,13 @@ export function ConversationPanel({ messages, currentMessageIndex, chatlogId, on
               onClick={isClickable ? () => onSelectMessage!(chatlogId, msg.message_index!) : undefined}
               className={`rounded px-3 py-2 transition-colors ${
                 isCurrent
-                  ? 'bg-message-student border border-message-border ring-1 ring-message-border/60'
+                  ? 'bg-bg-warm border border-edge-warm ring-1 ring-ochre-dim/60'
                   : isClickable
-                    ? 'bg-message-student/40 border border-message-border/50 cursor-pointer hover:bg-message-student hover:border-message-border'
-                    : 'bg-message-student/40 border border-message-border/50'
+                    ? 'bg-bg-warm/60 border border-edge-warm/70 cursor-pointer hover:bg-bg-warm hover:border-edge-warm'
+                    : 'bg-bg-warm/60 border border-edge-warm/70'
               }`}
             >
-              <span className="text-[9px] uppercase tracking-wide text-accent-text block mb-1">
+              <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-ochre block mb-1">
                 Student · msg {msg.message_index}
               </span>
               <p className="text-xs text-on-surface leading-relaxed">{msg.text}</p>
@@ -167,7 +167,7 @@ export function ConversationPanel({ messages, currentMessageIndex, chatlogId, on
                 {!panelOpen && appliedLabels.map(label => (
                   <span
                     key={label.id}
-                    className="text-[9px] rounded px-1.5 py-0.5 border bg-accent-surface text-accent-on-surface border-accent-border"
+                    className="text-[9px] rounded-sm px-1.5 py-0.5 border bg-ochre/15 text-paper border-ochre-dim"
                   >
                     {label.name}
                   </span>
@@ -194,7 +194,7 @@ export function ConversationPanel({ messages, currentMessageIndex, chatlogId, on
                             onClick={e => handleLabelToggle(e, msg.message_index!, label.id)}
                             className={`text-[9px] rounded px-1.5 py-0.5 border transition-colors ${
                               applied
-                                ? 'bg-accent-surface text-accent-on-surface border-accent-border'
+                                ? 'bg-ochre/15 text-paper border-ochre-dim'
                                 : 'bg-transparent text-faint border-edge-subtle hover:text-on-surface hover:border-edge'
                             }`}
                           >
@@ -220,12 +220,12 @@ export function ConversationPanel({ messages, currentMessageIndex, chatlogId, on
                             onKeyDown={e => { if (e.key === 'Escape') { setCreateOpen(null); setCreateValue('') } }}
                             placeholder="label name"
                             disabled={creating}
-                            className="flex-1 text-[9px] bg-transparent border border-edge rounded px-1.5 py-0.5 text-on-surface placeholder:text-disabled focus:outline-none focus:border-accent-border"
+                            className="flex-1 text-[9px] bg-transparent border border-edge rounded-sm px-1.5 py-0.5 text-on-surface placeholder:text-disabled focus:outline-none focus:border-ochre-dim"
                           />
                           <button
                             type="submit"
                             disabled={!createValue.trim() || creating}
-                            className="text-[9px] text-accent-text hover:text-accent-on-surface disabled:opacity-40 transition-colors"
+                            className="text-[9px] text-ochre hover:text-paper disabled:opacity-40 transition-colors"
                           >
                             {creating ? '…' : '✓'}
                           </button>

@@ -143,7 +143,7 @@ export function MessageCard({
 						</span>
 					</span>
 					{beforeExpanded ? (
-						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
+						<div className="prose prose-sm prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-ochre prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -159,9 +159,10 @@ export function MessageCard({
 				</div>
 			)}
 
-			<div className="bg-message-student border border-message-border rounded-lg p-4">
+			<div className="relative bg-bg-warm border border-edge-warm rounded-sm p-4 pl-5">
+				<div aria-hidden className="absolute left-0 top-0 bottom-0 w-[2px] bg-ochre rounded-l-sm" />
 				<div className="flex items-center justify-between mb-2">
-					<span className="text-[10px] uppercase tracking-wide text-accent-text">
+					<span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ochre">
 						Student · message {item.message_index}
 					</span>
 					{(conversationLoading ||
@@ -180,8 +181,8 @@ export function MessageCard({
 									: conversationError
 										? "text-faint cursor-default"
 										: showConversation
-											? "text-accent-on-surface hover:text-accent-on-surface"
-											: "text-accent-text hover:text-accent-on-surface"
+											? "text-ochre hover:text-paper"
+											: "text-muted hover:text-ochre"
 							}`}
 							title={
 								conversationError
@@ -198,21 +199,21 @@ export function MessageCard({
 						</button>
 					)}
 				</div>
-				<p className="text-sm text-on-canvas leading-relaxed">
+				<p className="font-serif text-sm text-paper leading-relaxed">
 					{item.message_text}
 				</p>
 
 				<div className="flex justify-end mt-2">
 					{aiUnlocked && suggestionLoading ? (
-						<span className="text-[9px] text-accent-text bg-surface border border-accent-border rounded px-1.5 py-0.5 animate-pulse">
+						<span className="text-[9px] text-ochre bg-surface border border-edge-warm rounded-sm px-1.5 py-0.5 animate-pulse">
 							✦ suggesting label...
 						</span>
 					) : aiUnlocked && suggestion ? (
 						<span
-							className={`inline-flex items-center gap-0 text-[9px] rounded overflow-hidden border ${
+							className={`inline-flex items-center gap-0 text-[9px] rounded-sm overflow-hidden border ${
 								isSuggestionApplied
-									? "bg-accent-surface border-accent-border"
-									: "bg-surface border-accent-border"
+									? "bg-ochre/15 border-ochre-dim"
+									: "bg-surface border-edge-warm"
 							}`}
 						>
 							<button
@@ -226,8 +227,8 @@ export function MessageCard({
 								}}
 								className={`px-1.5 py-0.5 transition-colors ${
 									isSuggestionApplied
-										? "text-accent-on-surface hover:text-blue-100"
-										: "text-accent-text hover:text-accent-on-surface"
+										? "text-ochre hover:text-paper"
+										: "text-ochre hover:text-paper"
 								}`}
 								title="Click to toggle this label"
 							>
@@ -244,8 +245,8 @@ export function MessageCard({
 								}}
 								className={`px-1.5 py-0.5 transition-colors border-l ${
 									isSuggestionApplied
-										? "border-blue-700 text-accent-text hover:text-accent-on-surface"
-										: "border-accent-border text-accent-muted hover:text-accent-on-surface"
+										? "border-ochre-dim text-ochre hover:text-paper"
+										: "border-edge-warm text-muted hover:text-ochre"
 								}`}
 							>
 								why?
@@ -284,7 +285,7 @@ export function MessageCard({
 						</span>
 					</span>
 					{afterExpanded ? (
-						<div className="prose prose-sm dark:prose-invert prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-accent-muted prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
+						<div className="prose prose-sm prose-p:text-tertiary prose-headings:text-on-surface prose-li:text-tertiary prose-strong:text-on-surface prose-code:text-ochre prose-pre:bg-elevated prose-pre:text-on-surface max-w-none text-tertiary leading-relaxed">
 							<ReactMarkdown
 								remarkPlugins={[remarkMath]}
 								rehypePlugins={[rehypeKatex]}
@@ -318,7 +319,7 @@ export function MessageCard({
 						</button>
 						<button
 							onClick={onNext}
-							className="font-serif text-xs text-white bg-accent rounded px-3 py-1.5 hover:bg-accent-hover transition-colors"
+							className="font-serif text-xs border border-ochre bg-ochre text-bg-warm rounded-sm px-3 py-1.5 hover:brightness-110 transition-all"
 						>
 							Next →
 						</button>
@@ -344,12 +345,12 @@ export function MessageCard({
 						<button
 							onClick={onNext}
 							disabled={!isReviewing && !isRecalibrating && !hasLabelsApplied}
-							className={`font-serif text-xs text-white rounded px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+							className={`font-serif text-xs rounded-sm px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
 								isRecalibrating
 									? recalibrationPhase === 'reconcile'
-										? 'bg-warning hover:bg-warning'
-										: 'bg-ai-action hover:bg-ai-hover'
-									: 'bg-accent hover:bg-accent-hover'
+										? 'border border-warning bg-warning text-bg-warm hover:brightness-110'
+										: 'border border-ochre bg-ochre text-bg-warm hover:brightness-110'
+									: 'border border-ochre bg-ochre text-bg-warm hover:brightness-110'
 							}`}
 						>
 							{isReviewing ? "Back to queue" : isRecalibrating

@@ -105,7 +105,7 @@ export function ArchiveReviewSidebar({
                 key={key}
                 onClick={() => onSelectMessage(msg.chatlog_id, msg.message_index)}
                 className={`text-left px-4 py-2.5 border-b border-edge-subtle transition-colors ${
-                  isSelected ? 'bg-surface/80 border-l-2 border-l-accent-border' : 'border-l-2 border-l-transparent hover:bg-surface/40'
+                  isSelected ? 'bg-surface/80 border-l-2 border-l-ochre-dim' : 'border-l-2 border-l-transparent hover:bg-surface/40'
                 } ${isComplete ? 'opacity-50' : ''}`}
               >
                 <div className="flex items-center justify-between mb-1">
@@ -153,7 +153,7 @@ export function ArchiveReviewSidebar({
                       if (e.key === 'Escape') setRenamingLabelId(null)
                     }}
                     onBlur={() => setRenamingLabelId(null)}
-                    className="w-full bg-surface border border-accent-border rounded px-2.5 py-1.5 text-[11px] text-on-canvas focus:outline-none"
+                    className="w-full bg-surface border border-edge-warm rounded-sm px-2.5 py-1.5 text-[11px] text-paper focus:outline-none focus:border-ochre-dim"
                   />
                 ) : (
                   <button
@@ -163,8 +163,8 @@ export function ArchiveReviewSidebar({
                       isArchived
                         ? 'bg-elevated border border-edge text-disabled line-through cursor-not-allowed'
                         : isApplied
-                          ? 'bg-accent-surface border border-accent-border text-accent-on-surface'
-                          : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-accent'
+                          ? 'bg-ochre/15 border border-ochre-dim text-paper'
+                          : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-ochre-dim/50'
                     }`}
                   >
                     <span className="truncate flex-1">{label.name}</span>
@@ -190,13 +190,13 @@ export function ArchiveReviewSidebar({
                           onChange={e => setEditDesc(e.target.value)}
                           placeholder="Description..."
                           rows={2}
-                          className="w-full bg-surface border border-edge rounded px-2 py-1.5 text-[11px] text-on-canvas placeholder-disabled mb-2 focus:outline-none focus:border-accent resize-none"
+                          className="w-full bg-surface border border-edge rounded-sm px-2 py-1.5 text-[11px] text-paper placeholder:text-faint mb-2 focus:outline-none focus:border-ochre-dim resize-none"
                         />
                         <div className="flex gap-2 justify-end">
                           <button onClick={() => { setEditingLabelId(null); setHoveredLabelId(null) }} className="text-[10px] text-faint hover:text-tertiary">
                             Cancel
                           </button>
-                          <button onClick={() => handleSaveDescription(label.id)} className="text-[10px] text-accent-text hover:text-accent-muted">
+                          <button onClick={() => handleSaveDescription(label.id)} className="text-[10px] text-ochre hover:text-paper">
                             Save
                           </button>
                         </div>
@@ -225,7 +225,7 @@ export function ArchiveReviewSidebar({
           ) : (
             <button
               onClick={() => setShowPopover(true)}
-              className="w-full text-left bg-transparent border border-dashed border-edge rounded px-2.5 py-1.5 text-[11px] text-accent-text hover:border-accent-border transition-colors"
+              className="w-full text-left bg-transparent border border-dashed border-edge rounded-sm px-2.5 py-1.5 text-[11px] text-muted hover:border-ochre-dim hover:text-ochre transition-colors"
             >
               + New label
             </button>

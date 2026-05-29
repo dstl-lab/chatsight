@@ -45,13 +45,15 @@ test('renders history rows', async () => {
 })
 
 test('shows filter tabs', async () => {
+  // Labels render lowercase in the DOM and are uppercased via CSS, so the
+  // accessible name is lowercase — match case-insensitively.
   renderHistory()
   await waitFor(() => {
-    expect(screen.getByRole('button', { name: 'All' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^all$/i })).toBeInTheDocument()
   })
-  expect(screen.getByRole('button', { name: 'Human' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Ai' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Skipped' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^human$/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^ai$/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /^skipped$/i })).toBeInTheDocument()
 })
 
 test('shows confidence percentage for AI items', async () => {
@@ -62,8 +64,9 @@ test('shows confidence percentage for AI items', async () => {
 })
 
 test('shows search input', async () => {
+  // Placeholder uses a typographic ellipsis (…); match by prefix.
   renderHistory()
   await waitFor(() => {
-    expect(screen.getByPlaceholderText('Search messages...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Search messages/)).toBeInTheDocument()
   })
 })

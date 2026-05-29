@@ -42,7 +42,7 @@ export function LabelReviewOverlay({ items, onDismiss }: Props) {
   if (items.length === 0) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onDismiss}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay" onClick={onDismiss}>
       <div
         className="bg-surface border border-edge rounded-xl p-6 w-full max-w-lg shadow-2xl flex flex-col max-h-[80vh]"
         onClick={e => e.stopPropagation()}
@@ -87,7 +87,7 @@ export function LabelReviewOverlay({ items, onDismiss }: Props) {
 
         <button
           onClick={onDismiss}
-          className="mt-4 w-full bg-accent hover:bg-accent-hover text-white text-sm rounded-lg px-4 py-2 transition-colors shrink-0"
+          className="mt-4 w-full border border-ochre bg-ochre text-bg-warm font-sans font-semibold text-sm rounded-sm px-4 py-2 hover:brightness-110 transition-all shrink-0"
         >
           Resume labeling
         </button>

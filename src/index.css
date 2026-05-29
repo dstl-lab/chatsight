@@ -240,11 +240,25 @@
   --color-faint: #6B6457;
   --color-bg-warm: #15130F;
 
-  /* Dark-adjusted rgba surfaces */
-  --color-accent-surface:   rgba(228, 181, 59, 0.15);
-  --color-ai-surface:       rgba(228, 181, 59, 0.12);
-  --color-success-surface:  rgba(143, 168, 118, 0.2);
-  --color-discover-surface: rgba(143, 168, 118, 0.1);
+  /* Dark-adjusted rgba surfaces + reassert ochre/gray tokens (semantic accent/ai
+     utilities otherwise fall through to dark theme blue/purple via @theme :root) */
+  --color-accent:            var(--app-ochre);
+  --color-accent-hover:      var(--app-ochre-dim);
+  --color-accent-text:       var(--app-ochre);
+  --color-accent-border:     var(--app-ochre-dim);
+  --color-accent-on-surface: var(--app-paper);
+  --color-accent-muted:      var(--app-ochre-dim);
+  --color-accent-surface:    rgba(228, 181, 59, 0.15);
+  --color-message-student:   var(--app-bg-warm);
+  --color-message-border:    var(--app-edge-warm);
+  --color-ai-action:         var(--app-ochre);
+  --color-ai-hover:          var(--app-ochre-dim);
+  --color-ai-text:           var(--app-ochre);
+  --color-ai-border:         var(--app-ochre-dim);
+  --color-ai-surface:        rgba(228, 181, 59, 0.12);
+  --color-ai-progress:       var(--app-ochre);
+  --color-success-surface:   rgba(143, 168, 118, 0.2);
+  --color-discover-surface:  rgba(143, 168, 118, 0.1);
 }
 
 /* Subtle warm radial gradients evoke the mockup's editorial atmosphere */

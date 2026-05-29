@@ -30,11 +30,11 @@ export default function DiscoverSection({
         <button
           onClick={onDiscover}
           disabled={discovering}
-          className="w-full text-xs py-1.5 px-2 rounded border border-dashed border-discover-border text-discover-strong hover:bg-discover-surface transition-colors disabled:opacity-50 disabled:cursor-wait"
+          className="w-full text-xs py-1.5 px-2 rounded border border-dashed border-ochre-dim text-ochre hover:bg-ochre/10 transition-colors disabled:opacity-50 disabled:cursor-wait"
         >
           {discovering ? (
             <span className="flex items-center justify-center gap-1.5">
-              <span className="inline-block w-3 h-3 border-2 border-discover-text border-t-transparent rounded-full animate-spin" />
+              <span className="inline-block w-3 h-3 border-2 border-ochre border-t-transparent rounded-full animate-spin" />
               Discovering...
             </span>
           ) : (
@@ -51,7 +51,7 @@ export default function DiscoverSection({
       ) : (
         <button
           onClick={onOpenModal}
-          className="w-full text-xs py-1.5 px-2 rounded border border-discover-border bg-discover-surface text-discover-strong hover:bg-discover-surface transition-colors"
+          className="w-full text-xs py-1.5 px-2 rounded border border-ochre-dim bg-ochre/10 text-ochre hover:bg-ochre/15 transition-colors"
         >
           ✦ {candidates.length} suggestion{candidates.length !== 1 ? 's' : ''}
         </button>
