@@ -62,6 +62,12 @@ export function QueuePage() {
 	} | null>(null);
 	const autolabelPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const suggestionCacheRef = useRef<Map<string, SuggestResponse>>(new Map());
+	// Serializes skip/advance. Each handler awaits an API call before advancing
+	// the index, so without this lock a rapid second press (or key auto-repeat)
+	// fires against a stale `currentMessage`/`currentIdx` closure — double-skipping
+	// one message and silently flying past the next. Set synchronously on entry,
+	// cleared in finally so a failed request can't wedge the queue.
+	const advancingRef = useRef(false);
 	const [remaining, setRemaining] = useState<number | null>(null);
 	const [history, setHistory] = useState<HistoryItem[]>([]);
 	const [reviewTarget, setReviewTarget] = useState<QueueItem | null>(null);
@@ -379,40 +385,41 @@ export function QueuePage() {
 	const handleApplySuggestionAndNext = useCallback(
 		async (labelId: number) => {
 			if (!currentMessage) return;
-			await api.applyLabel({
-				chatlog_id: currentMessage.chatlog_id,
-				message_index: currentMessage.message_index,
-				label_id: labelId,
-			});
-			const appliedLabel = labels.find((l) => l.id === labelId);
-			const allLabelNames = [
-				...labels.filter((l) => appliedLabelIds.has(l.id)).map((l) => l.name),
-				...(appliedLabel ? [appliedLabel.name] : []),
-			];
-			setNavStack((prev) => [...prev, currentMessage]);
-			setNavPos(null);
-			setUndoState({
-				message: currentMessage,
-				labelNames: allLabelNames,
-				fromSkippedTab: false,
-			});
-			await api.advanceMessage(
-				currentMessage.chatlog_id,
-				currentMessage.message_index,
-			);
-			setStats((s) => (s ? { ...s, labeled_count: s.labeled_count + 1 } : s));
-			setTimeout(
-				() =>
-					setUndoState((prev) =>
-						prev?.message === currentMessage ? null : prev,
-					),
-				8000,
-			);
-			setAppliedLabelIds(new Set());
-			advance();
-			api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
-			api.getRecentHistory(5).then(setHistory);
-			api.getLabels().then(setLabels);
+			if (advancingRef.current) return;
+			advancingRef.current = true;
+			const msg = currentMessage;
+			try {
+				await api.applyLabel({
+					chatlog_id: msg.chatlog_id,
+					message_index: msg.message_index,
+					label_id: labelId,
+				});
+				const appliedLabel = labels.find((l) => l.id === labelId);
+				const allLabelNames = [
+					...labels.filter((l) => appliedLabelIds.has(l.id)).map((l) => l.name),
+					...(appliedLabel ? [appliedLabel.name] : []),
+				];
+				setNavStack((prev) => [...prev, msg]);
+				setNavPos(null);
+				setUndoState({
+					message: msg,
+					labelNames: allLabelNames,
+					fromSkippedTab: false,
+				});
+				await api.advanceMessage(msg.chatlog_id, msg.message_index);
+				setStats((s) => (s ? { ...s, labeled_count: s.labeled_count + 1 } : s));
+				setTimeout(
+					() => setUndoState((prev) => (prev?.message === msg ? null : prev)),
+					8000,
+				);
+				setAppliedLabelIds(new Set());
+				advance();
+				api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
+				api.getRecentHistory(5).then(setHistory);
+				api.getLabels().then(setLabels);
+			} finally {
+				advancingRef.current = false;
+			}
 		},
 		[currentMessage, labels, appliedLabelIds, advance],
 	);
@@ -429,7 +436,7 @@ export function QueuePage() {
 		setAppliedLabelIds((prev) => new Set(prev).add(newLabel.id));
 	};
 
-	const handleNext = useCallback(async () => {
+	const handleNextInner = useCallback(async () => {
 		// Recalibration: blind phase → check match → reconcile or auto-advance
 		if (recalibration && recalibration.phase === "blind") {
 			const relabelIds = new Set(appliedLabelIds);
@@ -551,6 +558,19 @@ export function QueuePage() {
 		advance,
 	]);
 
+	// Guard wrapper: drops re-entrant calls (rapid double-press / key auto-repeat)
+	// while an advance is mid-flight, so the queue can't jump multiple messages
+	// per intended action. Mirrors the lock in handleSkip.
+	const handleNext = useCallback(async () => {
+		if (advancingRef.current) return;
+		advancingRef.current = true;
+		try {
+			await handleNextInner();
+		} finally {
+			advancingRef.current = false;
+		}
+	}, [handleNextInner]);
+
 	const handleUndo = useCallback(async () => {
 		if (!undoState) return;
 		await api.undoLabels(
@@ -599,16 +619,20 @@ export function QueuePage() {
 
 	const handleSkip = useCallback(async () => {
 		if (isReviewing || isBackNav || !currentMessage) return;
-		await api.skipMessage(
-			currentMessage.chatlog_id,
-			currentMessage.message_index,
-		);
-		setSkippedCount((s) => s + 1);
-		setStats((s) => (s ? { ...s, skipped_count: s.skipped_count + 1 } : s));
-		setAppliedLabelIds(new Set());
-		setNavStack((prev) => [...prev, currentMessage]);
-		setNavPos(null);
-		advance();
+		if (advancingRef.current) return;
+		advancingRef.current = true;
+		const msg = currentMessage;
+		try {
+			await api.skipMessage(msg.chatlog_id, msg.message_index);
+			setSkippedCount((s) => s + 1);
+			setStats((s) => (s ? { ...s, skipped_count: s.skipped_count + 1 } : s));
+			setAppliedLabelIds(new Set());
+			setNavStack((prev) => [...prev, msg]);
+			setNavPos(null);
+			advance();
+		} finally {
+			advancingRef.current = false;
+		}
 	}, [isReviewing, isBackNav, currentMessage, advance]);
 
 	// Keyboard shortcuts
@@ -616,6 +640,11 @@ export function QueuePage() {
 		const handler = (e: KeyboardEvent) => {
 			const tag = (document.activeElement as HTMLElement)?.tagName;
 			if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+			// Ignore OS key auto-repeat: holding (or fast-tapping) skip/label keys
+			// would otherwise fire one shortcut per repeat and run away through the
+			// queue. Every shortcut here is a discrete one-shot action.
+			if (e.repeat) return;
 
 			const num = parseInt(e.key);
 			if (num >= 1 && num <= 9) {
@@ -629,11 +658,13 @@ export function QueuePage() {
 			const rawKey = e.key.toLowerCase();
 			const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey;
 
+			// Submit/advance. `n` and Enter are convenience aliases for the
+			// configurable yes key. Deliberately NOT plain `z` — it would shadow
+			// the Ctrl+Z undo below (both have rawKey "z"), so Ctrl+Z never fired.
 			if (
 				pressedKey === keybinds.yes ||
 				rawKey === "enter" ||
-				rawKey === "n" ||
-				rawKey === "z"
+				rawKey === "n"
 			) {
 				if (!isBackNav && (isReviewing || appliedLabelIds.size > 0)) {
 					e.preventDefault(); // prevent focused button from firing a click
@@ -1040,8 +1071,11 @@ export function QueuePage() {
 
 	if (!displayedMessage && !isSkippedReview) {
 		return (
-			<div className="flex-1 flex items-center justify-center text-faint text-sm">
-				All messages labeled!
+			<div className="flex-1 flex items-center justify-center">
+				<div className="text-center">
+					<p className="font-mono text-[10px] tracking-[0.18em] uppercase text-ochre mb-2">Complete</p>
+					<p className="font-serif text-2xl text-paper">All messages labeled!</p>
+				</div>
 			</div>
 		);
 	}
@@ -1049,12 +1083,12 @@ export function QueuePage() {
 	return (
 		<div className="flex-1 flex flex-col min-h-0">
 			{recalibration && recalibration.phase === "blind" && (
-				<div className="bg-ai-surface border-b border-purple-500/30 px-4 py-2 flex items-center justify-between">
+				<div className="bg-elevated border-b border-edge px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<span className="bg-ai-action text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+						<span className="bg-ochre text-bg-warm text-[10px] font-semibold px-2 py-0.5 rounded-sm">
 							RECALIBRATION
 						</span>
-						<span className="text-ai-text text-xs">
+						<span className="text-muted text-xs">
 							Re-label this previously seen message to check consistency
 						</span>
 					</div>
@@ -1077,9 +1111,9 @@ export function QueuePage() {
 				</div>
 			)}
 			{recalibration && recalibration.phase === "reconcile" && (
-				<div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">
+				<div className="bg-warning-surface border-b border-warning-border px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<span className="bg-amber-500 text-black text-[10px] font-semibold px-2 py-0.5 rounded">
+						<span className="bg-warning text-bg-warm text-[10px] font-semibold px-2 py-0.5 rounded-sm">
 							MISMATCH
 						</span>
 						<span className="text-warning-name text-xs">
@@ -1106,7 +1140,7 @@ export function QueuePage() {
 				</div>
 			)}
 			{recalibrationToast === "match" && (
-				<div className="bg-success-surface border-b border-green-500/30 px-4 py-2 flex items-center gap-2">
+				<div className="bg-success-surface border-b border-success-border px-4 py-2 flex items-center gap-2">
 					<span className="text-success text-sm">✓</span>
 					<span className="text-success text-xs font-medium">
 						Consistent! Your labels matched your original labeling.
@@ -1187,7 +1221,7 @@ export function QueuePage() {
 							</span>
 							<button
 								onClick={handleUndo}
-								className="text-xs text-accent-text hover:text-accent-on-surface ml-4 shrink-0"
+								className="text-xs text-ochre hover:text-paper ml-4 shrink-0"
 							>
 								Undo
 							</button>
@@ -1256,7 +1290,7 @@ export function QueuePage() {
 			{import.meta.env.DEV && !recalibration && (
 				<button
 					onClick={handleForceRecalibration}
-					className="fixed bottom-4 left-57 z-50 text-[10px] font-mono text-ai-text bg-ai-surface border border-ai-border rounded px-2.5 py-1.5 hover:bg-ai-surface hover:border-ai-border transition-colors"
+					className="fixed bottom-4 left-57 z-50 text-[10px] font-mono text-faint bg-surface border border-edge rounded-sm px-2.5 py-1.5 hover:border-ochre-dim hover:text-muted transition-colors"
 					title="Dev-only: force-trigger a recalibration round"
 				>
 					DEV · trigger recalibration

@@ -67,10 +67,38 @@ const renderQueue = () =>
 
 test('pressing "s" calls skipMessage', async () => {
   mockSkipMessage.mockClear()
+  mockSkipMessage.mockResolvedValue(undefined)
   renderQueue()
   await waitFor(() => screen.getByText('Test message'))
   fireEvent.keyDown(document, { key: 's' })
   expect(mockSkipMessage).toHaveBeenCalledWith(1, 0)
+})
+
+test('key auto-repeat (held key) does not skip', async () => {
+  mockSkipMessage.mockClear()
+  mockSkipMessage.mockResolvedValue(undefined)
+  renderQueue()
+  await waitFor(() => screen.getByText('Test message'))
+  // OS-generated repeat events while a key is held must be ignored.
+  fireEvent.keyDown(document, { key: 's', repeat: true })
+  expect(mockSkipMessage).not.toHaveBeenCalled()
+})
+
+test('rapid double-press skips only once (no runaway)', async () => {
+  // Hold only the first skip open (mockReturnValueOnce, so the default resolved
+  // impl isn't clobbered for later tests) so both presses land mid-flight.
+  let release: (() => void) | null = null
+  const pending = new Promise<void>((res) => { release = () => res() })
+  mockSkipMessage.mockClear()
+  mockSkipMessage.mockReturnValueOnce(pending)
+  renderQueue()
+  await waitFor(() => screen.getByText('Test message'))
+  fireEvent.keyDown(document, { key: 's' })
+  fireEvent.keyDown(document, { key: 's' })
+  // The re-entrancy lock drops the second press until the first resolves.
+  expect(mockSkipMessage).toHaveBeenCalledTimes(1)
+  release?.()
+  await pending // let the in-flight skip settle before the test unmounts
 })
 
 test('pressing "1" applies the first label', async () => {
