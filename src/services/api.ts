@@ -2,7 +2,7 @@
 import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
-  HistoryItem, OrphanedMessagesResponse, ArchiveResponse, LabelReviewItem,
+  HistoryItem, LabelReviewItem,
   ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
@@ -121,14 +121,6 @@ export const api = {
     USE_MOCK ? Promise.resolve(mockApi.session)
              : req('/api/session/start', { method: 'POST' }),
 
-  getOrphanedMessages: (labelId: number): Promise<OrphanedMessagesResponse> =>
-    USE_MOCK ? Promise.resolve({ messages: [], count: 0 } as any)
-             : req(`/api/labels/${labelId}/orphaned-messages`),
-
-  archiveOrphaned: (ids: { chatlog_id: number, message_index: number }[]): Promise<ArchiveResponse> =>
-    USE_MOCK ? Promise.resolve({ archived: ids.length } as any)
-             : req('/api/history/archive-orphaned', { method: 'POST', ...json({ messages: ids }) }),
-
   // Concept Discovery
   discoverConcepts: (limit = 10): Promise<any> =>
     USE_MOCK ? Promise.resolve({ candidates: [], status: { cached: 0, total_unlabeled: 0, running: false } })
@@ -196,10 +188,6 @@ export const api = {
   getMessage: (chatlog_id: number, message_index: number): Promise<QueueItem> =>
     USE_MOCK ? Promise.resolve(mockApi.queue[0])
              : req(`/api/queue/message?chatlog_id=${chatlog_id}&message_index=${message_index}`),
-
-  archiveLabel: (labelId: number): Promise<ArchiveResponse> =>
-    USE_MOCK ? Promise.resolve({ archived_at: new Date().toISOString(), messages_returned_to_queue: 0 })
-             : req(`/api/labels/${labelId}/archive`, { method: 'PUT' }),
 
   promoteLabel: (labelId: number): Promise<SingleLabel> =>
     USE_MOCK ? Promise.resolve(mockApi.singleLabel)

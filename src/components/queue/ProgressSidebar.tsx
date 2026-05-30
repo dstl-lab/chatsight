@@ -32,7 +32,7 @@ interface Props {
   onSelectHistoryItem: (item: HistoryItem) => void
   reviewingKey: string | null
   onReorderLabels: (labelIds: number[]) => void
-  onArchiveLabel: (labelId: number) => void
+  onDeleteLabel: (labelId: number) => void
   candidates: ConceptCandidate[]
   onDiscover: () => void
   onOpenDiscoverModal: () => void
@@ -151,7 +151,7 @@ export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
-  onArchiveLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
+  onDeleteLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
   recalibration, recalibrationStats,
 }: Props) {
   const { keybinds } = useKeybinds()
@@ -446,7 +446,7 @@ export function ProgressSidebar({
           labelName={labels.find(l => l.id === contextMenu.labelId)?.name ?? ''}
           onRename={() => handleStartRename(contextMenu.labelId)}
           onEditDescription={() => handleStartDescriptionEdit(contextMenu.labelId)}
-          onArchive={() => { onArchiveLabel(contextMenu.labelId); setContextMenu(null) }}
+          onDelete={() => { onDeleteLabel(contextMenu.labelId); setContextMenu(null) }}
           onClose={() => setContextMenu(null)}
         />
       )}

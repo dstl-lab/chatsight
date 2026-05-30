@@ -417,7 +417,7 @@ function DeleteConfirmModal({ label, onClose, onConfirm }: { label: LabelDefinit
         </div>
         <h3 className="text-lg font-bold text-on-canvas mb-2">Delete "{label.name}"?</h3>
         <p className="text-sm text-faint mb-8 leading-relaxed">
-          This will remove the label definition. Existing applications will be preserved but the label itself will be gone.
+          This permanently removes the label and all of its applications.
         </p>
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2 text-xs font-bold text-faint hover:text-tertiary">Cancel</button>

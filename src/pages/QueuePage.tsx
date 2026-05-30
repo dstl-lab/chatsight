@@ -8,8 +8,6 @@ import type {
 	SuggestResponse,
 	UpdateLabelRequest,
 	HistoryItem,
-	OrphanedMessage,
-	ArchiveReviewState,
 	ConceptCandidate,
 	ConversationMessage,
 	LabelReviewItem,
@@ -20,9 +18,7 @@ import { api } from "../services/api";
 import { useKeybinds } from "../hooks/useKeybinds";
 import { ProgressSidebar } from "../components/queue/ProgressSidebar";
 import { MessageCard } from "../components/queue/MessageCard";
-import { ArchiveConfirmModal } from "../components/queue/ArchiveConfirmModal";
-import { ArchiveReviewBanner } from "../components/queue/ArchiveReviewBanner";
-import { ArchiveReviewSidebar } from "../components/queue/ArchiveReviewSidebar";
+import { DeleteLabelConfirmModal } from "../components/queue/DeleteLabelConfirmModal";
 import DiscoverModal from "../components/queue/DiscoverModal";
 import { LabelReviewOverlay } from "../components/queue/LabelReviewOverlay";
 
@@ -72,15 +68,10 @@ export function QueuePage() {
 	const [history, setHistory] = useState<HistoryItem[]>([]);
 	const [reviewTarget, setReviewTarget] = useState<QueueItem | null>(null);
 	const [showConversation, setShowConversation] = useState(false);
-	const [archiveReview, setArchiveReview] = useState<ArchiveReviewState | null>(
-		null,
-	);
-	const [archiveConfirm, setArchiveConfirm] = useState<{
+	const [deleteConfirm, setDeleteConfirm] = useState<{
 		labelId: number;
 		labelName: string;
-		totalApplications: number;
-		orphanedCount: number;
-		orphanedMessages: OrphanedMessage[];
+		applicationCount: number;
 	} | null>(null);
 	const [candidates, setCandidates] = useState<ConceptCandidate[]>([]);
 	const [discovering, setDiscovering] = useState(false);
@@ -125,9 +116,9 @@ export function QueuePage() {
 	// Single source of truth for the on-screen message + which mode produced
 	// it. Handlers should branch on `displayMode` rather than independently
 	// testing recalibration / backNav / reviewTarget — when those got out of
-	// sync, archive-review keyboard handlers used to apply labels to the
+	// sync, history-review keyboard handlers used to apply labels to the
 	// wrong message.
-	type DisplayMode = "recalibration" | "backnav" | "archive-review" | "queue";
+	type DisplayMode = "recalibration" | "backnav" | "history-review" | "queue";
 	const { displayedMessage, displayMode } = (() => {
 		if (recalibration?.item) {
 			return {
@@ -144,7 +135,7 @@ export function QueuePage() {
 		if (reviewTarget) {
 			return {
 				displayedMessage: reviewTarget,
-				displayMode: "archive-review" as DisplayMode,
+				displayMode: "history-review" as DisplayMode,
 			};
 		}
 		return {
@@ -152,7 +143,7 @@ export function QueuePage() {
 			displayMode: "queue" as DisplayMode,
 		};
 	})();
-	const isReviewing = displayMode === "archive-review";
+	const isReviewing = displayMode === "history-review";
 	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
 
 	const loadQueue = useCallback(async () => {
@@ -379,7 +370,7 @@ export function QueuePage() {
 			}
 			api.getLabels().then(setLabels);
 		},
-		[displayedMessage, appliedLabelIds, archiveReview],
+		[displayedMessage, appliedLabelIds],
 	);
 
 	const handleApplySuggestionAndNext = useCallback(
@@ -648,10 +639,7 @@ export function QueuePage() {
 
 			const num = parseInt(e.key);
 			if (num >= 1 && num <= 9) {
-				const availableLabels = archiveReview
-					? labels.filter((l) => l.id !== archiveReview.labelId)
-					: labels;
-				const label = availableLabels[num - 1];
+				const label = labels[num - 1];
 				if (label) handleToggleLabel(label.id);
 				return;
 			}
@@ -716,7 +704,6 @@ export function QueuePage() {
 		appliedLabelIds,
 		isReviewing,
 		isBackNav,
-		archiveReview,
 		recalibration,
 		keybinds,
 		handleToggleLabel,
@@ -807,33 +794,28 @@ export function QueuePage() {
 		}
 	}, [recalibration]);
 
-	const handleArchiveLabel = useCallback(
-		async (labelId: number) => {
+	const handleDeleteLabel = useCallback(
+		(labelId: number) => {
 			const label = labels.find((l) => l.id === labelId);
 			if (!label) return;
-			const orphanedData = await api.getOrphanedMessages(labelId);
-			setArchiveConfirm({
+			setDeleteConfirm({
 				labelId,
 				labelName: label.name,
-				totalApplications: label.count,
-				orphanedCount: orphanedData.count,
-				orphanedMessages: orphanedData.messages,
+				applicationCount: label.count,
 			});
 		},
 		[labels],
 	);
 
-	const handleArchiveAnyway = useCallback(async () => {
-		if (!archiveConfirm) return;
-		const archivedId = archiveConfirm.labelId;
-		await api.archiveLabel(archivedId);
-		setArchiveConfirm(null);
-		// Drop the archived label from any in-memory toggle state so a subsequent
-		// re-application doesn't target a now-archived label id.
+	const handleConfirmDeleteLabel = useCallback(async () => {
+		if (!deleteConfirm) return;
+		const deletedId = deleteConfirm.labelId;
+		await api.deleteLabel(deletedId, true);
+		setDeleteConfirm(null);
 		setAppliedLabelIds((prev) => {
-			if (!prev.has(archivedId)) return prev;
+			if (!prev.has(deletedId)) return prev;
 			const next = new Set(prev);
-			next.delete(archivedId);
+			next.delete(deletedId);
 			return next;
 		});
 		const [lbls, q, st] = await Promise.all([
@@ -847,104 +829,7 @@ export function QueuePage() {
 		setStats(st);
 		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
 		api.getRecentHistory(5).then(setHistory);
-	}, [archiveConfirm]);
-
-	const handleEnterReviewMode = useCallback(() => {
-		if (!archiveConfirm) return;
-		setArchiveReview({
-			labelId: archiveConfirm.labelId,
-			labelName: archiveConfirm.labelName,
-			orphanedMessages: archiveConfirm.orphanedMessages,
-			completedMessageKeys: new Set(),
-		});
-		setArchiveConfirm(null);
-		if (archiveConfirm.orphanedMessages.length > 0) {
-			const first = archiveConfirm.orphanedMessages[0];
-			api.getMessage(first.chatlog_id, first.message_index).then((msg) => {
-				setReviewTarget(msg);
-			});
-		}
-	}, [archiveConfirm]);
-
-	const handleSelectReviewMessage = useCallback(
-		(chatlogId: number, messageIndex: number) => {
-			// Mark current message as completed if it has labels applied
-			if (archiveReview && displayedMessage && appliedLabelIds.size > 0) {
-				const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`;
-				setArchiveReview((prev) => {
-					if (!prev) return prev;
-					const next = new Set(prev.completedMessageKeys);
-					next.add(key);
-					return { ...prev, completedMessageKeys: next };
-				});
-			}
-			api.getMessage(chatlogId, messageIndex).then((msg) => {
-				setReviewTarget(msg);
-			});
-		},
-		[archiveReview, displayedMessage, appliedLabelIds],
-	);
-
-	const handleSkipAndArchive = useCallback(async () => {
-		if (!archiveReview) return;
-		// Mark current message as completed if it has labels
-		if (displayedMessage && appliedLabelIds.size > 0) {
-			const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`;
-			setArchiveReview((prev) => {
-				if (!prev) return prev;
-				const next = new Set(prev.completedMessageKeys);
-				next.add(key);
-				return { ...prev, completedMessageKeys: next };
-			});
-		}
-		await api.archiveLabel(archiveReview.labelId);
-		setArchiveReview(null);
-		setReviewTarget(null);
-		const [lbls, q, st] = await Promise.all([
-			api.getLabels(),
-			api.getQueue(20),
-			api.getQueueStats(),
-		]);
-		setLabels(lbls);
-		setQueue(q);
-		setCurrentIdx(0);
-		setStats(st);
-		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
-		api.getRecentHistory(5).then(setHistory);
-	}, [archiveReview, displayedMessage, appliedLabelIds]);
-
-	const handleCompleteArchive = useCallback(async () => {
-		if (!archiveReview) return;
-		// Mark current message as completed if it has labels
-		if (displayedMessage && appliedLabelIds.size > 0) {
-			const key = `${displayedMessage.chatlog_id}-${displayedMessage.message_index}`;
-			setArchiveReview((prev) => {
-				if (!prev) return prev;
-				const next = new Set(prev.completedMessageKeys);
-				next.add(key);
-				return { ...prev, completedMessageKeys: next };
-			});
-		}
-		await api.archiveLabel(archiveReview.labelId);
-		setArchiveReview(null);
-		setReviewTarget(null);
-		const [lbls, q, st] = await Promise.all([
-			api.getLabels(),
-			api.getQueue(20),
-			api.getQueueStats(),
-		]);
-		setLabels(lbls);
-		setQueue(q);
-		setCurrentIdx(0);
-		setStats(st);
-		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
-		api.getRecentHistory(5).then(setHistory);
-	}, [archiveReview, displayedMessage, appliedLabelIds]);
-
-	const handleCancelArchiveReview = useCallback(() => {
-		setArchiveReview(null);
-		setReviewTarget(null);
-	}, []);
+	}, [deleteConfirm]);
 
 	const handleDismissLabelReview = useCallback(() => {
 		setShowLabelReview(false);
@@ -1147,71 +1032,43 @@ export function QueuePage() {
 					</span>
 				</div>
 			)}
-			{archiveReview && (
-				<ArchiveReviewBanner
-					labelName={archiveReview.labelName}
-					remainingCount={
-						archiveReview.orphanedMessages.length -
-						archiveReview.completedMessageKeys.size
-					}
-					onSkipAndArchive={handleSkipAndArchive}
-					onCompleteArchive={handleCompleteArchive}
-					onCancel={handleCancelArchiveReview}
-				/>
-			)}
 			<div className="flex-1 flex min-h-0">
-				{archiveReview ? (
-					<ArchiveReviewSidebar
-						orphanedMessages={archiveReview.orphanedMessages}
-						completedMessageKeys={archiveReview.completedMessageKeys}
-						selectedChatlogId={displayedMessage?.chatlog_id ?? null}
-						selectedMessageIndex={displayedMessage?.message_index ?? null}
-						onSelectMessage={handleSelectReviewMessage}
-						labels={labels}
-						archivedLabelId={archiveReview.labelId}
-						appliedLabelIds={appliedLabelIds}
-						onToggleLabel={handleToggleLabel}
-						onCreateAndApply={handleCreateAndApply}
-						onUpdateLabel={handleUpdateLabel}
-					/>
-				) : (
-					<ProgressSidebar
-						session={session}
-						labels={labels}
-						stats={stats}
-						skippedCount={skippedCount}
-						appliedLabelIds={appliedLabelIds}
-						onToggleLabel={handleToggleLabel}
-						onCreateAndApply={handleCreateAndApply}
-						onUpdateLabel={handleUpdateLabel}
-						onStartAutolabel={handleStartAutolabel}
-						autolabelStatus={autolabelStatus}
-						remaining={remaining}
-						history={history}
-						onSelectHistoryItem={handleSelectHistoryItem}
-						reviewingKey={reviewingKey}
-						onReorderLabels={handleReorderLabels}
-						onArchiveLabel={handleArchiveLabel}
-						candidates={candidates}
-						onDiscover={handleDiscover}
-						onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
-						discovering={discovering}
-						recalibration={
-							recalibration
-								? {
-										phase: recalibration.phase,
-										originalLabelIds: new Set(
-											recalibration.item.original_label_ids,
-										),
-										relabelIds: recalibration.relabelIds,
-									}
-								: null
-						}
-						recalibrationStats={recalibrationStats}
-					/>
-				)}
+				<ProgressSidebar
+					session={session}
+					labels={labels}
+					stats={stats}
+					skippedCount={skippedCount}
+					appliedLabelIds={appliedLabelIds}
+					onToggleLabel={handleToggleLabel}
+					onCreateAndApply={handleCreateAndApply}
+					onUpdateLabel={handleUpdateLabel}
+					onStartAutolabel={handleStartAutolabel}
+					autolabelStatus={autolabelStatus}
+					remaining={remaining}
+					history={history}
+					onSelectHistoryItem={handleSelectHistoryItem}
+					reviewingKey={reviewingKey}
+					onReorderLabels={handleReorderLabels}
+					onDeleteLabel={handleDeleteLabel}
+					candidates={candidates}
+					onDiscover={handleDiscover}
+					onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
+					discovering={discovering}
+					recalibration={
+						recalibration
+							? {
+									phase: recalibration.phase,
+									originalLabelIds: new Set(
+										recalibration.item.original_label_ids,
+									),
+									relabelIds: recalibration.relabelIds,
+								}
+							: null
+					}
+					recalibrationStats={recalibrationStats}
+				/>
 				<div className="flex-1 flex flex-col min-h-0">
-					{undoState && !archiveReview && (
+					{undoState && (
 						<div className="mx-4 mt-3 flex items-center justify-between bg-surface border border-edge rounded px-4 py-2">
 							<span className="text-xs text-tertiary">
 								Labeled as{" "}
@@ -1231,9 +1088,9 @@ export function QueuePage() {
 						key={`${displayedMessage.chatlog_id}-${displayedMessage.message_index}`}
 						item={displayedMessage}
 						aiUnlocked={aiUnlocked}
-						suggestion={archiveReview || isRecalibrating ? null : suggestion}
+						suggestion={isRecalibrating ? null : suggestion}
 						suggestionLoading={
-							!archiveReview && !isRecalibrating && suggestionLoading
+							!isRecalibrating && suggestionLoading
 						}
 						onSkip={handleSkip}
 						onNext={handleNext}
@@ -1260,14 +1117,12 @@ export function QueuePage() {
 					/>
 				</div>
 			</div>
-			{archiveConfirm && (
-				<ArchiveConfirmModal
-					labelName={archiveConfirm.labelName}
-					totalApplications={archiveConfirm.totalApplications}
-					orphanedCount={archiveConfirm.orphanedCount}
-					onReviewAndRelabel={handleEnterReviewMode}
-					onArchiveAnyway={handleArchiveAnyway}
-					onCancel={() => setArchiveConfirm(null)}
+			{deleteConfirm && (
+				<DeleteLabelConfirmModal
+					labelName={deleteConfirm.labelName}
+					applicationCount={deleteConfirm.applicationCount}
+					onConfirm={handleConfirmDeleteLabel}
+					onCancel={() => setDeleteConfirm(null)}
 				/>
 			)}
 			{discoverModalOpen && (

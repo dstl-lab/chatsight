@@ -47,8 +47,7 @@ vi.mock('../services/api', () => ({
     discoverConcepts: vi.fn().mockResolvedValue(undefined),
     resolveCandidate: vi.fn().mockResolvedValue(undefined),
     reorderLabels: vi.fn().mockResolvedValue(undefined),
-    getOrphanedMessages: vi.fn().mockResolvedValue({ messages: [], count: 0 }),
-    archiveLabel: vi.fn().mockResolvedValue({ archived_at: '', messages_returned_to_queue: 0 }),
+    deleteLabel: vi.fn().mockResolvedValue({ ok: true, deleted_applications: 0 }),
     getMessage: vi.fn().mockResolvedValue({
       chatlog_id: 1, message_index: 0, message_text: 'Test',
       context_before: null, context_after: null,

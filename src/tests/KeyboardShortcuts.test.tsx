@@ -42,7 +42,7 @@ vi.mock('../services/api', () => ({
     getCandidates: vi.fn().mockResolvedValue([]),
     discoverConcepts: vi.fn().mockResolvedValue({ run_id: '123', status: 'running' }),
     getEmbedStatus: vi.fn().mockResolvedValue({ cached: 0, total_unlabeled: 0, running: false }),
-    archiveLabel: vi.fn().mockResolvedValue({ archived_at: '', messages_returned_to_queue: 0 }),
+    deleteLabel: vi.fn().mockResolvedValue({ ok: true, deleted_applications: 0 }),
     getLabelReview: vi.fn().mockResolvedValue([]),
     getSkippedMessages: vi.fn().mockResolvedValue([]),
     getConversationMessages: vi.fn().mockResolvedValue([]),
@@ -52,7 +52,6 @@ vi.mock('../services/api', () => ({
     getRecalibrationStats: vi.fn().mockResolvedValue(null),
     saveRecalibration: vi.fn().mockResolvedValue({ matched: true, trend: 'steady' }),
     resolveCandidate: vi.fn().mockResolvedValue(undefined),
-    getOrphanedMessages: vi.fn().mockResolvedValue({ messages: [], count: 0 }),
   },
 }))
 

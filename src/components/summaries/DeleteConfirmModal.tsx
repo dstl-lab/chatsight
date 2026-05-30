@@ -15,7 +15,7 @@ export function DeleteConfirmModal({ labelName, onConfirm, onCancel }: DeleteCon
       <div className="bg-modal-deep border border-brick-dim rounded-md p-6 w-[480px] max-w-[90vw]">
         <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-brick mb-3">Delete label</div>
         <p className="font-serif text-[14px] text-on-canvas mb-3 leading-[1.55]">
-          This archives the label and returns its messages to the unlabeled pool.
+          This permanently deletes the label and its run data.
           Type <span className="font-mono text-brick">{labelName}</span> to confirm.
         </p>
         <input

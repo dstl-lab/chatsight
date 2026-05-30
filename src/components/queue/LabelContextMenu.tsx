@@ -6,11 +6,11 @@ interface Props {
   labelName: string
   onRename: () => void
   onEditDescription: () => void
-  onArchive?: () => void
+  onDelete?: () => void
   onClose: () => void
 }
 
-export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription, onArchive, onClose }: Props) {
+export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription, onDelete, onClose }: Props) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -48,14 +48,14 @@ export function LabelContextMenu({ x, y, labelName, onRename, onEditDescription,
       >
         Edit description
       </button>
-      {onArchive && (
+      {onDelete && (
         <>
           <div className="border-t border-edge my-1" />
           <button
-            onClick={() => { onArchive(); onClose() }}
+            onClick={() => { onDelete(); onClose() }}
             className="w-full text-left px-3 py-1.5 text-[12px] text-danger-text hover:bg-elevated-hl transition-colors"
           >
-            Archive
+            Delete
           </button>
         </>
       )}
