@@ -113,3 +113,31 @@ test('shows loading skeleton while data is loading', () => {
   expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
   expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument()
 })
+
+test('shows tutorial overlay on fresh queue with document-load gate', async () => {
+  sessionStorage.setItem('chatsight_queue_tutorial_reload_gate', '1')
+  vi.mocked(apiModule.api.getLabels).mockResolvedValueOnce([])
+  vi.mocked(apiModule.api.getQueueStats).mockResolvedValueOnce({
+    total_messages: 100,
+    labeled_count: 0,
+    skipped_count: 0,
+  })
+  renderQueue()
+  await waitFor(() => {
+    expect(screen.getByText('How the queue works')).toBeInTheDocument()
+  })
+})
+
+test('does not show tutorial when labels already exist', async () => {
+  sessionStorage.setItem('chatsight_queue_tutorial_reload_gate', '1')
+  vi.mocked(apiModule.api.getQueueStats).mockResolvedValueOnce({
+    total_messages: 100,
+    labeled_count: 0,
+    skipped_count: 0,
+  })
+  renderQueue()
+  await waitFor(() => {
+    expect(screen.getByText('Can you explain what a DataFrame is?')).toBeInTheDocument()
+  })
+  expect(screen.queryByText('How the queue works')).not.toBeInTheDocument()
+})

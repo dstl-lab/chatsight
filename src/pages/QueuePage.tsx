@@ -21,6 +21,15 @@ import { MessageCard } from "../components/queue/MessageCard";
 import { DeleteLabelConfirmModal } from "../components/queue/DeleteLabelConfirmModal";
 import DiscoverModal from "../components/queue/DiscoverModal";
 import { LabelReviewOverlay } from "../components/queue/LabelReviewOverlay";
+import {
+	QueueTutorialOverlay,
+	type QueueTutorialStep,
+} from "../components/queue/QueueTutorialOverlay";
+import {
+	markQueueTutorialDone,
+	shouldOfferFirstQueueTutorial,
+	takeQueueTutorialReloadGate,
+} from "../components/queue/queueTutorial";
 
 interface UndoState {
 	message: QueueItem;
@@ -99,6 +108,11 @@ export function QueuePage() {
 	const [recalibrationToast, setRecalibrationToast] = useState<"match" | null>(
 		null,
 	);
+	const [tutorialStep, setTutorialStep] = useState<QueueTutorialStep | null>(
+		null,
+	);
+
+	const tutorialActive = tutorialStep !== null;
 
 	const currentMessage = queue[currentIdx] ?? null;
 
@@ -173,6 +187,14 @@ export function QueuePage() {
 				setStats(st.value);
 				setSkippedCount(st.value.skipped_count);
 			}
+			if (
+				lbls.status === "fulfilled" &&
+				st.status === "fulfilled" &&
+				shouldOfferFirstQueueTutorial(lbls.value.length, st.value.labeled_count)
+			) {
+				takeQueueTutorialReloadGate();
+				setTutorialStep(0);
+			}
 			if (pos.status === "fulfilled") setRemaining(pos.value.total_remaining);
 			if (hist.status === "fulfilled") setHistory(hist.value);
 			if (cands.status === "fulfilled") setCandidates(cands.value);
@@ -199,6 +221,22 @@ export function QueuePage() {
 				.getRecalibrationStats()
 				.then(setRecalibrationStats)
 				.catch(() => {});
+		});
+	}, []);
+
+	const finishTutorial = useCallback(() => {
+		markQueueTutorialDone();
+		setTutorialStep(null);
+	}, []);
+
+	const advanceTutorial = useCallback(() => {
+		setTutorialStep((step) => {
+			if (step === null) return null;
+			if (step >= 4) {
+				markQueueTutorialDone();
+				return null;
+			}
+			return (step + 1) as QueueTutorialStep;
 		});
 	}, []);
 
@@ -629,6 +667,8 @@ export function QueuePage() {
 	// Keyboard shortcuts
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
+			if (tutorialActive) return;
+
 			const tag = (document.activeElement as HTMLElement)?.tagName;
 			if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -710,6 +750,7 @@ export function QueuePage() {
 		handleNext,
 		handleSkip,
 		handleUndo,
+		tutorialActive,
 	]);
 
 	const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
@@ -1066,6 +1107,7 @@ export function QueuePage() {
 							: null
 					}
 					recalibrationStats={recalibrationStats}
+					tutorialDisabled={tutorialActive}
 				/>
 				<div className="flex-1 flex flex-col min-h-0">
 					{undoState && (
@@ -1114,6 +1156,7 @@ export function QueuePage() {
 						onSelectConversationMessage={handleSelectConversationMessage}
 						onToggleLabelForMessage={handleToggleLabelForMessage}
 						onCreateLabelForMessage={handleCreateLabelForMessage}
+						tutorialDisabled={tutorialActive}
 					/>
 				</div>
 			</div>
@@ -1140,6 +1183,13 @@ export function QueuePage() {
 				<LabelReviewOverlay
 					items={labelReviewItems}
 					onDismiss={handleDismissLabelReview}
+				/>
+			)}
+			{tutorialStep !== null && (
+				<QueueTutorialOverlay
+					step={tutorialStep}
+					onAdvance={advanceTutorial}
+					onSkip={finishTutorial}
 				/>
 			)}
 			{import.meta.env.DEV && !recalibration && (

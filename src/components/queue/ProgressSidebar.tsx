@@ -43,6 +43,7 @@ interface Props {
     relabelIds: Set<number>
   } | null
   recalibrationStats: RecalibrationStats | null
+  tutorialDisabled?: boolean
 }
 
 interface SortableLabelItemProps {
@@ -63,6 +64,7 @@ interface SortableLabelItemProps {
   onSetRenameValue: (v: string) => void
   onConfirmRename: () => void
   onCancelRename: () => void
+  tutorialDisabled?: boolean
 }
 
 function SortableLabelItem({
@@ -71,6 +73,7 @@ function SortableLabelItem({
   onHover, onHoverEnd,
   onSetEditDesc, onCancelEditing, onSaveDescription,
   onContextMenu, isRenaming, renameValue, onSetRenameValue, onConfirmRename, onCancelRename,
+  tutorialDisabled,
 }: SortableLabelItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: label.id })
   const style = {
@@ -102,11 +105,12 @@ function SortableLabelItem({
       ) : (
         <button
           onClick={onToggle}
+          disabled={tutorialDisabled}
           className={`w-full text-left flex items-center rounded-sm px-2.5 py-1.5 font-serif text-[12px] transition-colors ${
             isApplied
               ? 'bg-ochre/10 border border-ochre-dim text-paper'
               : 'bg-surface border border-edge text-on-surface hover:bg-elevated hover:border-ochre-dim/50'
-          }`}
+          } ${tutorialDisabled ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <span className="font-serif truncate flex-1">{label.name}</span>
           {index < 9 && (
@@ -153,6 +157,7 @@ export function ProgressSidebar({
   onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
   onDeleteLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
   recalibration, recalibrationStats,
+  tutorialDisabled = false,
 }: Props) {
   const { keybinds } = useKeybinds()
   const [showPopover, setShowPopover] = useState(false)
@@ -259,7 +264,7 @@ export function ProgressSidebar({
         )}
       </div>
 
-      <div className="shrink-0 flex flex-col gap-3">
+      <div className="shrink-0 flex flex-col gap-3" data-tutorial="ai-milestones">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">AI suggestions</p>
           {suggestUnlocked ? (
@@ -321,7 +326,7 @@ export function ProgressSidebar({
         />
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-tutorial="label-list">
         <p className="text-[10px] uppercase tracking-widest text-faint mb-2">
           {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
         </p>
@@ -366,6 +371,7 @@ export function ProgressSidebar({
                       onSetRenameValue={setRenameValue}
                       onConfirmRename={() => handleConfirmRename(label.id)}
                       onCancelRename={() => setRenamingLabelId(null)}
+                      tutorialDisabled={tutorialDisabled}
                     />
                     {diffBadge && (
                       <span className={`text-[9px] font-semibold tracking-wider ml-2.5 ${diffBadge.color}`}>
@@ -388,7 +394,8 @@ export function ProgressSidebar({
           ) : (
             <button
               onClick={() => setShowPopover(true)}
-              className="w-full text-left bg-transparent border border-dashed border-edge rounded-sm px-2.5 py-1.5 text-[11px] text-muted hover:border-ochre-dim hover:text-ochre transition-colors"
+              disabled={tutorialDisabled}
+              className={`w-full text-left bg-transparent border border-dashed border-edge rounded-sm px-2.5 py-1.5 text-[11px] text-muted hover:border-ochre-dim hover:text-ochre transition-colors ${tutorialDisabled ? 'opacity-50 pointer-events-none' : ''}`}
             >
               + New label
             </button>
