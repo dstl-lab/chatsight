@@ -43,8 +43,7 @@ from schemas import (
     MergeLabelRequest, SplitLabelRequest, SplitAutoLabelRequest, ReorderLabelsRequest,
     AdvanceRequest, UndoRequest, LabelExampleResponse, LabelDefinitionResponse, PairedLabelSummary,
     QueueItemResponse, SessionResponse, LabelApplicationResponse, ChatlogSummary,
-    ChatlogResponse, OrphanedMessagesResponse, OrphanedMessageItem, ArchiveResponse,
-    DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
+    ChatlogResponse, DiscoverConceptsResponse, ConceptCandidateResponse, ResolveCandidateRequest, EmbedStatusResponse,
     LabelReviewResponse,
     RecalibrationItemResponse, SaveRecalibrationRequest, SaveRecalibrationResponse, RecalibrationStatsResponse,
     CreateSingleLabelRequest, QueueLabelRequest, DecideRequest,
@@ -671,91 +670,6 @@ def generate_label_description(label_id: int, db: Session = Depends(get_session)
     )
 
 
-@app.get("/api/labels/{label_id}/orphaned-messages", response_model=OrphanedMessagesResponse)
-def get_orphaned_messages(label_id: int, db: Session = Depends(get_session)):
-    """Messages that have this label as their ONLY active label."""
-    label = db.get(LabelDefinition, label_id)
-    if not label:
-        raise HTTPException(status_code=404, detail="Label not found")
-
-    # Get all (chatlog_id, message_index) pairs where this multi-mode label applies.
-    target_pairs = db.exec(
-        select(LabelApplication.chatlog_id, LabelApplication.message_index)
-        .where(LabelApplication.label_id == label_id)
-        .where(_is_multi_application())
-    ).all()
-
-    orphaned = []
-    for chatlog_id, message_index in target_pairs:
-        other_active = db.exec(
-            select(func.count(LabelApplication.id))
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(
-                LabelApplication.chatlog_id == chatlog_id,
-                LabelApplication.message_index == message_index,
-                LabelApplication.label_id != label_id,
-                LabelDefinition.archived_at == None,  # noqa: E711
-                _is_multi_application(),
-            )
-        ).one()
-        if other_active == 0:
-            cached = db.exec(
-                select(MessageCache).where(
-                    MessageCache.chatlog_id == chatlog_id,
-                    MessageCache.message_index == message_index,
-                )
-            ).first()
-            preview = (cached.message_text[:100] + "...") if cached and len(cached.message_text) > 100 else (cached.message_text if cached else "")
-            orphaned.append(OrphanedMessageItem(
-                chatlog_id=chatlog_id,
-                message_index=message_index,
-                preview_text=preview,
-            ))
-
-    return OrphanedMessagesResponse(messages=orphaned, count=len(orphaned))
-
-
-@app.put("/api/labels/{label_id}/archive", response_model=ArchiveResponse)
-def archive_label(label_id: int, db: Session = Depends(get_session)):
-    label = db.get(LabelDefinition, label_id)
-    if not label:
-        raise HTTPException(status_code=404, detail="Label not found")
-    if label.archived_at is not None:
-        raise HTTPException(status_code=400, detail="Label already archived")
-
-    target_pairs = db.exec(
-        select(LabelApplication.chatlog_id, LabelApplication.message_index)
-        .where(LabelApplication.label_id == label_id)
-        .where(_is_multi_application())
-    ).all()
-
-    orphan_count = 0
-    for chatlog_id, message_index in target_pairs:
-        other_active = db.exec(
-            select(func.count(LabelApplication.id))
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(
-                LabelApplication.chatlog_id == chatlog_id,
-                LabelApplication.message_index == message_index,
-                LabelApplication.label_id != label_id,
-                LabelDefinition.archived_at == None,  # noqa: E711
-                _is_multi_application(),
-            )
-        ).one()
-        if other_active == 0:
-            orphan_count += 1
-
-    label.archived_at = datetime.utcnow()
-    db.add(label)
-    db.commit()
-    db.refresh(label)
-
-    return ArchiveResponse(
-        archived_at=label.archived_at,
-        messages_returned_to_queue=orphan_count,
-    )
-
-
 @app.post("/api/labels/{multi_id}/promote", response_model=SingleLabelResponse)
 def promote_label(multi_id: int, db: Session = Depends(get_session)):
     """Promote a multi-label to /run by creating a paired single-mode label.
@@ -763,9 +677,6 @@ def promote_label(multi_id: int, db: Session = Depends(get_session)):
     multi-labeled with the source. Idempotent: returns the existing paired
     single if one already exists and is not archived."""
     src = _assert_multi_write(db, multi_id)
-    if src.archived_at is not None:
-        raise HTTPException(status_code=409, detail="Cannot promote an archived label")
-
     existing = db.exec(
         select(LabelDefinition)
         .where(LabelDefinition.paired_label_id == multi_id)
@@ -1956,18 +1867,6 @@ def split_label_autolabel(
                     }
                 )
 
-    # Defer deletion of the original label and its applications to the
-    # background task. If we deleted now and the Gemini classification later
-    # failed (rate limit, content policy, network), the human-applied examples
-    # would be permanently lost with no retry path. Instead: archive the
-    # original so the UI hides it, leave its rows intact as a recovery
-    # snapshot, and let the background task purge them after classification
-    # succeeds. If the background task fails, the original remains archived
-    # but un-archivable for retry.
-    if original_label.id not in [label_a.id, label_b.id]:
-        original_label.archived_at = datetime.utcnow()
-        db.add(original_label)
-
     db.commit()
 
     # Start background task. It will delete original_label_id (and its
@@ -2050,16 +1949,27 @@ def delete_label(
     if not label:
         raise HTTPException(status_code=404, detail="Label not found")
 
-    apps = db.exec(
-        select(LabelApplication).where(LabelApplication.label_id == label_id)
-    ).all()
-    if apps and not force:
+    app_count = db.exec(
+        select(func.count(LabelApplication.id)).where(
+            LabelApplication.label_id == label_id
+        )
+    ).one()
+    if app_count and not force:
         raise HTTPException(
             status_code=400, detail="Label has applications, use force=true to delete"
         )
+
+    deleted_apps = _purge_multi_label(db, label_id)
+
+    for paired in db.exec(
+        select(LabelDefinition).where(LabelDefinition.paired_label_id == label_id)
+    ).all():
+        paired.paired_label_id = None
+        db.add(paired)
+
     db.delete(label)
     db.commit()
-    return DeleteLabelResponse(ok=True, deleted_applications=len(apps))
+    return DeleteLabelResponse(ok=True, deleted_applications=deleted_apps)
 
 
 # ── Concept Induction ──────────────────────────────────────────────
@@ -4776,6 +4686,18 @@ def patch_single_label(
 
     # Return the freshly-computed detail by reusing the existing handler.
     return get_single_label_detail(label_id, db=db)
+
+
+def _purge_multi_label(db: Session, label_id: int) -> int:
+    """Remove all applications and predictions for a multi-label. Returns app count."""
+    apps = db.exec(
+        select(LabelApplication).where(LabelApplication.label_id == label_id)
+    ).all()
+    for app in apps:
+        db.delete(app)
+    for table in (LabelPrediction,):
+        db.exec(delete(table).where(table.label_id == label_id))  # type: ignore[attr-defined]
+    return len(apps)
 
 
 def _purge_single_label_run(db: Session, label_id: int) -> None:
