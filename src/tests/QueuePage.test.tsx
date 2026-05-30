@@ -47,7 +47,7 @@ vi.mock('../services/api', () => ({
     getCandidates: vi.fn().mockResolvedValue([]),
     discoverConcepts: vi.fn().mockResolvedValue({ run_id: '123', status: 'running' }),
     getEmbedStatus: vi.fn().mockResolvedValue({ cached: 0, total_unlabeled: 0, running: false }),
-    archiveLabel: vi.fn().mockResolvedValue({ archived_at: '', messages_returned_to_queue: 0 }),
+    deleteLabel: vi.fn().mockResolvedValue({ ok: true, deleted_applications: 0 }),
     getLabelReview: vi.fn().mockResolvedValue([]),
     getSkippedMessages: vi.fn().mockResolvedValue([]),
     getConversationMessages: vi.fn().mockResolvedValue([]),
@@ -57,7 +57,6 @@ vi.mock('../services/api', () => ({
     getRecalibrationStats: vi.fn().mockResolvedValue(null),
     saveRecalibration: vi.fn().mockResolvedValue({ matched: true, trend: 'steady' }),
     resolveCandidate: vi.fn().mockResolvedValue(undefined),
-    getOrphanedMessages: vi.fn().mockResolvedValue({ messages: [], count: 0 }),
   },
 }))
 
@@ -113,4 +112,32 @@ test('shows loading skeleton while data is loading', () => {
   render(<MemoryRouter><QueuePage /></MemoryRouter>)
   expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
   expect(screen.getByTestId('loading-skeleton')).toBeInTheDocument()
+})
+
+test('shows tutorial overlay on fresh queue with document-load gate', async () => {
+  sessionStorage.setItem('chatsight_queue_tutorial_reload_gate', '1')
+  vi.mocked(apiModule.api.getLabels).mockResolvedValueOnce([])
+  vi.mocked(apiModule.api.getQueueStats).mockResolvedValueOnce({
+    total_messages: 100,
+    labeled_count: 0,
+    skipped_count: 0,
+  })
+  renderQueue()
+  await waitFor(() => {
+    expect(screen.getByText('How the queue works')).toBeInTheDocument()
+  })
+})
+
+test('does not show tutorial when labels already exist', async () => {
+  sessionStorage.setItem('chatsight_queue_tutorial_reload_gate', '1')
+  vi.mocked(apiModule.api.getQueueStats).mockResolvedValueOnce({
+    total_messages: 100,
+    labeled_count: 0,
+    skipped_count: 0,
+  })
+  renderQueue()
+  await waitFor(() => {
+    expect(screen.getByText('Can you explain what a DataFrame is?')).toBeInTheDocument()
+  })
+  expect(screen.queryByText('How the queue works')).not.toBeInTheDocument()
 })

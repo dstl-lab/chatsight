@@ -122,17 +122,6 @@ def test_promote_rejects_single_mode_label(client, session):
     assert "expected 'multi'" in r.json()["detail"]
 
 
-def test_promote_rejects_archived_multi(client, session):
-    multi = _make_multi(session)
-    multi.archived_at = datetime.utcnow()
-    session.add(multi)
-    session.commit()
-
-    r = client.post(f"/api/labels/{multi.id}/promote")
-    assert r.status_code == 409
-    assert "archived" in r.json()["detail"]
-
-
 def test_promote_404_when_multi_missing(client):
     r = client.post("/api/labels/999999/promote")
     assert r.status_code == 404

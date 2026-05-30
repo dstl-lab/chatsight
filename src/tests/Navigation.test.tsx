@@ -39,7 +39,7 @@ test('renders Queue, Labels, and Summaries links in multi-label mode (default)',
   expect(screen.getByText('Queue')).toBeInTheDocument()
   expect(screen.getByText('Labels')).toBeInTheDocument()
   expect(screen.getByText('Summaries')).toBeInTheDocument()
-  expect(screen.queryByText('Analysis')).not.toBeInTheDocument()
+  expect(screen.getByText('Analysis')).toBeInTheDocument()
 })
 
 test('shows mode toggle button', () => {
@@ -61,4 +61,11 @@ test('clicking mode toggle from single navigates to /queue (multi landing)', () 
   expect(screen.getByTestId('path').textContent).toBe('/summaries')
   fireEvent.click(screen.getByTitle(/Mode: Single-label/))
   expect(screen.getByTestId('path').textContent).toBe('/queue')
+})
+
+test('shows Analysis link in single-label mode only', () => {
+  localStorage.setItem('chatsight-mode', 'single')
+  renderNav()
+  expect(screen.getByText('Analysis')).toBeInTheDocument()
+  expect(screen.queryByText('History')).not.toBeInTheDocument()
 })

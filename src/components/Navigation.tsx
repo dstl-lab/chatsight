@@ -29,6 +29,7 @@ export function Navigation() {
           labelingLink,
           { to: '/assignments', label: 'Assignments' },
           { to: '/summaries', label: 'Summaries' },
+          { to: '/analysis', label: 'Analysis' },
         ]
       : [
           labelingLink,
@@ -36,6 +37,7 @@ export function Navigation() {
           { to: '/labels', label: 'Labels' },
           { to: '/assignments', label: 'Assignments' },
           { to: '/summaries', label: 'Summaries' },
+          { to: '/analysis', label: 'Analysis' },
         ]
 
   return (

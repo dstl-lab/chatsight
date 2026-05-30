@@ -74,6 +74,7 @@ interface Props {
 	onSelectConversationMessage?: (chatlogId: number, messageIndex: number) => void;
 	onToggleLabelForMessage?: (chatlogId: number, messageIndex: number, labelId: number, currentlyApplied: boolean) => void;
 	onCreateLabelForMessage?: (chatlogId: number, messageIndex: number, name: string) => Promise<number>;
+	tutorialDisabled?: boolean;
 }
 
 export function MessageCard({
@@ -103,6 +104,7 @@ export function MessageCard({
 	onSelectConversationMessage,
 	onToggleLabelForMessage,
 	onCreateLabelForMessage,
+	tutorialDisabled = false,
 }: Props) {
 	const [showRationale, setShowRationale] = useState(false);
 	const [beforeExpanded, setBeforeExpanded] = useState(false);
@@ -159,7 +161,7 @@ export function MessageCard({
 				</div>
 			)}
 
-			<div className="relative bg-bg-warm border border-edge-warm rounded-sm p-4 pl-5">
+			<div className="relative bg-bg-warm border border-edge-warm rounded-sm p-4 pl-5" data-tutorial="student-message">
 				<div aria-hidden className="absolute left-0 top-0 bottom-0 w-[2px] bg-ochre rounded-l-sm" />
 				<div className="flex items-center justify-between mb-2">
 					<span className="font-mono text-[10px] uppercase tracking-[0.08em] text-ochre">
@@ -301,7 +303,7 @@ export function MessageCard({
 				</div>
 			)}
 
-			<div className="flex justify-end gap-2 pt-1">
+			<div className="flex justify-end gap-2 pt-1" data-tutorial="advance-controls">
 				{isBackNav ? (
 					<>
 						<button
@@ -337,14 +339,15 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && (
 							<button
 								onClick={onSkip}
-								className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
+								disabled={tutorialDisabled}
+								className={`font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors ${tutorialDisabled ? 'opacity-50 pointer-events-none' : ''}`}
 							>
 								Skip
 							</button>
 						)}
 						<button
 							onClick={onNext}
-							disabled={!isReviewing && !isRecalibrating && !hasLabelsApplied}
+							disabled={(!isReviewing && !isRecalibrating && !hasLabelsApplied) || tutorialDisabled}
 							className={`font-serif text-xs rounded-sm px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
 								isRecalibrating
 									? recalibrationPhase === 'reconcile'
