@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount } from '../../types'
 import { api } from '../../services/api'
-import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
 import { isPlaceholderLabelName } from './labelPlaceholder'
@@ -34,10 +33,9 @@ export interface StripBarProps {
 export function StripBar({
   label,
   readiness,
-  assignments,
-  unmapped,
-  selectedAssignmentId,
-  onSelectAssignment,
+  // assignment-picker props (assignments/unmapped/selectedAssignmentId/
+  // onSelectAssignment) are intentionally unused: the route is week-locked
+  // server-side, so the picker is replaced by a static scope label.
   onHandoff,
   onLabelMetaUpdated,
   onSampleHandoff,
@@ -181,12 +179,10 @@ export function StripBar({
         {/* Conversations: assignment filter + explore sampling (menu portals) */}
         <div className="relative z-10 min-w-0 md:flex md:justify-end">
           <div className="flex w-max max-w-full flex-wrap items-center gap-6 md:justify-end">
-            <AssignmentPicker
-              assignments={assignments}
-              unmapped={unmapped}
-              selectedId={selectedAssignmentId}
-              onSelect={onSelectAssignment}
-            />
+            <span className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
+              <span className="text-[9px] tracking-[0.06em] uppercase text-faint">scope</span>
+              <span className="text-fg">Week 8 — Lab 5 &amp; HW 5</span>
+            </span>
             {!draftMode && onLabelMetaUpdated && (
               <div className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
                 <HoverTip

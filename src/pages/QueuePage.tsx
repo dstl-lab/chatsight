@@ -1008,6 +1008,10 @@ export function QueuePage() {
 
 	return (
 		<div className="flex-1 flex flex-col min-h-0">
+			<div className="flex items-center gap-2 border-b border-edge-subtle px-4 py-1.5 font-mono text-[11px] text-muted">
+				<span className="text-[9px] uppercase tracking-[0.06em] text-faint">scope</span>
+				<span className="text-fg">Week 3 — Lab 1 &amp; HW 1</span>
+			</div>
 			{recalibration && recalibration.phase === "blind" && (
 				<div className="bg-elevated border-b border-edge px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
