@@ -104,8 +104,11 @@ Backend (`pytest`, in-memory SQLite):
 - No DB schema change; no new migration. Scope is computed from existing
   `MessageCache.notebook`.
 - No change to the labeling pipeline, AI prompt construction, or analysis pages.
-- Week numbers are hardcoded constants for this study branch (not configurable
-  via env/UI) — intentional, since the study fixes them.
+- Week→assignment mappings are hardcoded constants for this study branch (not
+  configurable via UI) — intentional, since the study fixes them. The lock as a
+  whole is gated by `CHATSIGHT_STUDY_LOCK` (default ON); it exists only so the
+  legacy test suite (which seeds unscoped data) can disable it via
+  `conftest.py`. Production/study runs leave it ON.
 - This branch is not intended to merge to `main` as-is; it is a study fixture.
 
 ## Success criteria
