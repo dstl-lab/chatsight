@@ -19,7 +19,7 @@ client = genai.Client(
     http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
 )
 
-CLASSIFY_MODEL = "gemini-2.0-flash"
+CLASSIFY_MODEL = "gemini-2.5-flash"
 
 CLASSIFY_SYSTEM_INSTRUCTION = (
     "You are classifying student messages from AI-tutoring conversations as yes/no for "
@@ -128,7 +128,7 @@ def classify_binary(
         return []
     prompt = _build_classify_prompt(label_name, label_description, yes_examples, no_examples, messages, guidance)
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=CLASSIFY_CONFIG,
     )
@@ -248,7 +248,7 @@ def summarize_batch(
             parts.append(f"- {m}")
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents="\n".join(parts),
         config=SUMMARY_CONFIG,
     )

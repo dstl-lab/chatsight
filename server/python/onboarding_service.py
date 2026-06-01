@@ -105,7 +105,7 @@ def _ai_label_suggestions_for_turns(turns: list[tuple[int, str]]) -> Optional[di
             "one inner array per message in order."
         )
         response = explore_service._client_get().models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         raw = ""
