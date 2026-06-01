@@ -7,6 +7,7 @@ not depend on AssignmentMapping rows existing. Weeks come from
 https://dsc-courses.github.io/dsc10-2026-wi/ (cross-checked vs
 data/milestones/dsc10_wi26.json).
 """
+import os
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -18,17 +19,27 @@ QUEUE_SCOPE = {"Lab 1", "Homework 1"}   # Week 3 — multi-label
 RUN_SCOPE = {"Lab 5", "Homework 5"}     # Week 8 — single-label
 
 
+def lock_enabled() -> bool:
+    """Whether the study week-lock is active. ON by default (production/study);
+    set CHATSIGHT_STUDY_LOCK=0 to disable (legacy test suite seeds unscoped data).
+    Read at call time so tests can toggle it via monkeypatch."""
+    return os.getenv("CHATSIGHT_STUDY_LOCK", "1") != "0"
+
+
 def scope_for_mode(mode: str) -> set[str]:
     """Single-label runs are Week 8; everything else (multi/onboarding) is Week 3."""
     return RUN_SCOPE if mode == "single" else QUEUE_SCOPE
 
 
 def notebook_in_scope(notebook: Optional[str], names: set[str]) -> bool:
+    if not lock_enabled():
+        return True
     return notebook is not None and _canonical_name(notebook) in names
 
 
 def in_scope_keys(session: Session, names: set[str]) -> set[tuple[int, int]]:
-    """(chatlog_id, message_index) pairs whose notebook canonicalizes into `names`."""
+    """(chatlog_id, message_index) pairs whose notebook canonicalizes into `names`.
+    When the lock is disabled, every cached message is considered in scope."""
     rows = session.exec(
         select(
             MessageCache.chatlog_id,

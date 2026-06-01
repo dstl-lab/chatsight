@@ -3752,7 +3752,14 @@ def _do_classification(
     cached = db.exec(
         select(MessageCache.chatlog_id, MessageCache.message_index, MessageCache.message_text)
     ).all()
-    pending = [(c, i, t) for (c, i, t) in cached if (c, i) not in decided_keys]
+    # Study lock: only classify the week this label's mode is scoped to
+    # (single -> Week 8). Keeps Gemini handoff bounded and fast.
+    scope = study_scope.scope_for_mode(label.mode)
+    in_scope = study_scope.in_scope_keys(db, scope)
+    pending = [
+        (c, i, t) for (c, i, t) in cached
+        if (c, i) not in decided_keys and (c, i) in in_scope
+    ]
 
     if sample_size is not None:
         pending = random.sample(pending, min(sample_size, len(pending)))
