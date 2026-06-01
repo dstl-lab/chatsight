@@ -191,11 +191,12 @@ export function ProgressSidebar({
   const total = stats?.total_messages ?? 0
   const pct = total > 0 ? Math.round((labeled / total) * 100) : 0
 
-  const suggestThreshold = 20
+  // Thresholds lowered for the week-scoped study build (small Week-3 pool).
+  const suggestThreshold = 10
   const suggestPct = Math.min(100, Math.round((labeled / suggestThreshold) * 100))
   const suggestUnlocked = labeled >= suggestThreshold
 
-  const autolabelThreshold = Math.min(Math.ceil(total * 0.4), 100)
+  const autolabelThreshold = Math.min(Math.ceil(total * 0.3), 20)
   const autolabelPct = autolabelThreshold > 0 ? Math.min(100, Math.round((labeled / autolabelThreshold) * 100)) : 0
   const autolabelUnlocked = labeled >= autolabelThreshold && autolabelThreshold > 0
 
@@ -318,7 +319,7 @@ export function ProgressSidebar({
       <div className="shrink-0">
         <DiscoverSection
           candidates={candidates}
-          aiUnlocked={(stats?.labeled_count ?? 0) >= 20}
+          aiUnlocked={(stats?.labeled_count ?? 0) >= 10}
           labeledCount={stats?.labeled_count ?? 0}
           onDiscover={onDiscover}
           onOpenModal={onOpenDiscoverModal}

@@ -42,8 +42,9 @@ test('shows skipped count when non-zero', () => {
 })
 
 test('shows AI suggestions unlock progress', () => {
-  render(<ProgressSidebar {...defaultProps} />)
-  expect(screen.getByText('14 / 20 to unlock')).toBeInTheDocument()
+  const stats = { total_messages: 100, labeled_count: 7, skipped_count: 0 }
+  render(<ProgressSidebar {...defaultProps} stats={stats} />)
+  expect(screen.getByText('7 / 10 to unlock')).toBeInTheDocument()
 })
 
 test('renders clickable label buttons', () => {

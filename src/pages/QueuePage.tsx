@@ -158,7 +158,7 @@ export function QueuePage() {
 		};
 	})();
 	const isReviewing = displayMode === "history-review";
-	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
+	const aiUnlocked = (stats?.labeled_count ?? 0) >= 10;
 
 	const loadQueue = useCallback(async () => {
 		const q = await api.getQueue(20);
