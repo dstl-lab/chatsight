@@ -69,6 +69,7 @@ import onboarding_service
 import queue_service
 import binary_autolabel_service
 import assignment_service
+import study_scope
 from models import AssignmentMapping
 
 REVIEW_THRESHOLD = 0.75
@@ -1036,12 +1037,13 @@ def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends
     ).all()
     excluded = {(cid, midx) for cid, midx in labeled_pairs} | {(cid, midx) for cid, midx in skipped_pairs}
 
-    # Query from cache instead of external DB CTE
+    # Query from cache instead of external DB CTE. Study lock: Week 3 only.
     all_cached = db.exec(select(MessageCache)).all()
 
     candidates = [
         c for c in all_cached
         if (c.chatlog_id, c.message_index) not in excluded
+        and study_scope.notebook_in_scope(c.notebook, study_scope.QUEUE_SCOPE)
     ]
 
     # Apply seed-based deterministic ordering or random shuffle
@@ -1068,20 +1070,21 @@ def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends
 
 @app.get("/api/queue/stats")
 def get_queue_stats(db: Session = Depends(get_session)):
-    labeled_count = db.exec(
-        select(func.count()).select_from(
-            select(LabelApplication.chatlog_id, LabelApplication.message_index)
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .where(_is_multi_application())
-            .distinct()
-            .subquery()
-        )
-    ).one()
-    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    total = db.exec(select(func.count(MessageCache.id))).one() or 0
+    in_scope = study_scope.in_scope_keys(db, study_scope.QUEUE_SCOPE)
+    labeled_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(_is_multi_application())
+        .distinct()
+    ).all()
+    skipped_pairs = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
+    ).all()
+    labeled_count = len({(c, i) for c, i in labeled_pairs} & in_scope)
+    skipped_count = len({(c, i) for c, i in skipped_pairs} & in_scope)
     return {
-        "total_messages": total,
+        "total_messages": len(in_scope),
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
     }
@@ -1089,18 +1092,20 @@ def get_queue_stats(db: Session = Depends(get_session)):
 
 @app.get("/api/queue/position")
 def get_queue_position(db: Session = Depends(get_session)):
-    labeled_count = db.exec(
-        select(func.count()).select_from(
-            select(LabelApplication.chatlog_id, LabelApplication.message_index)
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .where(_is_multi_application())
-            .distinct()
-            .subquery()
-        )
-    ).one()
-    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    total = db.exec(select(func.count(MessageCache.id))).one() or 0
+    in_scope = study_scope.in_scope_keys(db, study_scope.QUEUE_SCOPE)
+    labeled_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(_is_multi_application())
+        .distinct()
+    ).all()
+    skipped_pairs = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
+    ).all()
+    labeled_count = len({(c, i) for c, i in labeled_pairs} & in_scope)
+    skipped_count = len({(c, i) for c, i in skipped_pairs} & in_scope)
+    total = len(in_scope)
     total_remaining = max(0, total - labeled_count - skipped_count)
     position = labeled_count + skipped_count + 1
     return {"position": position, "total_remaining": total_remaining}
