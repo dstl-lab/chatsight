@@ -1,5 +1,7 @@
 import study_scope
-from models import MessageCache
+import queue_service
+import decision_service
+from models import MessageCache, LabelDefinition
 
 
 def _seed(session, chatlog_id, message_index, notebook):
@@ -50,3 +52,20 @@ def test_queue_stats_counts_only_week3(client, session):
     _seed(session, 3, 0, "lab5.ipynb")
     stats = client.get("/api/queue/stats").json()
     assert stats["total_messages"] == 2
+
+
+def test_run_next_returns_only_week8(session):
+    # Seed an in-scope (Week 8) and an out-of-scope conversation.
+    _seed(session, 10, 0, "lab5.ipynb")   # Week 8 — in scope for single mode
+    _seed(session, 11, 0, "lab1.ipynb")   # Week 3 — out of scope for single mode
+    label = LabelDefinition(name="needs help", mode="single", phase="labeling")
+    session.add(label)
+    session.commit()
+
+    picks = set()
+    for _ in range(10):
+        payload = queue_service.next_message_for_label(session, label.id)
+        if payload:
+            picks.add(payload["chatlog_id"])
+    assert picks <= {10}
+    assert 11 not in picks

@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 import assist_service
 import explore_service
+import study_scope
 from database import ext_engine
 from models import (
     ConversationCursor,
@@ -505,6 +506,16 @@ def next_message_for_label(
     if assignment_id is not None:
         cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
     cache_rows = session.exec(cache_q).all()
+
+    # Study lock: restrict to the week tied to this label's mode
+    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
+    # client assignment_id filter above only narrows further.
+    _label = session.get(LabelDefinition, label_id)
+    _scope = study_scope.scope_for_mode(_label.mode if _label else "multi")
+    cache_rows = [
+        row for row in cache_rows
+        if study_scope.notebook_in_scope(row[4], _scope)
+    ]
 
     decided = set(
         session.exec(
