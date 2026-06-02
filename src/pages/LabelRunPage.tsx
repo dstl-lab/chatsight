@@ -458,23 +458,6 @@ export function LabelRunPage() {
     }
   }, [activeLabel, handoffPending, refresh])
 
-  const handleSampleHandoff = useCallback(async (n: number) => {
-    if (!activeLabel || handoffPending) return
-    setHandoffPending(true)
-    setLoadError(null)
-    try {
-      await api.handoffSingleLabel(activeLabel.id, n)
-      await refresh()
-    } catch (e) {
-      console.error('sample handoff failed', e)
-      setLoadError(
-        e instanceof Error ? e.message : 'Sample handoff failed. Check the server logs.',
-      )
-    } finally {
-      setHandoffPending(false)
-    }
-  }, [activeLabel, handoffPending, refresh])
-
   const handleContinueToReview = useCallback(async () => {
     setSummaryOpen(false)
     if (!activeLabel) return
@@ -696,7 +679,6 @@ export function LabelRunPage() {
                 onSelectAssignment={() => {}}
                 onHandoff={handleHandoff}
                 onLabelMetaUpdated={refresh}
-                onSampleHandoff={handleSampleHandoff}
                 readinessOpen={readinessOpen}
                 onReadinessOpenChange={setReadinessOpen}
                 queued={queued}
@@ -776,7 +758,6 @@ export function LabelRunPage() {
               labelNameLocked={tutorialActive}
               onHandoff={draftMode ? undefined : handleHandoff}
               onLabelMetaUpdated={draftMode ? undefined : refresh}
-              onSampleHandoff={draftMode ? undefined : handleSampleHandoff}
               readinessOpen={readinessOpen}
               onReadinessOpenChange={setReadinessOpen}
               queued={queued}

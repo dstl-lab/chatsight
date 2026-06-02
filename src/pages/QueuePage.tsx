@@ -822,18 +822,6 @@ export function QueuePage() {
 		[labels],
 	);
 
-	const handleForceRecalibration = useCallback(async () => {
-		if (recalibration) return;
-		const item = await api.getRecalibration(true);
-		if (item) {
-			setRecalibration({ item, phase: "blind", relabelIds: new Set() });
-			setAppliedLabelIds(new Set());
-		} else {
-			console.warn(
-				"[DEV] Force recalibration returned null — no labeled messages yet?",
-			);
-		}
-	}, [recalibration]);
 
 	const handleDeleteLabel = useCallback(
 		(labelId: number) => {
@@ -1195,15 +1183,6 @@ export function QueuePage() {
 					onAdvance={advanceTutorial}
 					onSkip={finishTutorial}
 				/>
-			)}
-			{import.meta.env.DEV && !recalibration && (
-				<button
-					onClick={handleForceRecalibration}
-					className="fixed bottom-4 left-57 z-50 text-[10px] font-mono text-faint bg-surface border border-edge rounded-sm px-2.5 py-1.5 hover:border-ochre-dim hover:text-muted transition-colors"
-					title="Dev-only: force-trigger a recalibration round"
-				>
-					DEV · trigger recalibration
-				</button>
 			)}
 		</div>
 	);
