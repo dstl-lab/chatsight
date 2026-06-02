@@ -41,6 +41,13 @@ export function KeybindSettingsModal({ open, onClose }: KeybindSettingsModalProp
 
   const formatKey = (key: string) => {
     if (key === ' ') return 'Space'
+    if (key === 'arrowleft') return '← Left'
+    if (key === 'arrowright') return '→ Right'
+    if (key === 'arrowup') return '↑ Up'
+    if (key === 'arrowdown') return '↓ Down'
+    if (key === 'enter') return 'Enter'
+    if (key === 'backspace') return 'Backspace'
+    if (key === 'escape') return 'Escape'
     if (key.length === 1) return key.toUpperCase()
     return key
   }

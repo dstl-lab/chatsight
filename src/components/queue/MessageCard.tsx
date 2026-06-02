@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -10,6 +10,19 @@ import type {
 	ConversationMessage,
 } from "../../types";
 import { ConversationPanel } from "./ConversationPanel";
+import { useKeybinds } from "../../hooks/useKeybinds";
+
+function fmtKey(key: string): string {
+	if (key === " ") return "Space";
+	if (key === "arrowleft") return "←";
+	if (key === "arrowright") return "→";
+	if (key === "arrowup") return "↑";
+	if (key === "arrowdown") return "↓";
+	if (key === "enter") return "↵";
+	if (key === "backspace") return "⌫";
+	if (key === "escape") return "Esc";
+	return key.toUpperCase();
+}
 
 function stripMarkdown(md: string): string {
 	return md
@@ -106,6 +119,7 @@ export function MessageCard({
 	onCreateLabelForMessage,
 	tutorialDisabled = false,
 }: Props) {
+	const { keybinds } = useKeybinds();
 	const [showRationale, setShowRationale] = useState(false);
 	const [beforeExpanded, setBeforeExpanded] = useState(false);
 	const [afterExpanded, setAfterExpanded] = useState(false);
@@ -177,14 +191,14 @@ export function MessageCard({
 								onToggleConversation?.()
 							}
 							disabled={conversationLoading || conversationError}
-							className={`flex items-center gap-1 text-[9px] transition-colors ${
+							className={`flex items-center gap-1.5 text-[11px] font-semibold border rounded px-2 py-1 transition-colors ${
 								conversationLoading
-									? "text-disabled cursor-default"
+									? "text-disabled border-edge cursor-default"
 									: conversationError
-										? "text-faint cursor-default"
+										? "text-faint border-edge cursor-default"
 										: showConversation
-											? "text-ochre hover:text-paper"
-											: "text-muted hover:text-ochre"
+											? "text-ochre border-ochre hover:text-paper hover:border-paper"
+											: "text-ochre border-ochre/50 hover:border-ochre"
 							}`}
 							title={
 								conversationError
@@ -192,7 +206,7 @@ export function MessageCard({
 									: "View full conversation"
 							}
 						>
-							<MessageSquare size={11} />
+							<MessageSquare size={13} />
 							<span>
 								{conversationError
 									? "Conversation unavailable"
@@ -256,7 +270,7 @@ export function MessageCard({
 						</span>
 					) : !aiUnlocked ? (
 						<span className="text-[8px] text-disabled bg-surface border border-edge-subtle rounded px-1.5 py-0.5">
-							AI unlocks at 20
+							AI unlocks at 10
 						</span>
 					) : null}
 				</div>
@@ -331,34 +345,40 @@ export function MessageCard({
 						{!isReviewing && !isRecalibrating && canGoBack && (
 							<button
 								onClick={onBack}
-								className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors"
+								className="font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors inline-flex items-center gap-1.5"
+								title={`Go back (${fmtKey(keybinds.undo)})`}
 							>
 								← Back
+								<Kbd>{fmtKey(keybinds.undo)}</Kbd>
 							</button>
 						)}
 						{!isReviewing && !isRecalibrating && (
 							<button
 								onClick={onSkip}
 								disabled={tutorialDisabled}
-								className={`font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors ${tutorialDisabled ? 'opacity-50 pointer-events-none' : ''}`}
+								className={`font-serif text-xs text-muted border border-edge rounded px-3 py-1.5 hover:text-on-surface hover:border-edge-strong transition-colors inline-flex items-center gap-1.5 ${tutorialDisabled ? 'opacity-50 pointer-events-none' : ''}`}
+								title={`Skip this message (${fmtKey(keybinds.skip)})`}
 							>
 								Skip
+								<Kbd>{fmtKey(keybinds.skip)}</Kbd>
 							</button>
 						)}
 						<button
 							onClick={onNext}
 							disabled={(!isReviewing && !isRecalibrating && !hasLabelsApplied) || tutorialDisabled}
-							className={`font-serif text-xs rounded-sm px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+							className={`font-serif text-xs rounded-sm px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-1.5 ${
 								isRecalibrating
 									? recalibrationPhase === 'reconcile'
 										? 'border border-warning bg-warning text-bg-warm hover:brightness-110'
 										: 'border border-ochre bg-ochre text-bg-warm hover:brightness-110'
 									: 'border border-ochre bg-ochre text-bg-warm hover:brightness-110'
 							}`}
+							title={isReviewing ? undefined : `Next message (${fmtKey(keybinds.yes)} or ↵)`}
 						>
 							{isReviewing ? "Back to queue" : isRecalibrating
 								? recalibrationPhase === 'reconcile' ? 'Confirm →' : 'Next →'
 								: "Next →"}
+							{!isReviewing && <Kbd className="opacity-70">{fmtKey(keybinds.yes)}</Kbd>}
 						</button>
 					</>
 				)}
@@ -379,5 +399,13 @@ export function MessageCard({
 					/>
 				)}
 		</div>
+	);
+}
+
+function Kbd({ children, className }: { children: React.ReactNode; className?: string }) {
+	return (
+		<span className={`font-mono text-[9px] border border-current/30 rounded px-[3px] py-px opacity-60 ${className ?? ''}`}>
+			{children}
+		</span>
 	);
 }

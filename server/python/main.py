@@ -1267,6 +1267,7 @@ def get_queue_history(
 # ── Auto-labeling ────────────────────────────────────────────────────────────
 
 _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None}
+_autolabel_stop_requested = False
 
 
 def _run_split_autolabel(
@@ -1478,9 +1479,14 @@ def _run_autolabel():
         ]
         _autolabel_status["total"] = len(unlabeled)
 
-        # Process in batches of 30
+        # Process in batches of 30; check stop flag between each batch
         BATCH_SIZE = 30
+        global _autolabel_stop_requested
         for i in range(0, len(unlabeled), BATCH_SIZE):
+            if _autolabel_stop_requested:
+                _autolabel_stop_requested = False
+                _autolabel_status["running"] = False
+                return
             batch = unlabeled[i : i + BATCH_SIZE]
             try:
                 results = classify_batch(label_defs, examples_by_label, batch)
@@ -1548,6 +1554,33 @@ def start_autolabel(db: Session = Depends(get_session)):
 @app.get("/api/queue/autolabel/status")
 def get_autolabel_status():
     return _autolabel_status
+
+
+@app.post("/api/queue/autolabel/stop")
+def stop_autolabel():
+    global _autolabel_stop_requested
+    if not _autolabel_status["running"]:
+        raise HTTPException(status_code=409, detail="Auto-labeling is not running")
+    _autolabel_stop_requested = True
+    return {"ok": True, "message": "Stop requested — will halt after current batch"}
+
+
+@app.delete("/api/queue/autolabel/results")
+def clear_autolabel_results(db: Session = Depends(get_session)):
+    """Delete all AI-applied multi-label applications so autolabel can be re-run."""
+    if _autolabel_status["running"]:
+        raise HTTPException(status_code=409, detail="Auto-labeling is currently running")
+    deleted = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.applied_by == "ai",
+            _is_multi_application(),
+        )
+    ).all()
+    count = len(deleted)
+    for row in deleted:
+        db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": count}
 
 
 # ── Stub routes (feature tracks implement these) ──────────────────────────────

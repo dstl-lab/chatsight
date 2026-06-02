@@ -22,10 +22,10 @@ const renderWorkspace = (props = {}) => {
 }
 
 describe('DecisionWorkspace Keybinds', () => {
-  it('calls onYes when "a" is pressed (default)', () => {
+  it('calls onYes when "z" is pressed (default)', () => {
     const onYes = vi.fn()
     renderWorkspace({ onYes })
-    fireEvent.keyDown(window, { key: 'a' })
+    fireEvent.keyDown(window, { key: 'z' })
     expect(onYes).toHaveBeenCalled()
   })
 
@@ -36,33 +36,40 @@ describe('DecisionWorkspace Keybinds', () => {
     expect(onNo).toHaveBeenCalled()
   })
 
-  it('calls onSkip when " " (Space) is pressed (default)', () => {
+  it('calls onSkip when ArrowRight is pressed (default)', () => {
     const onSkip = vi.fn()
     renderWorkspace({ onSkip })
-    fireEvent.keyDown(window, { key: ' ' })
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
     expect(onSkip).toHaveBeenCalled()
   })
 
-  it('calls onUndo when "s" is pressed (default)', () => {
+  it('calls onSkip when Enter is pressed and no onAcceptAi handler', () => {
+    const onSkip = vi.fn()
+    renderWorkspace({ onSkip })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onSkip).toHaveBeenCalled()
+  })
+
+  it('calls onUndo when ArrowLeft is pressed (default)', () => {
     const onUndo = vi.fn()
     renderWorkspace({ onUndo })
-    fireEvent.keyDown(window, { key: 's' })
+    fireEvent.keyDown(window, { key: 'ArrowLeft' })
     expect(onUndo).toHaveBeenCalled()
   })
 
-  it('prevents default behavior when Space is pressed', () => {
+  it('does not call onSkip on Enter when onAcceptAi is provided', () => {
     const onSkip = vi.fn()
-    renderWorkspace({ onSkip })
-    const event = createEvent.keyDown(window, { key: ' ' })
-    vi.spyOn(event, 'preventDefault')
-    fireEvent(window, event)
-    expect(event.preventDefault).toHaveBeenCalled()
+    const onAcceptAi = vi.fn()
+    renderWorkspace({ onSkip, onAcceptAi })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onAcceptAi).toHaveBeenCalled()
+    expect(onSkip).not.toHaveBeenCalled()
   })
 
   it('respects case-insensitivity', () => {
     const onYes = vi.fn()
     renderWorkspace({ onYes })
-    fireEvent.keyDown(window, { key: 'A' })
+    fireEvent.keyDown(window, { key: 'Z' })
     expect(onYes).toHaveBeenCalled()
   })
 

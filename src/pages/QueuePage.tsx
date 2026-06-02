@@ -119,8 +119,15 @@ export function QueuePage() {
 	const formatKey = (key: string) => {
 		if (key === " ") return "Space";
 		if (key === "enter") return "Enter";
+		if (key === "arrowleft") return "←";
+		if (key === "arrowright") return "→";
+		if (key === "arrowup") return "↑";
+		if (key === "arrowdown") return "↓";
+		if (key === "backspace") return "⌫";
+		if (key === "escape") return "Esc";
 		if (key.startsWith("shift+")) {
-			return "⇧" + key.split("+")[1].toUpperCase();
+			const base = key.split("+")[1];
+			return "⇧" + formatKey(base);
 		}
 		return key.toUpperCase();
 	};
@@ -466,55 +473,55 @@ export function QueuePage() {
 	};
 
 	const handleNextInner = useCallback(async () => {
-		// Recalibration: blind phase → check match → reconcile or auto-advance
-		if (recalibration && recalibration.phase === "blind") {
-			const relabelIds = new Set(appliedLabelIds);
-			const originalSet = new Set(recalibration.item.original_label_ids);
-			const matched =
-				relabelIds.size === originalSet.size &&
-				[...relabelIds].every((id) => originalSet.has(id));
+		// // Recalibration: blind phase → check match → reconcile or auto-advance
+		// if (recalibration && recalibration.phase === "blind") {
+		// 	const relabelIds = new Set(appliedLabelIds);
+		// 	const originalSet = new Set(recalibration.item.original_label_ids);
+		// 	const matched =
+		// 		relabelIds.size === originalSet.size &&
+		// 		[...relabelIds].every((id) => originalSet.has(id));
 
-			if (matched) {
-				await api.saveRecalibration({
-					chatlog_id: recalibration.item.chatlog_id,
-					message_index: recalibration.item.message_index,
-					original_label_ids: recalibration.item.original_label_ids,
-					relabel_ids: [...relabelIds],
-					final_label_ids: [...relabelIds],
-				});
-				setRecalibration(null);
-				setRecalibrationToast("match");
-				setTimeout(() => setRecalibrationToast(null), 2000);
-				setAppliedLabelIds(new Set());
-				api
-					.getRecalibrationStats()
-					.then(setRecalibrationStats)
-					.catch(() => {});
-			} else {
-				setRecalibration((prev) =>
-					prev ? { ...prev, phase: "reconcile", relabelIds } : prev,
-				);
-			}
-			return;
-		}
+		// 	if (matched) {
+		// 		await api.saveRecalibration({
+		// 			chatlog_id: recalibration.item.chatlog_id,
+		// 			message_index: recalibration.item.message_index,
+		// 			original_label_ids: recalibration.item.original_label_ids,
+		// 			relabel_ids: [...relabelIds],
+		// 			final_label_ids: [...relabelIds],
+		// 		});
+		// 		setRecalibration(null);
+		// 		setRecalibrationToast("match");
+		// 		setTimeout(() => setRecalibrationToast(null), 2000);
+		// 		setAppliedLabelIds(new Set());
+		// 		api
+		// 			.getRecalibrationStats()
+		// 			.then(setRecalibrationStats)
+		// 			.catch(() => {});
+		// 	} else {
+		// 		setRecalibration((prev) =>
+		// 			prev ? { ...prev, phase: "reconcile", relabelIds } : prev,
+		// 		);
+		// 	}
+		// 	return;
+		// }
 
-		// Recalibration: reconcile phase → save final labels and exit
-		if (recalibration && recalibration.phase === "reconcile") {
-			await api.saveRecalibration({
-				chatlog_id: recalibration.item.chatlog_id,
-				message_index: recalibration.item.message_index,
-				original_label_ids: recalibration.item.original_label_ids,
-				relabel_ids: [...recalibration.relabelIds],
-				final_label_ids: [...appliedLabelIds],
-			});
-			setRecalibration(null);
-			setAppliedLabelIds(new Set());
-			api
-				.getRecalibrationStats()
-				.then(setRecalibrationStats)
-				.catch(() => {});
-			return;
-		}
+		// // Recalibration: reconcile phase → save final labels and exit
+		// if (recalibration && recalibration.phase === "reconcile") {
+		// 	await api.saveRecalibration({
+		// 		chatlog_id: recalibration.item.chatlog_id,
+		// 		message_index: recalibration.item.message_index,
+		// 		original_label_ids: recalibration.item.original_label_ids,
+		// 		relabel_ids: [...recalibration.relabelIds],
+		// 		final_label_ids: [...appliedLabelIds],
+		// 	});
+		// 	setRecalibration(null);
+		// 	setAppliedLabelIds(new Set());
+		// 	api
+		// 		.getRecalibrationStats()
+		// 		.then(setRecalibrationStats)
+		// 		.catch(() => {});
+		// 	return;
+		// }
 
 		if (isBackNav) {
 			setNavPos(null);
@@ -563,16 +570,16 @@ export function QueuePage() {
 		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
 		api.getRecentHistory(5).then(setHistory);
 
-		// Check if recalibration is due after advancing
-		api
-			.getRecalibration()
-			.then((item) => {
-				if (item) {
-					setRecalibration({ item, phase: "blind", relabelIds: new Set() });
-					setAppliedLabelIds(new Set());
-				}
-			})
-			.catch(() => {});
+		// // Check if recalibration is due after advancing (disabled)
+		// api
+		// 	.getRecalibration()
+		// 	.then((item) => {
+		// 		if (item) {
+		// 			setRecalibration({ item, phase: "blind", relabelIds: new Set() });
+		// 			setAppliedLabelIds(new Set());
+		// 		}
+		// 	})
+		// 	.catch(() => {});
 	}, [
 		recalibration,
 		isBackNav,
@@ -686,9 +693,8 @@ export function QueuePage() {
 			const rawKey = e.key.toLowerCase();
 			const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey;
 
-			// Submit/advance. `n` and Enter are convenience aliases for the
-			// configurable yes key. Deliberately NOT plain `z` — it would shadow
-			// the Ctrl+Z undo below (both have rawKey "z"), so Ctrl+Z never fired.
+			// Submit/advance. Enter and `n` are convenience aliases for the
+			// configurable yes key (default: z).
 			if (
 				pressedKey === keybinds.yes ||
 				rawKey === "enter" ||
@@ -704,38 +710,17 @@ export function QueuePage() {
 			if (pressedKey === keybinds.skip || rawKey === "s") {
 				if (!isReviewing && !isBackNav) {
 					if (rawKey === " ") e.preventDefault(); // prevent scroll if space is bound to skip
+					if (rawKey === "arrowright") e.preventDefault(); // prevent browser scroll
 					handleSkip();
 				}
 				return;
 			}
 			if (pressedKey === keybinds.undo || (e.ctrlKey && rawKey === "z")) {
+				if (rawKey === "arrowleft") e.preventDefault(); // prevent browser back navigation
 				handleUndo();
 				return;
 			}
-			if (e.key === "Escape" && recalibration) {
-				if (recalibration.phase === "blind") {
-					setRecalibration(null);
-					setAppliedLabelIds(new Set());
-				} else {
-					api
-						.saveRecalibration({
-							chatlog_id: recalibration.item.chatlog_id,
-							message_index: recalibration.item.message_index,
-							original_label_ids: recalibration.item.original_label_ids,
-							relabel_ids: [...recalibration.relabelIds],
-							final_label_ids: recalibration.item.original_label_ids,
-						})
-						.then(() => {
-							api
-								.getRecalibrationStats()
-								.then(setRecalibrationStats)
-								.catch(() => {});
-						});
-					setRecalibration(null);
-					setAppliedLabelIds(new Set());
-				}
-				return;
-			}
+			// if (e.key === "Escape" && recalibration) { /* recalibration disabled */ }
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
@@ -756,6 +741,18 @@ export function QueuePage() {
 	const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
 		const updated = await api.updateLabel(id, body);
 		setLabels((prev) => prev.map((l) => (l.id === id ? updated : l)));
+	};
+
+	const handleStopAutolabel = async () => {
+		await api.stopAutolabel().catch(() => {});
+	};
+
+	const handleClearAutolabel = async () => {
+		if (!confirm("Delete all AI-applied labels? This cannot be undone.")) return;
+		await api.clearAutolabelResults();
+		setAutolabelStatus(null);
+		const st = await api.getQueueStats();
+		setStats(st);
 	};
 
 	const handleStartAutolabel = async () => {
@@ -1000,71 +997,7 @@ export function QueuePage() {
 				<span className="text-[9px] uppercase tracking-[0.06em] text-faint">scope</span>
 				<span className="text-fg">Week 3 — Lab 1 &amp; HW 1</span>
 			</div>
-			{recalibration && recalibration.phase === "blind" && (
-				<div className="bg-elevated border-b border-edge px-4 py-2 flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<span className="bg-ochre text-bg-warm text-[10px] font-semibold px-2 py-0.5 rounded-sm">
-							RECALIBRATION
-						</span>
-						<span className="text-muted text-xs">
-							Re-label this previously seen message to check consistency
-						</span>
-					</div>
-					<div className="flex gap-3 text-[10px] text-faint">
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd>{" "}
-							toggle
-						</span>
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">
-								{formatKey(keybinds.yes)}
-							</kbd>{" "}
-							submit
-						</span>
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd>{" "}
-							cancel
-						</span>
-					</div>
-				</div>
-			)}
-			{recalibration && recalibration.phase === "reconcile" && (
-				<div className="bg-warning-surface border-b border-warning-border px-4 py-2 flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<span className="bg-warning text-bg-warm text-[10px] font-semibold px-2 py-0.5 rounded-sm">
-							MISMATCH
-						</span>
-						<span className="text-warning-name text-xs">
-							Labels differ from original — toggle labels to reconcile, then
-							press {formatKey(keybinds.yes)}
-						</span>
-					</div>
-					<div className="flex gap-3 text-[10px] text-faint">
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">1-9</kbd>{" "}
-							toggle
-						</span>
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">
-								{formatKey(keybinds.yes)}
-							</kbd>{" "}
-							confirm
-						</span>
-						<span>
-							<kbd className="bg-elevated px-1 rounded text-muted">Esc</kbd>{" "}
-							keep original
-						</span>
-					</div>
-				</div>
-			)}
-			{recalibrationToast === "match" && (
-				<div className="bg-success-surface border-b border-success-border px-4 py-2 flex items-center gap-2">
-					<span className="text-success text-sm">✓</span>
-					<span className="text-success text-xs font-medium">
-						Consistent! Your labels matched your original labeling.
-					</span>
-				</div>
-			)}
+			{/* Recalibration banners disabled */}
 			<div className="flex-1 flex min-h-0">
 				<ProgressSidebar
 					session={session}
@@ -1076,6 +1009,8 @@ export function QueuePage() {
 					onCreateAndApply={handleCreateAndApply}
 					onUpdateLabel={handleUpdateLabel}
 					onStartAutolabel={handleStartAutolabel}
+				onStopAutolabel={handleStopAutolabel}
+				onClearAutolabel={handleClearAutolabel}
 					autolabelStatus={autolabelStatus}
 					remaining={remaining}
 					history={history}
@@ -1087,18 +1022,8 @@ export function QueuePage() {
 					onDiscover={handleDiscover}
 					onOpenDiscoverModal={() => setDiscoverModalOpen(true)}
 					discovering={discovering}
-					recalibration={
-						recalibration
-							? {
-									phase: recalibration.phase,
-									originalLabelIds: new Set(
-										recalibration.item.original_label_ids,
-									),
-									relabelIds: recalibration.relabelIds,
-								}
-							: null
-					}
-					recalibrationStats={recalibrationStats}
+					recalibration={null /* recalibration disabled */}
+					recalibrationStats={null}
 					tutorialDisabled={tutorialActive}
 				/>
 				<div className="flex-1 flex flex-col min-h-0">

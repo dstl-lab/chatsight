@@ -26,6 +26,8 @@ interface Props {
   onCreateAndApply: (name: string, description?: string) => void
   onUpdateLabel: (id: number, body: UpdateLabelRequest) => void
   onStartAutolabel: () => void
+  onClearAutolabel: () => void
+  onStopAutolabel: () => void
   autolabelStatus: AutolabelStatus | null
   remaining: number | null
   history: HistoryItem[]
@@ -154,7 +156,7 @@ function SortableLabelItem({
 export function ProgressSidebar({
   session: _session, labels, stats, skippedCount,
   appliedLabelIds, onToggleLabel, onCreateAndApply, onUpdateLabel,
-  onStartAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
+  onStartAutolabel, onClearAutolabel, onStopAutolabel, autolabelStatus, remaining, history, onSelectHistoryItem, reviewingKey, onReorderLabels,
   onDeleteLabel, candidates, onDiscover, onOpenDiscoverModal, discovering,
   recalibration, recalibrationStats,
   tutorialDisabled = false,
@@ -196,7 +198,7 @@ export function ProgressSidebar({
   const suggestPct = Math.min(100, Math.round((labeled / suggestThreshold) * 100))
   const suggestUnlocked = labeled >= suggestThreshold
 
-  const autolabelThreshold = Math.min(Math.ceil(total * 0.3), 20)
+  const autolabelThreshold = 25
   const autolabelPct = autolabelThreshold > 0 ? Math.min(100, Math.round((labeled / autolabelThreshold) * 100)) : 0
   const autolabelUnlocked = labeled >= autolabelThreshold && autolabelThreshold > 0
 
@@ -250,8 +252,9 @@ export function ProgressSidebar({
   }, [labels, onReorderLabels])
 
   return (
-    <aside className="w-52 shrink-0 border-r border-edge bg-canvas p-4 flex flex-col h-full min-h-0 gap-5">
-      <div className="shrink-0">
+    <aside className="w-52 shrink-0 border-r border-edge bg-canvas flex flex-col h-full min-h-0">
+      {/* Labeled — always pinned at top */}
+      <div className="shrink-0 p-4 pb-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-2">Labeled</p>
         <div className="h-1.5 bg-elevated rounded-sm mb-1.5">
           <div className="h-1.5 bg-ochre rounded-sm transition-all" style={{ width: `${pct}%` }} />
@@ -265,7 +268,10 @@ export function ProgressSidebar({
         )}
       </div>
 
-      <div className="shrink-0 flex flex-col gap-3" data-tutorial="ai-milestones">
+      {/* Everything below scrolls as one unit */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 flex flex-col gap-5 [scrollbar-color:theme(colors.neutral.600)_transparent]">
+
+      <div className="flex flex-col gap-3" data-tutorial="ai-milestones">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">AI suggestions</p>
           {suggestUnlocked ? (
@@ -283,24 +289,49 @@ export function ProgressSidebar({
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-faint mb-1.5">Auto-labeling</p>
           {autolabelStatus?.running ? (
             <>
-              <div className="h-1 bg-elevated rounded-full mb-1">
-                <div
-                  className="h-1 bg-ochre rounded-full transition-all"
-                  style={{ width: `${autolabelStatus.total > 0 ? Math.round((autolabelStatus.processed / autolabelStatus.total) * 100) : 0}%` }}
-                />
+              <div className="h-1 bg-elevated rounded-full mb-1 overflow-hidden">
+                {autolabelStatus.total > 0 && autolabelStatus.processed > 0 ? (
+                  <div
+                    className="h-1 bg-ochre rounded-full transition-all duration-500"
+                    style={{ width: `${Math.round((autolabelStatus.processed / autolabelStatus.total) * 100)}%` }}
+                  />
+                ) : (
+                  <div className="h-1 bg-ochre rounded-full w-full animate-pulse" />
+                )}
               </div>
-              <p className="text-[10px] text-ochre">
-                Labeling... {autolabelStatus.processed.toLocaleString()} / {autolabelStatus.total.toLocaleString()}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] text-ochre flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-ochre animate-ping shrink-0" />
+                  {autolabelStatus.total > 0
+                    ? `Labeling… ${autolabelStatus.processed.toLocaleString()} / ${autolabelStatus.total.toLocaleString()}`
+                    : 'Starting…'}
+                </p>
+                <button
+                  onClick={onStopAutolabel}
+                  title="Stop after current batch — saves progress"
+                  className="font-mono text-[9px] border border-edge text-faint rounded-sm px-1.5 py-0.5 hover:border-brick hover:text-brick transition-colors shrink-0"
+                >
+                  Stop
+                </button>
+              </div>
             </>
           ) : autolabelUnlocked ? (
             <>
-              <button
-                onClick={onStartAutolabel}
-                className="w-full font-mono text-[10px] border border-ochre bg-ochre text-bg-warm rounded-sm px-2 py-1.5 hover:brightness-110 transition-all"
-              >
-                Auto-label {(total - labeled).toLocaleString()} remaining
-              </button>
+              <div className="flex gap-1">
+                <button
+                  onClick={onStartAutolabel}
+                  className="flex-1 font-mono text-[10px] border border-ochre bg-ochre text-bg-warm rounded-sm px-2 py-1.5 hover:brightness-110 transition-all"
+                >
+                  Auto-label {(total - labeled).toLocaleString()} remaining
+                </button>
+                <button
+                  onClick={onClearAutolabel}
+                  title="Delete all AI-applied labels (reset for re-testing)"
+                  className="font-mono text-[10px] border border-edge text-faint rounded-sm px-2 py-1.5 hover:border-brick hover:text-brick transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
               {autolabelStatus?.error && (
                 <p className="text-[10px] text-danger-text mt-1">{autolabelStatus.error}</p>
               )}
@@ -327,14 +358,14 @@ export function ProgressSidebar({
         />
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden" data-tutorial="label-list">
+      <div data-tutorial="label-list">
         <p className="text-[10px] uppercase tracking-widest text-faint mb-2">
           {recalibration?.phase === 'reconcile' ? 'Reconcile Labels' : 'Labels'}
         </p>
         {recalibration?.phase === 'reconcile' && (
           <p className="text-[10px] text-disabled mb-2">Toggle with 1-9 keys, {formatKey(keybinds.yes)} to confirm</p>
         )}
-        <div className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0">
+        <div className="flex flex-col gap-1.5">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={labels.map(l => l.id)} strategy={verticalListSortingStrategy}>
               {labels.map((label, idx) => {
@@ -404,7 +435,7 @@ export function ProgressSidebar({
         </div>
       </div>
 
-      <div className="shrink-0 flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         <RecentHistory items={history} onSelect={onSelectHistoryItem} reviewingKey={reviewingKey} />
         {recalibrationStats && recalibrationStats.total_recalibrations > 0 && (
           <div className="border-t border-edge-subtle pt-3">
@@ -447,6 +478,7 @@ export function ProgressSidebar({
         </div>
         )}
       </div>
+      </div>{/* end scrollable area */}
       {contextMenu && (
         <LabelContextMenu
           x={contextMenu.x}

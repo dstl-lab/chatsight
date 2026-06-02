@@ -106,7 +106,7 @@ beforeEach(() => {
 // The yes-key bindings (a / A) are covered in DecisionWorkspaceKeybinds.test.tsx.
 // This asserts the remaining default decision keys dispatch to their handlers,
 // including plain Enter -> onAcceptAi (only covered here).
-test('default keys dispatch handlers: no=d, skip=Space, undo=s, acceptAi=Enter', () => {
+test('default keys dispatch handlers: no=d, skip=ArrowRight, undo=ArrowLeft, acceptAi=Enter', () => {
   const onNo = vi.fn()
   const onSkip = vi.fn()
   const onUndo = vi.fn()
@@ -123,8 +123,8 @@ test('default keys dispatch handlers: no=d, skip=Space, undo=s, acceptAi=Enter',
     />,
   )
   fireEvent.keyDown(window, { key: 'd' })
-  fireEvent.keyDown(window, { key: ' ' })
-  fireEvent.keyDown(window, { key: 's' })
+  fireEvent.keyDown(window, { key: 'ArrowRight' })
+  fireEvent.keyDown(window, { key: 'ArrowLeft' })
   fireEvent.keyDown(window, { key: 'Enter' })
   expect(onNo).toHaveBeenCalledTimes(1)
   expect(onSkip).toHaveBeenCalledTimes(1)

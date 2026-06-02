@@ -38,6 +38,13 @@ export function DecisionDock({
 
   const formatKey = (key: string) => {
     if (key === ' ') return '␣'
+    if (key === 'arrowleft') return '←'
+    if (key === 'arrowright') return '→'
+    if (key === 'arrowup') return '↑'
+    if (key === 'arrowdown') return '↓'
+    if (key === 'enter') return '↵'
+    if (key === 'backspace') return '⌫'
+    if (key === 'escape') return 'Esc'
     return key.toUpperCase()
   }
 
@@ -85,7 +92,7 @@ export function DecisionDock({
           </div>
         ) : skipOnly ? (
           <p className="mx-auto mt-3.5 max-w-[760px] text-center font-mono text-[10px] tracking-[0.08em] text-faint">
-            <KeyChip>{formatKey(keybinds.skip)}</KeyChip> next message ·{' '}
+            <KeyChip>{formatKey(keybinds.skip)}</KeyChip> or <KeyChip>↵</KeyChip> next message ·{' '}
             <KeyChip>⇧{formatKey(keybinds.skip)}</KeyChip> another conversation
           </p>
         ) : (
@@ -104,9 +111,9 @@ export function DecisionDock({
               type="button"
               onClick={onHandoff}
               className="hover:text-on-canvas transition-colors"
-              title="Open handoff readiness (Enter)"
+              title="Open handoff readiness"
             >
-              <KeyChip>⏎</KeyChip> hand off
+              hand off
             </button>
             <button
               onClick={() => setSettingsOpen(true)}
@@ -140,6 +147,10 @@ function RecentLine({
   const word = recent.value === 'yes' ? 'Yes' : recent.value === 'no' ? 'No' : 'Skip'
   const formatKey = (key: string) => {
     if (key === ' ') return 'Space'
+    if (key === 'arrowleft') return '←'
+    if (key === 'arrowright') return '→'
+    if (key === 'enter') return '↵'
+    if (key === 'backspace') return '⌫'
     return key.toUpperCase()
   }
 

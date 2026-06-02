@@ -181,6 +181,14 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ok: true })
              : req('/api/queue/autolabel', { method: 'POST' }),
 
+  clearAutolabelResults: (): Promise<{ ok: boolean; deleted: number }> =>
+    USE_MOCK ? Promise.resolve({ ok: true, deleted: 0 })
+             : req('/api/queue/autolabel/results', { method: 'DELETE' }),
+
+  stopAutolabel: (): Promise<{ ok: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true })
+             : req('/api/queue/autolabel/stop', { method: 'POST' }),
+
   getAutolabelStatus: (): Promise<{ running: boolean; processed: number; total: number; error: string | null }> =>
     USE_MOCK ? Promise.resolve({ running: false, processed: 0, total: 0, error: null })
              : req('/api/queue/autolabel/status'),
