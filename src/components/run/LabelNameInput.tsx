@@ -13,6 +13,7 @@ interface LabelNameInputProps {
   onBlur?: () => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
   'data-tutorial'?: string
+  'data-note-input'?: string
 }
 
 export function LabelNameInput({
