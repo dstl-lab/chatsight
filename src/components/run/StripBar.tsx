@@ -125,7 +125,7 @@ export function StripBar({
                     if (draftMode || labelNameLocked) return
                     onLabelNameCommit?.()
                   }}
-                  placeholder="Label name…"
+                  placeholder="Type a label…"
                   className="box-border w-full min-w-[10rem] max-w-[18rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
                 />
               ) : (

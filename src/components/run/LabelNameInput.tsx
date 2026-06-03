@@ -119,6 +119,7 @@ export function LabelNameInput({
 
   return (
     <>
+      <form autoComplete="off" onSubmit={(e) => e.preventDefault()} style={{ display: 'contents' }}>
       <input
         ref={inputRef}
         role="combobox"
@@ -138,6 +139,7 @@ export function LabelNameInput({
         onKeyDown={handleKeyDown}
         {...rest}
       />
+      </form>
       {dropdown}
     </>
   )
