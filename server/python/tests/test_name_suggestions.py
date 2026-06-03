@@ -97,3 +97,56 @@ def test_filter_returns_empty_when_no_candidates():
         existing_names=["confusion"],
     )
     assert result == []
+
+
+# ── endpoint ─────────────────────────────────────────────────────────────────
+
+def test_endpoint_returns_empty_when_no_candidates(client):
+    resp = client.get("/api/concepts/name-suggestions")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_endpoint_filters_and_returns_suggestions(client, session):
+    from models import LabelDefinition, ConceptCandidate
+    import name_suggestion_service as svc
+
+    session.add(LabelDefinition(name="confusion", mode="single", description=""))
+    session.add(ConceptCandidate(
+        name="puzzled", description="student seems lost",
+        status="pending", source_run_id="r1", example_messages="[]",
+    ))
+    session.add(ConceptCandidate(
+        name="code syntax help", description="syntax questions",
+        status="pending", source_run_id="r1", example_messages="[]",
+    ))
+    session.commit()
+
+    mock = _mock_embed(
+        [[0.99, 0.14, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]],
+    )
+    with patch.object(svc.client.models, "embed_content", mock):
+        resp = client.get("/api/concepts/name-suggestions")
+
+    assert resp.status_code == 200
+    names = [s["name"] for s in resp.json()]
+    assert "puzzled" not in names
+    assert "code syntax help" in names
+
+
+def test_endpoint_returns_empty_on_gemini_error(client, session):
+    from models import LabelDefinition, ConceptCandidate
+    import name_suggestion_service as svc
+
+    session.add(LabelDefinition(name="existing label", mode="single", description=""))
+    session.add(ConceptCandidate(
+        name="scope clarification", description="...",
+        status="pending", source_run_id="r1", example_messages="[]",
+    ))
+    session.commit()
+
+    with patch.object(svc.client.models, "embed_content", side_effect=Exception("network")):
+        resp = client.get("/api/concepts/name-suggestions")
+
+    assert resp.status_code == 200
+    assert resp.json() == []

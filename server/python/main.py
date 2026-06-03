@@ -2084,6 +2084,29 @@ def get_candidates(db: Session = Depends(get_session)):
     ]
 
 
+@app.get("/api/concepts/name-suggestions")
+def get_name_suggestions(db: Session = Depends(get_session)):
+    """Return pending concept candidates filtered to exclude semantic duplicates of existing labels."""
+    import name_suggestion_service
+
+    candidates = db.exec(
+        select(ConceptCandidate).where(ConceptCandidate.status == "pending")
+    ).all()
+    if not candidates:
+        return []
+
+    existing_names = list(db.exec(select(LabelDefinition.name)).all())
+
+    try:
+        return name_suggestion_service.filter_suggestions(
+            candidate_names=[c.name for c in candidates],
+            candidate_descriptions=[c.description for c in candidates],
+            existing_names=existing_names,
+        )
+    except Exception:
+        return []
+
+
 @app.put("/api/concepts/candidates/{candidate_id}")
 def resolve_candidate(candidate_id: int, req: ResolveCandidateRequest, db: Session = Depends(get_session)):
     candidate = db.get(ConceptCandidate, candidate_id)
