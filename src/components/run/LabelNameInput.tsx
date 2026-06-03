@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { LabelNameSuggestion } from '../../types'
 
 interface LabelNameInputProps {
@@ -31,18 +32,26 @@ export function LabelNameInput({
 }: LabelNameInputProps) {
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
+  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const filtered = suggestions.filter(
     (s) =>
-      value.length > 0 &&
-      s.name.toLowerCase().includes(value.toLowerCase()) &&
-      s.name.toLowerCase() !== value.toLowerCase()
+      s.name.toLowerCase() !== value.toLowerCase() &&
+      (value.length === 0 || s.name.toLowerCase().includes(value.toLowerCase()))
   )
   const showDropdown = open && filtered.length > 0
 
   useEffect(() => {
     setHighlighted(0)
   }, [value])
+
+  // Measure input position whenever dropdown opens so the portal is positioned correctly
+  useEffect(() => {
+    if (showDropdown && inputRef.current) {
+      setDropdownRect(inputRef.current.getBoundingClientRect())
+    }
+  }, [showDropdown])
 
   function select(name: string) {
     onChange(name)
@@ -75,15 +84,49 @@ export function LabelNameInput({
     onKeyDown?.(e)
   }
 
+  const dropdown = showDropdown && dropdownRect ? createPortal(
+    <ul
+      role="listbox"
+      style={{
+        position: 'fixed',
+        top: dropdownRect.bottom + 2,
+        left: dropdownRect.left,
+        width: dropdownRect.width,
+        zIndex: 9999,
+      }}
+      className="max-h-48 overflow-y-auto rounded-sm border border-edge bg-elevated shadow-xl"
+    >
+      {filtered.map((s, i) => (
+        <li
+          key={s.name}
+          role="option"
+          aria-selected={i === highlighted}
+          className={`cursor-pointer px-3 py-2 ${
+            i === highlighted ? 'bg-ochre/10' : 'hover:bg-surface'
+          }`}
+          onMouseDown={(e) => { e.preventDefault(); select(s.name) }}
+          onMouseEnter={() => setHighlighted(i)}
+        >
+          <div className="text-sm font-semibold text-on-canvas">{s.name}</div>
+          {s.description && (
+            <div className="truncate text-xs text-muted">{s.description}</div>
+          )}
+        </li>
+      ))}
+    </ul>,
+    document.body
+  ) : null
+
   return (
-    <div className="relative">
+    <>
       <input
+        ref={inputRef}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={showDropdown}
         aria-haspopup="listbox"
         type="text"
-        autoComplete="off"
+        autoComplete="new-password"
         value={value}
         readOnly={readOnly}
         autoFocus={autoFocus}
@@ -95,30 +138,7 @@ export function LabelNameInput({
         onKeyDown={handleKeyDown}
         {...rest}
       />
-      {showDropdown && (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-0.5 max-h-48 overflow-y-auto rounded-sm border border-edge bg-elevated shadow-lg"
-        >
-          {filtered.map((s, i) => (
-            <li
-              key={s.name}
-              role="option"
-              aria-selected={i === highlighted}
-              className={`cursor-pointer px-3 py-2 ${
-                i === highlighted ? 'bg-ochre/10' : 'hover:bg-surface'
-              }`}
-              onMouseDown={(e) => { e.preventDefault(); select(s.name) }}
-              onMouseEnter={() => setHighlighted(i)}
-            >
-              <div className="text-sm font-semibold text-on-canvas">{s.name}</div>
-              {s.description && (
-                <div className="truncate text-xs text-muted">{s.description}</div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      {dropdown}
+    </>
   )
 }

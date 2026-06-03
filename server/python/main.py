@@ -2086,21 +2086,37 @@ def get_candidates(db: Session = Depends(get_session)):
 
 @app.get("/api/concepts/name-suggestions")
 def get_name_suggestions(db: Session = Depends(get_session)):
-    """Return pending concept candidates filtered to exclude semantic duplicates of existing labels."""
+    """Return label name suggestions filtered to exclude semantic duplicates of existing labels.
+
+    Primary source: pending concept candidates (populated by the Discover flow).
+    Fallback: generate suggestions on-demand from a sample of cached student messages.
+    """
     import name_suggestion_service
 
     candidates = db.exec(
         select(ConceptCandidate).where(ConceptCandidate.status == "pending")
     ).all()
-    if not candidates:
-        return []
 
     existing_names = list(db.exec(select(LabelDefinition.name)).all())
 
+    if candidates:
+        try:
+            return name_suggestion_service.filter_suggestions(
+                candidate_names=[c.name for c in candidates],
+                candidate_descriptions=[c.description for c in candidates],
+                existing_names=existing_names,
+            )
+        except Exception:
+            return []
+
+    # No concept candidates yet — generate from message cache
+    message_texts = list(db.exec(select(MessageCache.message_text).limit(50)).all())
+    if not message_texts:
+        return []
+
     try:
-        return name_suggestion_service.filter_suggestions(
-            candidate_names=[c.name for c in candidates],
-            candidate_descriptions=[c.description for c in candidates],
+        return name_suggestion_service.generate_from_messages(
+            message_texts=message_texts,
             existing_names=existing_names,
         )
     except Exception:
