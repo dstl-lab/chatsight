@@ -1,4 +1,3 @@
-import math
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -61,12 +60,33 @@ def test_filter_removes_synonym(monkeypatch):
 
 def test_filter_returns_all_when_no_existing_labels():
     import name_suggestion_service as svc
-    result = svc.filter_suggestions(
-        candidate_names=["error tracing"],
-        candidate_descriptions=["tracing errors"],
-        existing_names=[],
-    )
+    with patch.object(svc.client.models, "embed_content") as mock_embed:
+        result = svc.filter_suggestions(
+            candidate_names=["error tracing"],
+            candidate_descriptions=["tracing errors"],
+            existing_names=[],
+        )
     assert result == [{"name": "error tracing", "description": "tracing errors"}]
+    mock_embed.assert_not_called()
+
+
+def test_filter_keeps_candidate_at_exact_threshold(monkeypatch):
+    """Candidate with sim == 0.75 must be kept (threshold is strictly >)."""
+    import math
+    import name_suggestion_service as svc
+
+    # cos_sim(a, b) = 0.75 when a=[0.75, sqrt(1-0.75^2), 0], b=[1,0,0]
+    a = [0.75, math.sqrt(1 - 0.75**2), 0.0]
+    b = [1.0, 0.0, 0.0]
+
+    mock = _mock_embed([a, b])
+    with patch.object(svc.client.models, "embed_content", mock):
+        result = svc.filter_suggestions(
+            candidate_names=["borderline"],
+            candidate_descriptions=["exactly at threshold"],
+            existing_names=["existing"],
+        )
+    assert result == [{"name": "borderline", "description": "exactly at threshold"}]
 
 
 def test_filter_returns_empty_when_no_candidates():
