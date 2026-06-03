@@ -25,6 +25,7 @@ import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
 import { AiReviewDock } from '../components/decision/AiReviewDock'
 import { useKeybinds } from '../hooks/useKeybinds'
+import { useLabelSuggestions } from '../hooks/useLabelSuggestions'
 import { api } from '../services/api'
 import type {
   DecisionValue,
@@ -532,6 +533,7 @@ export function LabelRunPage() {
   )
 
   const { keybinds } = useKeybinds()
+  const { suggestions } = useLabelSuggestions()
 
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
@@ -686,6 +688,7 @@ export function LabelRunPage() {
                 onClearAll={handleClearQueue}
                 onSwitchQueued={(id) => void handleSwitchToQueued(id)}
                 onRemoveQueued={(id) => void handleRemoveQueued(id)}
+                suggestions={suggestions}
               />
               <ConversationMeta
                 chatlogId={item.chatlog_id}
@@ -721,6 +724,7 @@ export function LabelRunPage() {
           open={noteOpen}
           onClose={() => setNoteOpen(false)}
           onSubmit={handleNoteSubmit}
+          suggestions={suggestions}
         />
         {abortOpen && (
           <AbortConfirmModal
@@ -767,6 +771,7 @@ export function LabelRunPage() {
               onClearAll={handleClearQueue}
               onSwitchQueued={(id) => void handleSwitchToQueued(id)}
               onRemoveQueued={(id) => void handleRemoveQueued(id)}
+              suggestions={suggestions}
             />
             <ConversationMeta
               chatlogId={focused.chatlog_id}
@@ -819,6 +824,7 @@ export function LabelRunPage() {
         open={noteOpen}
         onClose={() => setNoteOpen(false)}
         onSubmit={handleNoteSubmit}
+        suggestions={suggestions}
       />
       <SummaryModal
         summary={summary}
