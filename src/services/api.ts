@@ -3,7 +3,7 @@ import type {
   LabelDefinition, QueueItem, LabelingSession, SuggestResponse,
   QueueStats, ApplyLabelRequest, CreateLabelRequest, UpdateLabelRequest,
   HistoryItem, LabelReviewItem,
-  ConceptCandidate, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
+  ConceptCandidate, LabelNameSuggestion, EmbedStatus, ConversationMessage, AnalysisSummary, TemporalAnalysis,
   LabelExample, SplitAutoLabelRequest, ApplyBatchRequest, ConciseResponse,
   RecalibrationItem, RecalibrationStats, SaveRecalibrationRequest, SaveRecalibrationResponse,
   SingleLabel, FocusedMessage, ReadinessState, DecideResult, DecisionValue,
@@ -129,6 +129,10 @@ export const api = {
   getCandidates: (): Promise<ConceptCandidate[]> =>
     USE_MOCK ? Promise.resolve([])
              : req('/api/concepts/candidates'),
+
+  getNameSuggestions: (): Promise<LabelNameSuggestion[]> =>
+    USE_MOCK ? Promise.resolve([])
+             : req('/api/concepts/name-suggestions'),
 
   resolveCandidate: (id: number, action: 'accept' | 'reject', name?: string): Promise<LabelDefinition | { ok: boolean }> =>
     USE_MOCK ? Promise.resolve({ ok: true })
