@@ -590,8 +590,9 @@ function SplitSessionModal({
           <div className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-faint uppercase tracking-widest mb-1.5">Category A (Left Arrow)</label>
-              <input 
+              <input
                 autoFocus
+                autoComplete="off"
                 className="w-full px-3 py-2 bg-canvas border border-edge rounded text-sm text-on-canvas placeholder-disabled focus:outline-none focus:border-accent transition-all"
                 placeholder="e.g. Theory"
                 value={nameA}
@@ -601,7 +602,8 @@ function SplitSessionModal({
             </div>
             <div>
               <label className="block text-[10px] font-bold text-faint uppercase tracking-widest mb-1.5">Category B (Right Arrow)</label>
-              <input 
+              <input
+                autoComplete="off"
                 className="w-full px-3 py-2 bg-canvas border border-edge rounded text-sm text-on-canvas placeholder-disabled focus:outline-none focus:border-accent transition-all"
                 placeholder="e.g. Implementation"
                 value={nameB}

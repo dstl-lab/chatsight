@@ -101,6 +101,7 @@ export function StripBar({
               {showNameInput ? (
                 <input
                   type="text"
+                  autoComplete="off"
                   data-tutorial="label-name"
                   value={labelNameDraft ?? ''}
                   readOnly={labelNameLocked}
