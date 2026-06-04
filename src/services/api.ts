@@ -382,10 +382,15 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
              : req(`/api/single-labels/${id}/close`, { method: 'POST' }),
 
-  getNextFocused: (id: number, assignmentId?: number): Promise<FocusedMessage | null> =>
-    USE_MOCK
+  getNextFocused: (id: number, assignmentId?: number, hintChatlogId?: number): Promise<FocusedMessage | null> => {
+    const params = new URLSearchParams()
+    if (assignmentId != null) params.set('assignment_id', String(assignmentId))
+    if (hintChatlogId != null) params.set('hint_chatlog_id', String(hintChatlogId))
+    const qs = params.toString()
+    return USE_MOCK
       ? Promise.resolve(mockFocusedMessage)
-      : req(`/api/single-labels/${id}/next${assignmentId ? `?assignment_id=${assignmentId}` : ''}`),
+      : req(`/api/single-labels/${id}/next${qs ? '?' + qs : ''}`)
+  },
 
   decide: (
     id: number,

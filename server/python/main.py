@@ -3594,9 +3594,15 @@ def close_single_label(label_id: int, db: Session = Depends(get_session)):
 def get_next_focused(
     label_id: int,
     assignment_id: Optional[int] = None,
+    hint_chatlog_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Walk the next focused message for the active labeling label."""
+    """Walk the next focused message for the active labeling label.
+
+    hint_chatlog_id: if provided, try to return the first undecided message
+    from that conversation before falling back to normal queue ordering.
+    Used after label switches to keep the instructor in the same conversation.
+    """
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
@@ -3607,6 +3613,7 @@ def get_next_focused(
         label_id,
         assignment_id,
         explore_fraction=_effective_hybrid_explore_fraction(label),
+        hint_chatlog_id=hint_chatlog_id,
     )
     db.commit()
     if not payload:

@@ -538,17 +538,39 @@ export function LabelRunPage() {
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
+      const hintChatlogId = focused?.chatlog_id
       setBusyMessage('Switching label…')
       setBusy(true)
       try {
         await api.switchToLabel(id)
         setBusyMessage('Loading label…')
-        await refresh()
+        // Use hintChatlogId so the new label opens on the same conversation.
+        // refresh() is still called but we override getNextFocused with the hint.
+        const [active, a, um] = await Promise.all([
+          api.getActiveSingleLabel(),
+          api.listAssignments(),
+          api.getUnmappedCount(),
+        ])
+        setAssignments(a)
+        setUnmapped(um)
+        if (active) {
+          const [next, ready, q] = await Promise.all([
+            api.getNextFocused(active.id, selectedAssignmentId ?? undefined, hintChatlogId),
+            api.getReadiness(active.id),
+            api.listSingleLabels({ phase: 'queued' }),
+          ])
+          setActiveLabel(active)
+          setFocused(next)
+          setReadiness(ready)
+          setQueued(q)
+          setReviewQueue(null)
+          setReviewIdx(0)
+        }
       } finally {
         setBusy(false)
       }
     },
-    [busy, refresh]
+    [busy, focused?.chatlog_id, selectedAssignmentId]
   )
 
   const progressActive = loading || busy || handoffPending
