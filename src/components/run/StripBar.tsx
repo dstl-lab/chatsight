@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount } from '../../types'
+import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount, LabelNameSuggestion } from '../../types'
 import { api } from '../../services/api'
 import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
 import { isPlaceholderLabelName } from './labelPlaceholder'
+import { LabelNameInput } from './LabelNameInput'
 
 export interface StripBarProps {
   label: SingleLabel
@@ -27,6 +28,7 @@ export interface StripBarProps {
   onClearAll?: () => void
   onSwitchQueued?: (id: number) => void
   onRemoveQueued?: (id: number) => void
+  suggestions?: LabelNameSuggestion[]
 }
 
 export function StripBar({
@@ -50,6 +52,7 @@ export function StripBar({
   onClearAll,
   onSwitchQueued,
   onRemoveQueued,
+  suggestions = [],
 }: StripBarProps) {
   const showNameInput =
     draftMode ||
@@ -99,12 +102,18 @@ export function StripBar({
             <div className="flex min-w-0 max-w-full items-center gap-2.5">
               <span className="text-ochre text-[11px]">◆</span>
               {showNameInput ? (
-                <input
-                  type="text"
+                <LabelNameInput
                   data-tutorial="label-name"
                   value={labelNameDraft ?? ''}
                   readOnly={labelNameLocked}
-                  onChange={(e) => onLabelNameDraftChange?.(e.target.value)}
+                  suggestions={suggestions}
+                  onChange={(v) => onLabelNameDraftChange?.(v)}
+                  onCommit={() => {
+                    const name = (labelNameDraft ?? '').trim()
+                    if (name && !isPlaceholderLabelName(name) && !labelNameLocked) {
+                      commitName?.()
+                    }
+                  }}
                   onKeyDown={(e) => {
                     const name = (labelNameDraft ?? '').trim()
                     if (e.key === 'Enter' && name && !isPlaceholderLabelName(name) && !labelNameLocked) {
@@ -116,7 +125,7 @@ export function StripBar({
                     if (draftMode || labelNameLocked) return
                     onLabelNameCommit?.()
                   }}
-                  placeholder="Label name…"
+                  placeholder="Type a label…"
                   className="box-border w-full min-w-[10rem] max-w-[18rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
                 />
               ) : (

@@ -488,6 +488,7 @@ def next_message_for_label(
     explore_fraction: Optional[float] = None,
     *,
     extra_decided: Optional[set[tuple[int, int]]] = None,
+    hint_chatlog_id: Optional[int] = None,
 ) -> Optional[dict]:
     eff_explore = (
         max(0.0, min(1.0, explore_fraction))
@@ -586,6 +587,21 @@ def next_message_for_label(
 
     in_progress.sort(key=lambda c: _shuffle_key(label_id, c))
     not_started.sort(key=lambda c: _shuffle_key(label_id, c))
+
+    # If the caller pinned a conversation (e.g. after a label switch), try it first.
+    if hint_chatlog_id is not None and hint_chatlog_id in conv:
+        tup = _first_pending_turn(hint_chatlog_id, conv[hint_chatlog_id], decided)
+        if tup:
+            midx, text, notebook = tup
+            sampling_meta = build_sampling_meta(
+                session, label_id, hint_chatlog_id, midx,
+                len(conv[hint_chatlog_id]), "round_robin",
+            )
+            return _build_focus_payload(
+                session, label_id, hint_chatlog_id, midx, text, notebook,
+                sampling_meta=sampling_meta,
+            )
+        # Hint conversation is fully decided for this label — fall through to normal pick.
 
     cid_pick, pick_mode = _select_next_chatlog_id(
         session,

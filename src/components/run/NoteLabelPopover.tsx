@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { LabelNameInput } from './LabelNameInput'
+import type { LabelNameSuggestion } from '../../types'
 
 interface NoteLabelPopoverProps {
   open: boolean
   onClose: () => void
   onSubmit: (name: string, description: string) => void
+  suggestions?: LabelNameSuggestion[]
 }
 
-export function NoteLabelPopover({ open, onClose, onSubmit }: NoteLabelPopoverProps) {
+export function NoteLabelPopover({ open, onClose, onSubmit, suggestions = [] }: NoteLabelPopoverProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
-      requestAnimationFrame(() => nameRef.current?.focus())
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLInputElement>('[data-note-input]')?.focus()
+      })
     } else {
       setName('')
       setDescription('')
@@ -26,7 +30,10 @@ export function NoteLabelPopover({ open, onClose, onSubmit }: NoteLabelPopoverPr
       if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
-      } else if (e.key === 'Enter' && document.activeElement === nameRef.current) {
+      } else if (
+        e.key === 'Enter' &&
+        (document.activeElement as HTMLElement)?.dataset?.noteInput !== undefined
+      ) {
         e.preventDefault()
         if (name.trim()) onSubmit(name.trim(), description.trim())
       }
@@ -62,14 +69,15 @@ export function NoteLabelPopover({ open, onClose, onSubmit }: NoteLabelPopoverPr
         </div>
         <div className="px-[22px] pt-4 pb-3 flex flex-col gap-3.5">
           <Field label="Name">
-            <input
-              ref={nameRef}
-              type="text"
-              autoComplete="off"
+            <LabelNameInput
+              data-note-input=""
+              autoFocus
               placeholder="e.g. frustration"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="appearance-none bg-canvas border border-edge text-on-canvas px-[11px] py-[9px] rounded-sm font-sans text-[13px] focus:outline-none focus:border-ochre-dim"
+              suggestions={suggestions}
+              onChange={setName}
+              onCommit={() => { if (name.trim()) onSubmit(name.trim(), description.trim()) }}
+              className="appearance-none bg-canvas border border-edge text-on-canvas px-[11px] py-[9px] rounded-sm font-sans text-[13px] focus:outline-none focus:border-ochre-dim w-full"
             />
           </Field>
           <Field label="Description (optional)">
