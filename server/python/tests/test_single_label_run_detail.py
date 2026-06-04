@@ -164,6 +164,27 @@ def test_run_detail_ai_coverage(client, session):
     assert cov == {"covered": 3, "total": 10, "pct": 30}
 
 
+def test_run_detail_ai_coverage_total_is_study_scoped(client, session, monkeypatch):
+    """The coverage denominator must be the in-scope study sample (Week 8 for
+    single-label runs), not the entire MessageCache. Regression: `total` counted
+    every cached message across all weeks, so coverage of the scoped sample read
+    as a tiny fraction (e.g. 3326/30102 = 11%) instead of ~100%."""
+    monkeypatch.setenv("CHATSIGHT_STUDY_LOCK", "1")
+    rid = _make_run(session)
+    # 4 in-scope (Week 8 = Lab 5) + 6 out-of-scope (Week 3 = Lab 1) = 10 cached.
+    for i in range(4):
+        session.add(MessageCache(chatlog_id=1, message_index=i, message_text=f"m{i}", notebook="lab5.ipynb"))
+    for i in range(6):
+        session.add(MessageCache(chatlog_id=2, message_index=i, message_text=f"o{i}", notebook="lab1.ipynb"))
+    session.commit()
+    # AI classified 2 of the in-scope messages.
+    _add(session, rid, 1, 0, "yes", applied_by="ai", confidence=0.9)
+    _add(session, rid, 1, 1, "no", applied_by="ai", confidence=0.8)
+
+    cov = client.get(f"/api/analysis/single-label/runs/{rid}").json()["ai_coverage"]
+    assert cov == {"covered": 2, "total": 4, "pct": 50}
+
+
 def test_run_detail_examples_capped_at_8(client, session):
     rid = _make_run(session)
     # 20 yes humans

@@ -20,6 +20,9 @@ class LabelDefinition(SQLModel, table=True):
     summary_json: Optional[str] = Field(default=None)  # cached AI summary blob
     classified_count: Optional[int] = Field(default=None)  # progress: rows AI has classified
     classification_total: Optional[int] = Field(default=None)  # progress: total to classify
+    # When the handoff was initiated (phase → classifying). Drives Summaries
+    # ordering (most-recent handoff first). Set on /handoff; preserved on retry.
+    handed_off_at: Optional[datetime] = Field(default=None)
     # Sequential/composable: a mode='single' label promoted from a mode='multi' label
     # carries a back-reference here. Populated by POST /api/labels/{multi_id}/promote.
     paired_label_id: Optional[int] = Field(

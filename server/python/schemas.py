@@ -516,7 +516,7 @@ class MessageListItem(BaseModel):
     message_index: int
     text: str
     confidence: Optional[float]
-    verdict: Optional[Literal["yes", "no", "review"]]
+    verdict: Optional[Literal["yes", "no", "skip", "review"]]
     applied_by: Optional[Literal["ai", "human"]]
     flagged: bool
     has_note: bool
@@ -541,7 +541,7 @@ class MessageDetailResponse(BaseModel):
     message_index: int
     text: str
     confidence: Optional[float]
-    verdict: Optional[Literal["yes", "no", "review"]]
+    verdict: Optional[Literal["yes", "no", "skip", "review"]]
     applied_by: Optional[Literal["ai", "human"]]
     matched_pattern: Optional[str]
     rationale: Optional[str]

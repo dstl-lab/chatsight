@@ -1,8 +1,10 @@
 """Tests for handoff (now background-async), summary, refine, and review-queue endpoints."""
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from sqlmodel import select
+from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel.pool import StaticPool
 
 import main
 from models import LabelApplication, LabelDefinition, MessageCache
@@ -1056,3 +1058,208 @@ def test_handoff_summaries_surfaces_batch_count_fields(client, session):
     assert len(found) == 1
     assert found[0]["batch_total_count"] == 5
     assert found[0]["batch_completed_count"] == 2
+
+
+# ─── Inline classification concurrency gate ───────────────────────────────
+
+
+def _isolated_engine_with_pending(label_name, n_msgs=4):
+    """Build a standalone in-memory engine seeded with a single-label and
+    `n_msgs` undecided cached messages so `_do_classification` reaches the
+    inline classify call. Returns (engine, label_id). Each engine is its own
+    DB so two threads can run `_do_classification` without write contention —
+    the thing under test (the serialization lock) is process-global, not
+    per-DB."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as db:
+        label = LabelDefinition(name=label_name, mode="single", phase="classifying")
+        db.add(label)
+        for i in range(n_msgs):
+            db.add(MessageCache(
+                chatlog_id=700, message_index=i,
+                message_text=f"msg {i}", notebook="lab3.ipynb",
+            ))
+        db.commit()
+        db.refresh(label)
+        return engine, label.id
+
+
+def test_concurrent_inline_classifications_are_serialized():
+    """Two inline classifications running at once must not overlap — the
+    process-wide lock keeps aggregate Gemini concurrency at the tuned value
+    instead of multiplying it per in-flight handoff."""
+    active = {"n": 0, "peak": 0}
+    active_lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def instrumented_classify_in_parallel(db, label, pending, yes_ex, no_ex):
+        with active_lock:
+            active["n"] += 1
+            active["peak"] = max(active["peak"], active["n"])
+        # Hold long enough that an ungated sibling would overlap here.
+        threading.Event().wait(0.1)
+        with active_lock:
+            active["n"] -= 1
+        return [], []
+
+    def fake_summary(*args, **kwargs):
+        return {"included": [], "excluded": []}
+
+    engine_a, label_a = _isolated_engine_with_pending("alpha")
+    engine_b, label_b = _isolated_engine_with_pending("beta")
+
+    def run(engine, label_id):
+        barrier.wait()  # ensure both threads contend for the lock together
+        with Session(engine) as db:
+            label = db.get(LabelDefinition, label_id)
+            main._do_classification(db, label)
+
+    with patch("main._classify_in_parallel", side_effect=instrumented_classify_in_parallel), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary):
+        t_a = threading.Thread(target=run, args=(engine_a, label_a))
+        t_b = threading.Thread(target=run, args=(engine_b, label_b))
+        t_a.start()
+        t_b.start()
+        t_a.join(timeout=5)
+        t_b.join(timeout=5)
+
+    assert not t_a.is_alive() and not t_b.is_alive(), "classification thread hung"
+    assert active["peak"] == 1, (
+        f"inline classifications overlapped (peak={active['peak']}); "
+        "the serialization lock is not gating them"
+    )
+
+
+def test_batch_classification_not_gated_by_inline_lock(monkeypatch):
+    """The Batch API path must NOT acquire the inline lock — Google manages its
+    own throughput, so a held inline lock should not block a batch job."""
+    # Route any pending to the batch path.
+    monkeypatch.setattr(main, "BATCH_THRESHOLD", 0)
+
+    engine, label_id = _isolated_engine_with_pending("batchy")
+
+    def fake_batch(db, label, pending, yes_ex, no_ex):
+        return [], []
+
+    def fake_summary(*args, **kwargs):
+        return {"included": [], "excluded": []}
+
+    completed = threading.Event()
+
+    def run():
+        with Session(engine) as db:
+            label = db.get(LabelDefinition, label_id)
+            main._do_classification(db, label)
+        completed.set()
+
+    with patch("main._classify_via_batch_api", side_effect=fake_batch), \
+         patch("binary_autolabel_service.summarize_batch", side_effect=fake_summary):
+        # Hold the inline lock for the whole duration — a correctly-scoped gate
+        # leaves the batch path free to proceed.
+        with main._INLINE_CLASSIFY_LOCK:
+            t = threading.Thread(target=run)
+            t.start()
+            finished = completed.wait(timeout=3)
+            t.join(timeout=2)
+
+    assert finished, "batch classification blocked on the inline-only lock"
+
+
+# ─── Handoff ordering (handed_off_at) ─────────────────────────────────────
+
+
+def test_handoff_sets_handed_off_at(client, session):
+    """Initiating a handoff stamps handed_off_at so summaries can order by it."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 300, 1, "no")
+
+    with patch("main._classify_in_background"):  # don't run the real bg task
+        r = client.post(f"/api/single-labels/{a['id']}/handoff")
+    assert r.status_code == 200
+
+    fresh = session.get(LabelDefinition, a["id"])
+    session.refresh(fresh)
+    assert fresh.handed_off_at is not None
+
+
+def test_handoff_summaries_ordered_by_handed_off_at_desc(client, session):
+    """Most-recently handed-off labels sort first."""
+    base = datetime(2026, 1, 1, 12, 0, 0)
+    # Insert out of chronological order to prove the endpoint sorts, not insert-order.
+    specs = [
+        ("oldest", base),
+        ("newest", base + timedelta(hours=2)),
+        ("middle", base + timedelta(hours=1)),
+    ]
+    for name, ts in specs:
+        session.add(LabelDefinition(
+            name=name, mode="single", phase="handed_off", handed_off_at=ts,
+        ))
+    session.commit()
+
+    items = client.get("/api/handoff-summaries").json()
+    names = [it["label_name"] for it in items]
+    assert names == ["newest", "middle", "oldest"]
+
+
+def test_handoff_summaries_null_handed_off_at_sorts_last(client, session):
+    """Defensive: a handed-off label with no timestamp falls below stamped ones."""
+    session.add(LabelDefinition(
+        name="stamped", mode="single", phase="handed_off",
+        handed_off_at=datetime(2026, 1, 1, 12, 0, 0),
+    ))
+    session.add(LabelDefinition(name="unstamped", mode="single", phase="handed_off", handed_off_at=None))
+    session.commit()
+
+    items = client.get("/api/handoff-summaries").json()
+    names = [it["label_name"] for it in items]
+    assert names.index("stamped") < names.index("unstamped")
+
+
+def test_backfill_handed_off_at_uses_max_ai_row_time_else_created_at(engine, session):
+    """One-time migration backfill: handed-off single-labels get handed_off_at
+    from their most-recent AI row's created_at, falling back to the label's own
+    created_at when there are no AI rows. Other labels are left untouched."""
+    import database
+
+    t_created = datetime(2026, 1, 1, 9, 0, 0)
+    t_ai_old = datetime(2026, 1, 2, 9, 0, 0)
+    t_ai_new = datetime(2026, 1, 2, 15, 0, 0)
+
+    with_ai = LabelDefinition(name="with-ai", mode="single", phase="handed_off",
+                              created_at=t_created, handed_off_at=None)
+    no_ai = LabelDefinition(name="no-ai", mode="single", phase="failed",
+                            created_at=t_created, handed_off_at=None)
+    still_labeling = LabelDefinition(name="labeling", mode="single", phase="labeling",
+                                     created_at=t_created, handed_off_at=None)
+    multi = LabelDefinition(name="multi", mode="multi", phase="handed_off",
+                            created_at=t_created, handed_off_at=None)
+    session.add_all([with_ai, no_ai, still_labeling, multi])
+    session.commit()
+    session.refresh(with_ai)
+
+    # AI rows for `with_ai` — the max created_at should win.
+    session.add(LabelApplication(label_id=with_ai.id, chatlog_id=1, message_index=0,
+                                 applied_by="ai", value="yes", confidence=0.9, created_at=t_ai_old))
+    session.add(LabelApplication(label_id=with_ai.id, chatlog_id=1, message_index=1,
+                                 applied_by="ai", value="no", confidence=0.9, created_at=t_ai_new))
+    session.commit()
+
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        database._backfill_handed_off_at(conn, text)
+        conn.commit()
+
+    session.expire_all()
+    assert session.get(LabelDefinition, with_ai.id).handed_off_at == t_ai_new
+    assert session.get(LabelDefinition, no_ai.id).handed_off_at == t_created  # fallback
+    assert session.get(LabelDefinition, still_labeling.id).handed_off_at is None  # wrong phase
+    assert session.get(LabelDefinition, multi.id).handed_off_at is None  # wrong mode
