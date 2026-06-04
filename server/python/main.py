@@ -3842,6 +3842,15 @@ CLASSIFICATION_CHUNK_SIZE = 50
 # per-project quota in the first second of a fresh run. The retry-on-429
 # logic in `_classify_in_parallel` self-throttles below this when needed.
 PARALLEL_CONCURRENCY = 3
+# Process-wide gate: only one inline classification runs at a time. Concurrent
+# handoffs would each spawn PARALLEL_CONCURRENCY workers, multiplying the Gemini
+# request rate past the quota PARALLEL_CONCURRENCY was tuned to sit under (see
+# above), causing retry/backoff thrashing that is slower than running serially.
+# Serializing whole inline jobs keeps aggregate concurrency at the tuned value
+# and lets each label finish — and become usable — before the next starts. The
+# Batch API path is intentionally NOT gated: Google manages its throughput
+# asynchronously, so local serialization would only stall progress.
+_INLINE_CLASSIFY_LOCK = threading.Lock()
 # Retry settings for the chunk-classifier when Gemini returns 429. Other
 # error classes fail-fast so genuine bugs surface immediately.
 PARALLEL_RETRY_MAX_ATTEMPTS = 4   # initial try + 3 retries
@@ -3949,9 +3958,12 @@ def _do_classification(
             db, label, pending, yes_examples, no_examples
         )
     else:
-        yes_msgs, no_msgs = _classify_in_parallel(
-            db, label, pending, yes_examples, no_examples
-        )
+        # Serialize inline jobs process-wide so N concurrent handoffs don't
+        # multiply Gemini request rate past quota. See _INLINE_CLASSIFY_LOCK.
+        with _INLINE_CLASSIFY_LOCK:
+            yes_msgs, no_msgs = _classify_in_parallel(
+                db, label, pending, yes_examples, no_examples
+            )
 
     summary = binary_autolabel_service.summarize_batch(
         label_name=label.name,
@@ -4498,6 +4510,7 @@ def handoff_single_label(
 
     label.phase = "classifying"
     label.is_active = False
+    label.handed_off_at = datetime.utcnow()
     db.add(label)
 
     next_q = db.exec(
@@ -4546,6 +4559,10 @@ def retry_handoff_single_label(
 
     label.phase = "classifying"
     label.summary_json = None
+    # A retry resumes the original handoff, so keep the original handed_off_at;
+    # only stamp it if it was never set (e.g. a pre-migration row).
+    if label.handed_off_at is None:
+        label.handed_off_at = datetime.utcnow()
     # Keep classified_count / classification_total — they're cumulative across
     # retries. _do_classification extends them by the new pending set's size.
     db.add(label)
@@ -5058,7 +5075,9 @@ def list_handoff_summaries(db: Session = Depends(get_session)):
         .where(LabelDefinition.phase.in_(  # type: ignore[attr-defined]
             ["classifying", "handed_off", "reviewing", "complete", "failed"]
         ))
-        .order_by(LabelDefinition.id.desc())
+        # Most-recently handed-off first. id.desc() is a stable tiebreaker and
+        # also orders any rows that predate the handed_off_at backfill (nulls last).
+        .order_by(LabelDefinition.handed_off_at.desc().nulls_last(), LabelDefinition.id.desc())
     ).all()
 
     out: list[HandoffSummaryListItem] = []

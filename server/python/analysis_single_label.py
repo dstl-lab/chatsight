@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+import study_scope
 from database import get_session
 from models import AssignmentMapping, LabelApplication, LabelDefinition, MessageCache
 
@@ -442,8 +443,12 @@ def get_run_detail(run_id: int, session: Session = Depends(get_session)) -> dict
     # "Touched by AI" = pending AI rows + reviewed-human rows with a snapshot.
     ai_touched: set[tuple[int, int]] = {(a.chatlog_id, a.message_index) for a in ais}
     ai_touched.update((a.chatlog_id, a.message_index) for a in reviewed)
-    total_msgs = session.exec(select(MessageCache)).all()
-    total = len(total_msgs)
+    # Denominator is the in-scope study sample (Week 8 for single-label runs),
+    # matching the scope `_do_classification` classifies over. Counting the whole
+    # MessageCache understates coverage to a tiny fraction. When the study lock is
+    # off, `in_scope_keys` returns every cached message, preserving prior behavior.
+    in_scope = study_scope.in_scope_keys(session, study_scope.scope_for_mode(ld.mode))
+    total = len(in_scope)
     ai_coverage = {
         "covered": len(ai_touched),
         "total": total,
