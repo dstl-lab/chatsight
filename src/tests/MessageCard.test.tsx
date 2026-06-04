@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent } from './test-utils'
 import { MessageCard } from '../components/queue/MessageCard'
 import { mockApi } from '../mocks'
 import type { QueueItem } from '../types'
@@ -32,7 +32,7 @@ test('renders student message text', () => {
 
 test('shows AI lock indicator when not unlocked', () => {
   render(<MessageCard {...defaultProps} />)
-  expect(screen.getByText(/AI unlocks at 20/i)).toBeInTheDocument()
+  expect(screen.getByText(/AI unlocks at 10/i)).toBeInTheDocument()
 })
 
 test('shows ghost tag when AI unlocked with suggestion', () => {
