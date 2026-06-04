@@ -230,6 +230,120 @@ def test_undo_removes_last_decision(client, session):
     assert apps[0].message_index == 0
 
 
+def test_next_with_hint_chatlog_id_stays_in_same_conversation(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    # No decisions yet: with a hint, the next message should come from the hinted
+    # conversation (202) rather than the label's own shuffled first pick.
+    r = client.get(
+        f"/api/single-labels/{label['id']}/next?hint_chatlog_id=202"
+    )
+    assert r.status_code == 200
+    assert r.json()["chatlog_id"] == 202
+
+
+def test_next_with_hint_falls_back_when_conversation_done(client, session):
+    _seed_messages(session, conversations=2, per_conv=2)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    # Decide every message in conversation 200 so the hint is exhausted.
+    for i in range(2):
+        client.post(
+            f"/api/single-labels/{label['id']}/decide",
+            json={"chatlog_id": 200, "message_index": i, "value": "yes"},
+        )
+    r = client.get(
+        f"/api/single-labels/{label['id']}/next?hint_chatlog_id=200"
+    )
+    assert r.status_code == 200
+    # Hint conversation fully decided → falls through to a different conversation.
+    assert r.json()["chatlog_id"] == 201
+
+
+def test_undo_refocuses_the_undone_message(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    client.post(
+        f"/api/single-labels/{label['id']}/decide",
+        json={"chatlog_id": 200, "message_index": 0, "value": "yes"},
+    )
+    client.post(
+        f"/api/single-labels/{label['id']}/decide",
+        json={"chatlog_id": 200, "message_index": 1, "value": "no"},
+    )
+    r = client.post(f"/api/single-labels/{label['id']}/undo")
+    assert r.status_code == 200
+    nxt = r.json()["next"]
+    # Undo lands back on the exact message just undone, not a fresh conversation.
+    assert nxt is not None
+    assert nxt["chatlog_id"] == 200
+    assert nxt["message_index"] == 1
+
+
+def test_decide_stays_in_same_conversation(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{label['id']}/activate")
+    r = client.post(
+        f"/api/single-labels/{label['id']}/decide",
+        json={"chatlog_id": 201, "message_index": 0, "value": "yes"},
+    )
+    assert r.status_code == 200
+    nxt = r.json()["next"]
+    # After deciding, the next pick continues the same conversation (201) until
+    # its student turns are exhausted, rather than jumping elsewhere.
+    assert nxt is not None
+    assert nxt["chatlog_id"] == 201
+    assert nxt["message_index"] == 1
+
+
+def test_flag_endpoint_toggles_and_surfaces_in_filter(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    lid = label["id"]
+    client.post(f"/api/single-labels/{lid}/activate")
+    client.post(
+        f"/api/single-labels/{lid}/decide",
+        json={"chatlog_id": 200, "message_index": 0, "value": "yes"},
+    )
+    r = client.patch(
+        f"/api/single-labels/{lid}/applications/200/flag?message_index=0",
+        json={"flagged": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["flagged"] is True
+
+    row = session.exec(
+        select(LabelApplication).where(LabelApplication.chatlog_id == 200)
+    ).first()
+    assert row.flagged is True
+
+    listing = client.get(f"/api/single-labels/{lid}/messages?bucket=flagged")
+    assert listing.status_code == 200
+    items = listing.json()["items"]
+    assert any(it["chatlog_id"] == 200 for it in items)
+
+    # Unflag clears it from the bucket.
+    client.patch(
+        f"/api/single-labels/{lid}/applications/200/flag?message_index=0",
+        json={"flagged": False},
+    )
+    listing2 = client.get(f"/api/single-labels/{lid}/messages?bucket=flagged")
+    assert all(it["chatlog_id"] != 200 for it in listing2.json()["items"])
+
+
+def test_flag_endpoint_404_for_missing_row(client, session):
+    _seed_messages(session)
+    label = client.post("/api/single-labels", json={"name": "help"}).json()
+    r = client.patch(
+        f"/api/single-labels/{label['id']}/applications/999/flag?message_index=0",
+        json={"flagged": True},
+    )
+    assert r.status_code == 404
+
+
 def test_delete_single_label_removes_row(client, session):
     _seed_messages(session)
     label = client.post("/api/single-labels", json={"name": "help"}).json()

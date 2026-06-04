@@ -563,7 +563,6 @@ export function LabelRunPage() {
         await api.switchToLabel(id)
         setBusyMessage('Loading label…')
         // Use hintChatlogId so the new label opens on the same conversation.
-        // refresh() is still called but we override getNextFocused with the hint.
         const [active, a, um] = await Promise.all([
           api.getActiveSingleLabel(),
           api.listAssignments(),

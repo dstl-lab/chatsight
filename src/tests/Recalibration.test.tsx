@@ -7,10 +7,12 @@ const {
   mockGetRecalibration,
   mockSaveRecalibration,
   mockGetRecalibrationStats,
+  mockGetAppliedLabels,
 } = vi.hoisted(() => ({
   mockGetRecalibration: vi.fn().mockResolvedValue(null),
   mockSaveRecalibration: vi.fn().mockResolvedValue({ matched: true, trend: 'steady' }),
   mockGetRecalibrationStats: vi.fn().mockResolvedValue(null),
+  mockGetAppliedLabels: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('../services/api', () => ({
@@ -31,7 +33,7 @@ vi.mock('../services/api', () => ({
     getRecalibration: mockGetRecalibration,
     saveRecalibration: mockSaveRecalibration,
     getRecalibrationStats: mockGetRecalibrationStats,
-    getAppliedLabels: vi.fn().mockResolvedValue([]),
+    getAppliedLabels: mockGetAppliedLabels,
     applyLabel: vi.fn().mockResolvedValue(undefined),
     unapplyLabel: vi.fn().mockResolvedValue(undefined),
     skipMessage: vi.fn().mockResolvedValue(undefined),
@@ -88,15 +90,24 @@ beforeEach(() => {
   mockGetRecalibration.mockReset()
   mockSaveRecalibration.mockReset()
   mockGetRecalibrationStats.mockReset()
+  mockGetAppliedLabels.mockReset()
   mockGetRecalibration.mockResolvedValue(recalItem)
   mockSaveRecalibration.mockResolvedValue({ matched: true, trend: 'steady' })
   mockGetRecalibrationStats.mockResolvedValue(null)
+  mockGetAppliedLabels.mockResolvedValue([])
 })
 
 test('enters blind phase and shows the recalibration banner', async () => {
   await enterBlindPhase()
   expect(screen.getByText('RECALIBRATION')).toBeInTheDocument()
   expect(screen.getByText('Re-label this message')).toBeInTheDocument()
+})
+
+test('blind phase does not pre-select labels saved on the message', async () => {
+  await enterBlindPhase()
+  // In the blind phase the sidebar must not reveal the message's saved labels,
+  // so getAppliedLabels must not be queried for the recalibrated message (42).
+  expect(mockGetAppliedLabels).not.toHaveBeenCalledWith(42, 0)
 })
 
 test('matching labels saves a matched recalibration event and shows the match toast', async () => {

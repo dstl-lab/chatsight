@@ -39,6 +39,7 @@ export function FocusedMessage({
         matchedPattern={detail.matched_pattern}
         rationale={detail.rationale}
         nearThreshold={nearThreshold}
+        flagged={detail.flagged}
         onAccept={onAccept}
         onFlip={onFlip}
         onFlag={onFlag}

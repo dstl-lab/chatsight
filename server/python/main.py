@@ -61,7 +61,7 @@ from schemas import (
     ConfidenceHistogramBin, SingleLabelDetailResponse,
     MessageListItem, MessageListResponse,
     ConversationTurn, MessageDetailResponse,
-    FlipRequest, NoteRequest, LabelUpdateRequest,
+    FlipRequest, NoteRequest, FlagRequest, LabelUpdateRequest,
     GeminiPreviewResponse,
 )
 import decision_service
@@ -3651,9 +3651,17 @@ def get_assist(
 
 
 def _decide_response(
-    db: Session, label_id: int, assignment_id: Optional[int] = None
+    db: Session,
+    label_id: int,
+    assignment_id: Optional[int] = None,
+    hint_chatlog_id: Optional[int] = None,
 ) -> DecideResponse:
-    """Build the combined next-message + readiness payload for the /run hot path."""
+    """Build the combined next-message + readiness payload for the /run hot path.
+
+    `hint_chatlog_id` pins the next pick to the same conversation while it still
+    has undecided student turns, so yes/no/skip walk a conversation to completion
+    before the sampler jumps elsewhere.
+    """
     label = db.get(LabelDefinition, label_id)
     explore = _effective_hybrid_explore_fraction(label) if label else None
     assist_service.rebuild_cache_if_stale(db, label_id)
@@ -3662,6 +3670,7 @@ def _decide_response(
         label_id,
         assignment_id,
         explore_fraction=explore,
+        hint_chatlog_id=hint_chatlog_id,
     )
     db.commit()
     nxt = FocusedMessageResponse(**payload) if payload else None
@@ -3695,7 +3704,10 @@ def post_decide(
         message_index=req.message_index,
         value=req.value,
     )
-    return _decide_response(db, label_id, assignment_id)
+    # Stay in the same conversation until its student turns are exhausted.
+    return _decide_response(
+        db, label_id, assignment_id, hint_chatlog_id=req.chatlog_id
+    )
 
 
 @app.post(
@@ -3732,7 +3744,20 @@ def post_undo(
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
-    decision_service.undo_last_decision(db, label_id)
+    snapshot = decision_service.undo_last_decision(db, label_id)
+    # Re-focus the exact message we just undid so the instructor lands back on
+    # it, instead of the sampler jumping to a fresh conversation.
+    if snapshot is not None:
+        payload = queue_service.focus_payload_for_message(
+            db, label_id, snapshot.chatlog_id, snapshot.message_index
+        )
+        if payload is not None:
+            readiness = ReadinessResponse(
+                **decision_service.compute_readiness(db, label_id)
+            )
+            return DecideResponse(
+                next=FocusedMessageResponse(**payload), readiness=readiness
+            )
     return _decide_response(db, label_id, assignment_id)
 
 
@@ -4741,6 +4766,33 @@ def upsert_single_label_note(
     db.add(app_row)
     db.commit()
     return {"ok": True}
+
+
+@app.patch("/api/single-labels/{label_id}/applications/{chatlog_id}/flag")
+def set_single_label_flag(
+    label_id: int,
+    chatlog_id: int,
+    body: FlagRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    app_row.flagged = body.flagged
+    db.add(app_row)
+    db.commit()
+    return {"ok": True, "flagged": app_row.flagged}
 
 
 @app.patch(

@@ -347,6 +347,23 @@ export function QueuePage() {
 	// Fetch applied labels and AI suggestion per message
 	useEffect(() => {
 		if (!displayedMessage) return;
+		const blindRecalibration = recalibration?.phase === "blind";
+		const reconcileRecalibration = recalibration?.phase === "reconcile";
+		if (blindRecalibration) {
+			// Blind check: don't load saved labels from the DB or the sidebar
+			// reveals the answer we're asking the instructor to reproduce.
+			setAppliedLabelIds(new Set());
+			setSuggestion(null);
+			setSuggestionLoading(false);
+			return;
+		}
+		if (reconcileRecalibration) {
+			// Keep the toggles from the blind attempt; the DB still holds the
+			// original labels, so don't overwrite the in-progress comparison.
+			setSuggestion(null);
+			setSuggestionLoading(false);
+			return;
+		}
 		api
 			.getAppliedLabels(
 				displayedMessage.chatlog_id,
@@ -380,6 +397,7 @@ export function QueuePage() {
 		displayedMessage?.chatlog_id,
 		displayedMessage?.message_index,
 		aiUnlocked,
+		recalibration?.phase,
 	]);
 
 	const advance = useCallback(() => {

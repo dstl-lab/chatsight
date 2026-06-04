@@ -657,6 +657,18 @@ export const api = {
                  { method: 'PUT', ...json({ text }) },
                ),
 
+  setSingleLabelFlag: (
+    id: number,
+    chatlog_id: number,
+    message_index: number,
+    flagged: boolean,
+  ): Promise<{ ok: true; flagged: boolean }> =>
+    USE_MOCK ? Promise.resolve({ ok: true as const, flagged })
+             : req(
+                 `/api/single-labels/${id}/applications/${chatlog_id}/flag?message_index=${message_index}`,
+                 { method: 'PATCH', ...json({ flagged }) },
+               ),
+
   patchSingleLabel: (
     id: number,
     patch: {

@@ -9,6 +9,7 @@ interface VerdictBlockProps {
   matchedPattern: string | null
   rationale: string | null
   nearThreshold: boolean
+  flagged: boolean
   onAccept: () => void
   onFlip: (newVerdict: 'yes' | 'no') => void
   onFlag: () => void
@@ -21,7 +22,7 @@ function badgeStyles(v: MessageVerdict | null) {
 }
 
 export function VerdictBlock({
-  verdict, confidence, appliedBy, matchedPattern, rationale, nearThreshold,
+  verdict, confidence, appliedBy, matchedPattern, rationale, nearThreshold, flagged,
   onAccept, onFlip, onFlag,
 }: VerdictBlockProps) {
   const [whyOpen, setWhyOpen] = useState(false)
@@ -66,7 +67,16 @@ export function VerdictBlock({
       <div className="mt-3 flex gap-1.5 flex-wrap">
         <button onClick={onAccept} className="px-3 py-1.5 rounded-sm bg-moss-dim border border-moss text-paper font-mono text-[10px] tracking-[0.08em] uppercase">✓ accept</button>
         <button onClick={() => onFlip(oppositeVerdict)} className="px-3 py-1.5 rounded-sm border border-edge text-on-surface font-mono text-[10px] tracking-[0.08em] uppercase hover:text-paper hover:border-paper">↺ flip</button>
-        <button onClick={onFlag} className="px-3 py-1.5 rounded-sm border border-ochre-dim text-ochre font-mono text-[10px] tracking-[0.08em] uppercase">⚑ flag</button>
+        <button
+          onClick={onFlag}
+          className={`px-3 py-1.5 rounded-sm font-mono text-[10px] tracking-[0.08em] uppercase ${
+            flagged
+              ? 'border border-ochre bg-[rgba(228,181,59,0.12)] text-ochre'
+              : 'border border-ochre-dim text-ochre'
+          }`}
+        >
+          ⚑ {flagged ? 'flagged' : 'flag'}
+        </button>
       </div>
     </div>
   )

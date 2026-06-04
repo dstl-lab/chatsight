@@ -593,9 +593,15 @@ def next_message_for_label(
         tup = _first_pending_turn(hint_chatlog_id, conv[hint_chatlog_id], decided)
         if tup:
             midx, text, notebook = tup
+            # Pinning the current conversation is a "continue"; let the display
+            # logic relabel it as "explore" if this conversation was originally
+            # surfaced by an explore pick (so the walk's provenance survives).
+            display_pick = _display_sampling_pick(
+                session, label_id, hint_chatlog_id, "continue"
+            )
             sampling_meta = build_sampling_meta(
                 session, label_id, hint_chatlog_id, midx,
-                len(conv[hint_chatlog_id]), "round_robin",
+                len(conv[hint_chatlog_id]), display_pick,
             )
             return _build_focus_payload(
                 session, label_id, hint_chatlog_id, midx, text, notebook,
@@ -775,6 +781,47 @@ def _build_focus_payload(
     if sampling_meta:
         out.update(sampling_meta)
     return out
+
+
+def focus_payload_for_message(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+) -> Optional[dict]:
+    """Build a focus payload for one specific (chatlog_id, message_index).
+
+    Used to re-focus the exact message an instructor just undid, instead of
+    letting the sampler pick a fresh (possibly different) conversation.
+    Returns None if the message is not in the cache.
+    """
+    row = session.exec(
+        select(MessageCache.message_text, MessageCache.notebook)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+    if not row:
+        return None
+    text, notebook = row
+    total = len(
+        session.exec(
+            select(MessageCache.message_index).where(
+                MessageCache.chatlog_id == chatlog_id
+            )
+        ).all()
+    )
+    sampling_meta = build_sampling_meta(
+        session, label_id, chatlog_id, message_index, total, "round_robin"
+    )
+    return _build_focus_payload(
+        session,
+        label_id,
+        chatlog_id,
+        message_index,
+        text,
+        notebook,
+        sampling_meta=sampling_meta,
+    )
 
 
 def _fetch_full_thread(chatlog_id: int) -> list[dict]:

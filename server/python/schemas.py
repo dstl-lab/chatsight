@@ -562,6 +562,10 @@ class NoteRequest(BaseModel):
     text: str  # empty string deletes the note
 
 
+class FlagRequest(BaseModel):
+    flagged: bool
+
+
 class LabelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None

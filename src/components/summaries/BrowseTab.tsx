@@ -106,6 +106,34 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
     [activeKey, label.id],
   )
 
+  const toggleFlag = useCallback(async () => {
+    if (!activeKey || !detail) return
+    const next = !detail.flagged
+    const prev = detail
+    setDetail({ ...detail, flagged: next })
+    setItems((cur) =>
+      cur.map((it) =>
+        it.chatlog_id === activeKey.chatlog_id && it.message_index === activeKey.message_index
+          ? { ...it, flagged: next }
+          : it,
+      ),
+    )
+    try {
+      await api.setSingleLabelFlag(label.id, activeKey.chatlog_id, activeKey.message_index, next)
+    } catch {
+      setError('Flag failed — retry?')
+      setTimeout(() => setError(null), 4000)
+      setDetail(prev)
+      setItems((cur) =>
+        cur.map((it) =>
+          it.chatlog_id === activeKey.chatlog_id && it.message_index === activeKey.message_index
+            ? { ...it, flagged: prev.flagged }
+            : it,
+        ),
+      )
+    }
+  }, [activeKey, detail, label.id])
+
   return (
     <>
       <div className="flex-1 grid grid-cols-[5fr_6fr] min-h-0">
@@ -131,7 +159,7 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
               reviewThreshold={label.review_threshold}
               onAccept={accept}
               onFlip={flip}
-              onFlag={() => { /* Phase 2 */ }}
+              onFlag={toggleFlag}
               onSaveNote={saveNote}
             />
           ) : (
