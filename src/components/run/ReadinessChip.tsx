@@ -31,13 +31,19 @@ const tierTitle: Record<ReadinessState['tier'], string> = {
   green: 'Ready to hand off',
 }
 
+const tierTooltip: Record<ReadinessState['tier'], string> = {
+  gray: 'Not ready yet. Click to see what is needed.',
+  amber: 'Almost ready. Click to see your progress.',
+  green: 'Ready to hand off. Click to open.',
+}
+
 const tierBlurb: Record<ReadinessState['tier'], string> = {
   gray:
     'Mark at least one Yes and one No before Gemini can take over. The classifier needs both kinds of example to learn the boundary.',
   amber:
     'You can hand off now, but a few more decisions will give Gemini stronger signal. Walking 5 conversations is the recommended minimum.',
   green:
-    'You have enough variety. Hand off whenever you’re ready — Gemini will classify the rest and surface low-confidence cases for review.',
+    'You have enough variety. Hand off whenever you are ready. Gemini will classify the rest and surface low-confidence cases for review.',
 }
 
 export function ReadinessChip({
@@ -149,10 +155,19 @@ export function ReadinessChip({
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-2 px-[11px] py-[5px] rounded-full font-mono text-[11px] tracking-[0.04em] text-muted hover:text-on-canvas transition-colors"
-        title="Click to see full readiness"
+        className={`inline-flex items-center gap-2 px-[11px] py-[5px] rounded-full font-mono text-[11px] tracking-[0.04em] hover:text-on-canvas transition-colors ${
+          readiness.tier === 'green' ? 'text-moss' : 'text-muted'
+        }`}
+        title={tierTooltip[readiness.tier]}
       >
-        <span className={`inline-block w-1.5 h-1.5 rounded-full ${tierDot[readiness.tier]}`} />
+        {readiness.tier === 'green' ? (
+          <span className="relative flex w-1.5 h-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-moss opacity-60" />
+            <span className="relative inline-flex rounded-full w-1.5 h-1.5 bg-moss" />
+          </span>
+        ) : (
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${tierDot[readiness.tier]}`} />
+        )}
         {tierLabel[readiness.tier]}
       </button>
 

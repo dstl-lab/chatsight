@@ -196,6 +196,10 @@ def _migrate_message_cache(conn, inspect, text):
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN assignment_id INTEGER"))
     if "created_at" not in cols:
         conn.execute(text("ALTER TABLE messagecache ADD COLUMN created_at DATETIME"))
+    if "context_before" not in cols:
+        conn.execute(text("ALTER TABLE messagecache ADD COLUMN context_before TEXT"))
+    if "context_after" not in cols:
+        conn.execute(text("ALTER TABLE messagecache ADD COLUMN context_after TEXT"))
 
 
 def _purge_archived_single_labels(conn, text):

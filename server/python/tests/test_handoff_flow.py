@@ -93,6 +93,65 @@ def test_handoff_with_no_queue_leaves_no_active(client, session):
     assert active is None  # nothing queued; no replacement
 
 
+def test_active_after_multi_label_handoff_no_500(client, session):
+    """Regression: multi-label handoff then GET /active must not 500."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    b = client.post("/api/single-labels/queue", json={"name": "frustration"}).json()
+
+    # Label on A, hand off A (B activates automatically)
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 301, 0, "no")
+    assert client.post(f"/api/single-labels/{a['id']}/handoff").status_code == 200
+
+    # Label on B, hand off B (no queue remains)
+    _decide(client, b["id"], 300, 0, "yes")
+    _decide(client, b["id"], 301, 0, "no")
+    assert client.post(f"/api/single-labels/{b['id']}/handoff").status_code == 200
+
+    r = client.get("/api/single-labels/active")
+    assert r.status_code == 200, f"/active returned {r.status_code}: {r.text}"
+    assert r.json() is None  # nothing queued after both hand-offs
+
+
+def test_active_after_refine_no_500(client, session):
+    """After handoff → classification complete → refine, /active must not 500."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 301, 0, "no")
+    client.post(f"/api/single-labels/{a['id']}/handoff")
+
+    # Simulate background classification completing
+    from sqlmodel import select as _select
+    lbl = session.get(LabelDefinition, a["id"])
+    lbl.phase = "handed_off"
+    session.add(lbl)
+    session.commit()
+
+    client.post(f"/api/single-labels/{a['id']}/refine")
+
+    r = client.get("/api/single-labels/active")
+    assert r.status_code == 200, f"/active returned {r.status_code}: {r.text}"
+    # Refined label is not active; no replacement → null
+    assert r.json() is None
+
+
+def test_label_to_response_includes_guidance(client, session):
+    """guidance set on a label must be returned by /active (and all _label_to_response callers)."""
+    _seed(session)
+    a = client.post("/api/single-labels", json={"name": "help"}).json()
+    client.post(f"/api/single-labels/{a['id']}/activate")
+    client.patch(f"/api/single-labels/{a['id']}", json={"guidance": "focus on probability questions"})
+
+    r = client.get("/api/single-labels/active")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["guidance"] == "focus on probability questions"
+
+
 def test_handoff_rejects_double_classify(client, session):
     _seed(session)
     a = client.post("/api/single-labels", json={"name": "help"}).json()

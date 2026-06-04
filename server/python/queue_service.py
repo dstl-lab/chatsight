@@ -887,3 +887,31 @@ def _fetch_full_thread_uncached(chatlog_id: int) -> list[dict]:
             turns.append({"message_index": midx, "role": "tutor", "text": r})
             midx += 1
     return turns
+
+
+def focus_payload_for_message(
+    session: Session, label_id: int, chatlog_id: int, message_index: int
+) -> Optional[dict]:
+    """Build a FocusedMessage payload for a specific (chatlog_id, message_index).
+
+    Used by undo so the UI returns to the exact message that was just un-decided
+    rather than picking the next queued message."""
+    row = session.exec(
+        select(MessageCache.message_text, MessageCache.notebook)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+    if not row:
+        return None
+    text, notebook = row
+    total = len(
+        session.exec(
+            select(MessageCache.message_index).where(MessageCache.chatlog_id == chatlog_id)
+        ).all()
+    )
+    sampling_meta = build_sampling_meta(
+        session, label_id, chatlog_id, message_index, total, "continue"
+    )
+    return _build_focus_payload(
+        session, label_id, chatlog_id, message_index, text, notebook, sampling_meta=sampling_meta
+    )
