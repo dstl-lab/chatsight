@@ -607,7 +607,6 @@ export function LabelRunPage() {
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
-      const hintChatlogId = focused?.chatlog_id
       setBusyMessage('Switching label…')
       setBusy(true)
       // Capture the current position before switching so we can pin to it.
