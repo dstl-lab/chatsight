@@ -294,7 +294,7 @@ def discover_concepts(
     # 5. Call Gemini
     prompt = _build_discovery_prompt(samples_by_cluster, existing, rejected)
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=SUGGEST_CONFIG,
     )

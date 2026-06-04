@@ -119,8 +119,15 @@ export function QueuePage() {
 	const formatKey = (key: string) => {
 		if (key === " ") return "Space";
 		if (key === "enter") return "Enter";
+		if (key === "arrowleft") return "←";
+		if (key === "arrowright") return "→";
+		if (key === "arrowup") return "↑";
+		if (key === "arrowdown") return "↓";
+		if (key === "backspace") return "⌫";
+		if (key === "escape") return "Esc";
 		if (key.startsWith("shift+")) {
-			return "⇧" + key.split("+")[1].toUpperCase();
+			const base = key.split("+")[1];
+			return "⇧" + formatKey(base);
 		}
 		return key.toUpperCase();
 	};
@@ -158,7 +165,7 @@ export function QueuePage() {
 		};
 	})();
 	const isReviewing = displayMode === "history-review";
-	const aiUnlocked = (stats?.labeled_count ?? 0) >= 20;
+	const aiUnlocked = (stats?.labeled_count ?? 0) >= 10;
 
 	const loadQueue = useCallback(async () => {
 		const q = await api.getQueue(20);
@@ -274,20 +281,18 @@ export function QueuePage() {
 		recalibration,
 	]);
 
-	// Show label review overlay once per browser session
+	// Keep label review items in sync whenever labels change
+	useEffect(() => {
+		if (loading) return;
+		api.getLabelReview().then(setLabelReviewItems).catch(() => {});
+	}, [labels, loading]);
+
+	// Show label review overlay once per browser session (after items are loaded)
 	useEffect(() => {
 		if (loading) return;
 		if (sessionStorage.getItem("label_review_shown")) return;
-		api
-			.getLabelReview()
-			.then((items) => {
-				if (items.length > 0) {
-					setLabelReviewItems(items);
-					setShowLabelReview(true);
-				}
-			})
-			.catch(() => {});
-	}, [loading]);
+		if (labelReviewItems.length > 0) setShowLabelReview(true);
+	}, [loading, labelReviewItems]);
 
 	// Enter review mode from ?review= query param (e.g., from /history page)
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -340,6 +345,23 @@ export function QueuePage() {
 	// Fetch applied labels and AI suggestion per message
 	useEffect(() => {
 		if (!displayedMessage) return;
+		const blindRecalibration = recalibration?.phase === "blind";
+		const reconcileRecalibration = recalibration?.phase === "reconcile";
+		if (blindRecalibration) {
+			// Blind check: don't load saved labels from the DB or the sidebar
+			// reveals the answer we're asking the instructor to reproduce.
+			setAppliedLabelIds(new Set());
+			setSuggestion(null);
+			setSuggestionLoading(false);
+			return;
+		}
+		if (reconcileRecalibration) {
+			// Keep the toggles from the blind attempt; the DB still holds the
+			// original labels, so don't overwrite the in-progress comparison.
+			setSuggestion(null);
+			setSuggestionLoading(false);
+			return;
+		}
 		api
 			.getAppliedLabels(
 				displayedMessage.chatlog_id,
@@ -373,6 +395,7 @@ export function QueuePage() {
 		displayedMessage?.chatlog_id,
 		displayedMessage?.message_index,
 		aiUnlocked,
+		recalibration?.phase,
 	]);
 
 	const advance = useCallback(() => {
@@ -686,9 +709,8 @@ export function QueuePage() {
 			const rawKey = e.key.toLowerCase();
 			const pressedKey = e.shiftKey ? `shift+${rawKey}` : rawKey;
 
-			// Submit/advance. `n` and Enter are convenience aliases for the
-			// configurable yes key. Deliberately NOT plain `z` — it would shadow
-			// the Ctrl+Z undo below (both have rawKey "z"), so Ctrl+Z never fired.
+			// Submit/advance. Enter and `n` are convenience aliases for the
+			// configurable yes key (default: z).
 			if (
 				pressedKey === keybinds.yes ||
 				rawKey === "enter" ||
@@ -704,11 +726,13 @@ export function QueuePage() {
 			if (pressedKey === keybinds.skip || rawKey === "s") {
 				if (!isReviewing && !isBackNav) {
 					if (rawKey === " ") e.preventDefault(); // prevent scroll if space is bound to skip
+					if (rawKey === "arrowright") e.preventDefault(); // prevent browser scroll
 					handleSkip();
 				}
 				return;
 			}
 			if (pressedKey === keybinds.undo || (e.ctrlKey && rawKey === "z")) {
+				if (rawKey === "arrowleft") e.preventDefault(); // prevent browser back navigation
 				handleUndo();
 				return;
 			}
@@ -756,6 +780,18 @@ export function QueuePage() {
 	const handleUpdateLabel = async (id: number, body: UpdateLabelRequest) => {
 		const updated = await api.updateLabel(id, body);
 		setLabels((prev) => prev.map((l) => (l.id === id ? updated : l)));
+	};
+
+	const handleStopAutolabel = async () => {
+		await api.stopAutolabel().catch(() => {});
+	};
+
+	const handleClearAutolabel = async () => {
+		if (!confirm("Delete all AI-applied labels? This cannot be undone.")) return;
+		await api.clearAutolabelResults();
+		setAutolabelStatus(null);
+		const st = await api.getQueueStats();
+		setStats(st);
 	};
 
 	const handleStartAutolabel = async () => {
@@ -822,18 +858,6 @@ export function QueuePage() {
 		[labels],
 	);
 
-	const handleForceRecalibration = useCallback(async () => {
-		if (recalibration) return;
-		const item = await api.getRecalibration(true);
-		if (item) {
-			setRecalibration({ item, phase: "blind", relabelIds: new Set() });
-			setAppliedLabelIds(new Set());
-		} else {
-			console.warn(
-				"[DEV] Force recalibration returned null — no labeled messages yet?",
-			);
-		}
-	}, [recalibration]);
 
 	const handleDeleteLabel = useCallback(
 		(labelId: number) => {
@@ -1008,6 +1032,10 @@ export function QueuePage() {
 
 	return (
 		<div className="flex-1 flex flex-col min-h-0">
+			<div className="flex items-center gap-2 border-b border-edge-subtle px-4 py-1.5 font-mono text-[11px] text-muted">
+				<span className="text-[9px] uppercase tracking-[0.06em] text-faint">scope</span>
+				<span className="text-fg">Week 3 — Lab 1 &amp; HW 1</span>
+			</div>
 			{recalibration && recalibration.phase === "blind" && (
 				<div className="bg-elevated border-b border-edge px-4 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
@@ -1084,6 +1112,8 @@ export function QueuePage() {
 					onCreateAndApply={handleCreateAndApply}
 					onUpdateLabel={handleUpdateLabel}
 					onStartAutolabel={handleStartAutolabel}
+				onStopAutolabel={handleStopAutolabel}
+				onClearAutolabel={handleClearAutolabel}
 					autolabelStatus={autolabelStatus}
 					remaining={remaining}
 					history={history}
@@ -1191,15 +1221,6 @@ export function QueuePage() {
 					onAdvance={advanceTutorial}
 					onSkip={finishTutorial}
 				/>
-			)}
-			{import.meta.env.DEV && !recalibration && (
-				<button
-					onClick={handleForceRecalibration}
-					className="fixed bottom-4 left-57 z-50 text-[10px] font-mono text-faint bg-surface border border-edge rounded-sm px-2.5 py-1.5 hover:border-ochre-dim hover:text-muted transition-colors"
-					title="Dev-only: force-trigger a recalibration round"
-				>
-					DEV · trigger recalibration
-				</button>
 			)}
 		</div>
 	);

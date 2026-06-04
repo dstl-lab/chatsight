@@ -603,7 +603,7 @@ def _summarize_conversation_gemini(
     for i, t in enumerate(student_texts[:12]):
         parts.append(f"{i + 1}. {t[:500]}")
     response = _client_get().models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents="\n".join(parts),
         config=_SUMMARY_CONFIG,
     )

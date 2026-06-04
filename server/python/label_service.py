@@ -64,7 +64,7 @@ For each student-AI interaction turn, identify:
 Call the `generate_labels` tool with a JSON array of label objects. Label every meaningful interaction turn (typically every 1-3 message pairs)."""
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=user_message,
         config=GENERATE_CONFIG,
     )

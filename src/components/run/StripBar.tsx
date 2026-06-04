@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount } from '../../types'
+import type { SingleLabel, ReadinessState, AssignmentMapping, UnmappedCount, LabelNameSuggestion } from '../../types'
 import { api } from '../../services/api'
-import { AssignmentPicker } from './AssignmentPicker'
 import { ReadinessChip } from './ReadinessChip'
 import { HoverTip } from './HoverTip'
 import { isPlaceholderLabelName } from './labelPlaceholder'
+import { LabelNameInput } from './LabelNameInput'
 
 export interface StripBarProps {
   label: SingleLabel
@@ -15,7 +15,6 @@ export interface StripBarProps {
   onSelectAssignment: (id: number | null) => void
   onHandoff?: () => void
   onLabelMetaUpdated?: () => void | Promise<void>
-  onSampleHandoff?: (n: number) => void
   readinessOpen?: boolean
   onReadinessOpenChange?: (open: boolean) => void
   labelNameDraft?: string
@@ -29,18 +28,17 @@ export interface StripBarProps {
   onClearAll?: () => void
   onSwitchQueued?: (id: number) => void
   onRemoveQueued?: (id: number) => void
+  suggestions?: LabelNameSuggestion[]
 }
 
 export function StripBar({
   label,
   readiness,
-  assignments,
-  unmapped,
-  selectedAssignmentId,
-  onSelectAssignment,
+  // assignment-picker props (assignments/unmapped/selectedAssignmentId/
+  // onSelectAssignment) are intentionally unused: the route is week-locked
+  // server-side, so the picker is replaced by a static scope label.
   onHandoff,
   onLabelMetaUpdated,
-  onSampleHandoff,
   readinessOpen,
   onReadinessOpenChange,
   labelNameDraft,
@@ -54,6 +52,7 @@ export function StripBar({
   onClearAll,
   onSwitchQueued,
   onRemoveQueued,
+  suggestions = [],
 }: StripBarProps) {
   const showNameInput =
     draftMode ||
@@ -65,7 +64,6 @@ export function StripBar({
 
   const [explorePct, setExplorePct] = useState(0)
   const [exploreBusy, setExploreBusy] = useState(false)
-  const [sampleN, setSampleN] = useState(50)
 
   useEffect(() => {
     const eff = label.hybrid_explore_effective ?? 0.35
@@ -104,12 +102,18 @@ export function StripBar({
             <div className="flex min-w-0 max-w-full items-center gap-2.5">
               <span className="text-ochre text-[11px]">◆</span>
               {showNameInput ? (
-                <input
-                  type="text"
+                <LabelNameInput
                   data-tutorial="label-name"
                   value={labelNameDraft ?? ''}
                   readOnly={labelNameLocked}
-                  onChange={(e) => onLabelNameDraftChange?.(e.target.value)}
+                  suggestions={suggestions}
+                  onChange={(v) => onLabelNameDraftChange?.(v)}
+                  onCommit={() => {
+                    const name = (labelNameDraft ?? '').trim()
+                    if (name && !isPlaceholderLabelName(name) && !labelNameLocked) {
+                      commitName?.()
+                    }
+                  }}
                   onKeyDown={(e) => {
                     const name = (labelNameDraft ?? '').trim()
                     if (e.key === 'Enter' && name && !isPlaceholderLabelName(name) && !labelNameLocked) {
@@ -121,7 +125,7 @@ export function StripBar({
                     if (draftMode || labelNameLocked) return
                     onLabelNameCommit?.()
                   }}
-                  placeholder="Label name…"
+                  placeholder="Type a label…"
                   className="box-border w-full min-w-[10rem] max-w-[18rem] rounded-sm border border-edge bg-surface px-2.5 py-1.5 font-sans text-sm text-on-canvas placeholder:text-faint focus:outline-none focus:border-ochre-dim disabled:opacity-70"
                 />
               ) : (
@@ -181,12 +185,10 @@ export function StripBar({
         {/* Conversations: assignment filter + explore sampling (menu portals) */}
         <div className="relative z-10 min-w-0 md:flex md:justify-end">
           <div className="flex w-max max-w-full flex-wrap items-center gap-6 md:justify-end">
-            <AssignmentPicker
-              assignments={assignments}
-              unmapped={unmapped}
-              selectedId={selectedAssignmentId}
-              onSelect={onSelectAssignment}
-            />
+            <span className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
+              <span className="text-[9px] tracking-[0.06em] uppercase text-faint">scope</span>
+              <span className="text-fg">Week 8 — Lab 5 &amp; HW 5</span>
+            </span>
             {!draftMode && onLabelMetaUpdated && (
               <div className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
                 <HoverTip
@@ -224,44 +226,6 @@ export function StripBar({
                     default
                   </button>
                 )}
-              </div>
-            )}
-            {!draftMode && import.meta.env.DEV && onSampleHandoff && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-dashed border-edge px-2.5 py-1 font-mono text-[11px]">
-                <HoverTip
-                  label="dev · sample handoff"
-                  className="text-[9px] tracking-[0.06em] uppercase text-faint"
-                  tip={
-                    'Developer smoke test for the Hand off pipeline. The number is how many ' +
-                    'random unlabeled messages Gemini classifies, not a new conversation sample.'
-                  }
-                />
-                <input
-                  type="number"
-                  min={1}
-                  value={sampleN}
-                  onChange={(e) => setSampleN(parseInt(e.target.value, 10) || 0)}
-                  aria-label="Sample handoff message count"
-                  className="w-10 border-b border-edge bg-transparent text-center tabular-nums focus:outline-none"
-                />
-                <HoverTip
-                  label={
-                    <button
-                      type="button"
-                      disabled={!Number.isFinite(sampleN) || sampleN <= 0}
-                      onClick={() => onSampleHandoff(sampleN)}
-                      className="border-0 bg-transparent p-0 font-inherit text-inherit text-on-surface hover:text-ochre disabled:opacity-40 cursor-pointer"
-                    >
-                      Sample →
-                    </button>
-                  }
-                  className="normal-case tracking-normal"
-                  tip={
-                    'Runs Hand off on this label for N random pending messages, then deactivates it. ' +
-                    'Progress on Summaries. /run switches to the next queued label, or the draft ' +
-                    'screen if none is queued, not another explore pick.'
-                  }
-                />
               </div>
             )}
           </div>

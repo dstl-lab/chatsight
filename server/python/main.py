@@ -61,7 +61,7 @@ from schemas import (
     ConfidenceHistogramBin, SingleLabelDetailResponse,
     MessageListItem, MessageListResponse,
     ConversationTurn, MessageDetailResponse,
-    FlipRequest, NoteRequest, LabelUpdateRequest,
+    FlipRequest, NoteRequest, FlagRequest, LabelUpdateRequest,
     GeminiPreviewResponse,
 )
 import decision_service
@@ -69,6 +69,7 @@ import onboarding_service
 import queue_service
 import binary_autolabel_service
 import assignment_service
+import study_scope
 from models import AssignmentMapping
 
 REVIEW_THRESHOLD = 0.75
@@ -1036,12 +1037,13 @@ def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends
     ).all()
     excluded = {(cid, midx) for cid, midx in labeled_pairs} | {(cid, midx) for cid, midx in skipped_pairs}
 
-    # Query from cache instead of external DB CTE
+    # Query from cache instead of external DB CTE. Study lock: Week 3 only.
     all_cached = db.exec(select(MessageCache)).all()
 
     candidates = [
         c for c in all_cached
         if (c.chatlog_id, c.message_index) not in excluded
+        and study_scope.notebook_in_scope(c.notebook, study_scope.QUEUE_SCOPE)
     ]
 
     # Apply seed-based deterministic ordering or random shuffle
@@ -1068,20 +1070,21 @@ def get_queue(limit: int = 20, seed: Optional[int] = None, db: Session = Depends
 
 @app.get("/api/queue/stats")
 def get_queue_stats(db: Session = Depends(get_session)):
-    labeled_count = db.exec(
-        select(func.count()).select_from(
-            select(LabelApplication.chatlog_id, LabelApplication.message_index)
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .where(_is_multi_application())
-            .distinct()
-            .subquery()
-        )
-    ).one()
-    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    total = db.exec(select(func.count(MessageCache.id))).one() or 0
+    in_scope = study_scope.in_scope_keys(db, study_scope.QUEUE_SCOPE)
+    labeled_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(_is_multi_application())
+        .distinct()
+    ).all()
+    skipped_pairs = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
+    ).all()
+    labeled_count = len({(c, i) for c, i in labeled_pairs} & in_scope)
+    skipped_count = len({(c, i) for c, i in skipped_pairs} & in_scope)
     return {
-        "total_messages": total,
+        "total_messages": len(in_scope),
         "labeled_count": labeled_count,
         "skipped_count": skipped_count,
     }
@@ -1089,18 +1092,20 @@ def get_queue_stats(db: Session = Depends(get_session)):
 
 @app.get("/api/queue/position")
 def get_queue_position(db: Session = Depends(get_session)):
-    labeled_count = db.exec(
-        select(func.count()).select_from(
-            select(LabelApplication.chatlog_id, LabelApplication.message_index)
-            .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
-            .where(LabelDefinition.archived_at == None)  # noqa: E711
-            .where(_is_multi_application())
-            .distinct()
-            .subquery()
-        )
-    ).one()
-    skipped_count = db.exec(select(func.count(SkippedMessage.id))).one()
-    total = db.exec(select(func.count(MessageCache.id))).one() or 0
+    in_scope = study_scope.in_scope_keys(db, study_scope.QUEUE_SCOPE)
+    labeled_pairs = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .join(LabelDefinition, LabelApplication.label_id == LabelDefinition.id)
+        .where(LabelDefinition.archived_at == None)  # noqa: E711
+        .where(_is_multi_application())
+        .distinct()
+    ).all()
+    skipped_pairs = db.exec(
+        select(SkippedMessage.chatlog_id, SkippedMessage.message_index)
+    ).all()
+    labeled_count = len({(c, i) for c, i in labeled_pairs} & in_scope)
+    skipped_count = len({(c, i) for c, i in skipped_pairs} & in_scope)
+    total = len(in_scope)
     total_remaining = max(0, total - labeled_count - skipped_count)
     position = labeled_count + skipped_count + 1
     return {"position": position, "total_remaining": total_remaining}
@@ -1262,6 +1267,7 @@ def get_queue_history(
 # ── Auto-labeling ────────────────────────────────────────────────────────────
 
 _autolabel_status = {"running": False, "processed": 0, "total": 0, "error": None}
+_autolabel_stop_requested = False
 
 
 def _run_split_autolabel(
@@ -1473,9 +1479,14 @@ def _run_autolabel():
         ]
         _autolabel_status["total"] = len(unlabeled)
 
-        # Process in batches of 30
+        # Process in batches of 30; check stop flag between each batch
         BATCH_SIZE = 30
+        global _autolabel_stop_requested
         for i in range(0, len(unlabeled), BATCH_SIZE):
+            if _autolabel_stop_requested:
+                _autolabel_stop_requested = False
+                _autolabel_status["running"] = False
+                return
             batch = unlabeled[i : i + BATCH_SIZE]
             try:
                 results = classify_batch(label_defs, examples_by_label, batch)
@@ -1543,6 +1554,33 @@ def start_autolabel(db: Session = Depends(get_session)):
 @app.get("/api/queue/autolabel/status")
 def get_autolabel_status():
     return _autolabel_status
+
+
+@app.post("/api/queue/autolabel/stop")
+def stop_autolabel():
+    global _autolabel_stop_requested
+    if not _autolabel_status["running"]:
+        raise HTTPException(status_code=409, detail="Auto-labeling is not running")
+    _autolabel_stop_requested = True
+    return {"ok": True, "message": "Stop requested — will halt after current batch"}
+
+
+@app.delete("/api/queue/autolabel/results")
+def clear_autolabel_results(db: Session = Depends(get_session)):
+    """Delete all AI-applied multi-label applications so autolabel can be re-run."""
+    if _autolabel_status["running"]:
+        raise HTTPException(status_code=409, detail="Auto-labeling is currently running")
+    deleted = db.exec(
+        select(LabelApplication).where(
+            LabelApplication.applied_by == "ai",
+            _is_multi_application(),
+        )
+    ).all()
+    count = len(deleted)
+    for row in deleted:
+        db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted": count}
 
 
 # ── Stub routes (feature tracks implement these) ──────────────────────────────
@@ -2044,6 +2082,45 @@ def get_candidates(db: Session = Depends(get_session)):
         )
         for r in rows
     ]
+
+
+@app.get("/api/concepts/name-suggestions")
+def get_name_suggestions(db: Session = Depends(get_session)):
+    """Return label name suggestions filtered to exclude semantic duplicates of existing labels.
+
+    Primary source: pending concept candidates (populated by the Discover flow).
+    Fallback: generate suggestions on-demand from a sample of cached student messages.
+    """
+    import name_suggestion_service
+
+    candidates = db.exec(
+        select(ConceptCandidate).where(ConceptCandidate.status == "pending")
+    ).all()
+
+    existing_names = list(db.exec(select(LabelDefinition.name)).all())
+
+    if candidates:
+        try:
+            return name_suggestion_service.filter_suggestions(
+                candidate_names=[c.name for c in candidates],
+                candidate_descriptions=[c.description for c in candidates],
+                existing_names=existing_names,
+            )
+        except Exception:
+            return []
+
+    # No concept candidates yet — generate from message cache
+    message_texts = list(db.exec(select(MessageCache.message_text).limit(50)).all())
+    if not message_texts:
+        return []
+
+    try:
+        return name_suggestion_service.generate_from_messages(
+            message_texts=message_texts,
+            existing_names=existing_names,
+        )
+    except Exception:
+        return []
 
 
 @app.put("/api/concepts/candidates/{candidate_id}")
@@ -2695,9 +2772,6 @@ def export_csv(db: Session = Depends(get_session)):
 
 @app.get("/api/session/label-review", response_model=List[LabelReviewResponse])
 def get_label_review(db: Session = Depends(get_session)):
-    from concurrent.futures import ThreadPoolExecutor
-    from definition_service import generate_label_definition, select_best_example
-
     labels = db.exec(
         select(LabelDefinition)
         .where(LabelDefinition.archived_at == None)  # noqa: E711
@@ -2705,8 +2779,7 @@ def get_label_review(db: Session = Depends(get_session)):
         .order_by(LabelDefinition.created_at.desc())
     ).all()
 
-    # Collect all DB data first (before spawning threads — db session is not thread-safe)
-    label_data = []
+    results = []
     for label in labels:
         app_rows = db.exec(
             select(LabelApplication)
@@ -2716,43 +2789,28 @@ def get_label_review(db: Session = Depends(get_session)):
                 _is_multi_application(),
             )
             .order_by(LabelApplication.created_at.desc())
-            .limit(20)
+            .limit(1)
         ).all()
 
-        example_messages = []
-        for app_row in app_rows:
+        example_text = None
+        if app_rows:
             cache_row = db.exec(
                 select(MessageCache).where(
-                    MessageCache.chatlog_id == app_row.chatlog_id,
-                    MessageCache.message_index == app_row.message_index,
+                    MessageCache.chatlog_id == app_rows[0].chatlog_id,
+                    MessageCache.message_index == app_rows[0].message_index,
                 )
             ).first()
             if cache_row:
-                example_messages.append(cache_row.message_text)
+                example_text = cache_row.message_text
 
-        label_data.append((label, example_messages))
-
-    # Run Gemini calls for all labels in parallel
-    def process(item):
-        label, example_messages = item
-        if not example_messages:
-            return label.id, None
-        description = label.description or generate_label_definition(label.name, example_messages)
-        example_text = select_best_example(label.name, description, example_messages)
-        return label.id, example_text
-
-    with ThreadPoolExecutor() as executor:
-        example_map = dict(executor.map(process, label_data))
-
-    return [
-        LabelReviewResponse(
+        results.append(LabelReviewResponse(
             label_id=label.id,
             name=label.name,
             description=label.description,
-            example_text=example_map.get(label.id),
-        )
-        for label, _ in label_data
-    ]
+            example_text=example_text,
+        ))
+
+    return results
 
 
 # ── Recalibration ────────────────────────────────────────────────────────────
@@ -2801,8 +2859,6 @@ def _compute_trend(events: list[RecalibrationEvent]) -> str:
 
 @app.get("/api/session/recalibration")
 def get_recalibration(force: bool = False, db: Session = Depends(get_session)):
-    # `force=true` is honored only when CHATSIGHT_DEV is set; otherwise silently ignored.
-    force = force and DEV_MODE
     # 1. Check for active session
     labeling_session = db.exec(
         select(LabelingSession).order_by(LabelingSession.id.desc())
@@ -3517,9 +3573,15 @@ def close_single_label(label_id: int, db: Session = Depends(get_session)):
 def get_next_focused(
     label_id: int,
     assignment_id: Optional[int] = None,
+    hint_chatlog_id: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
-    """Walk the next focused message for the active labeling label."""
+    """Walk the next focused message for the active labeling label.
+
+    hint_chatlog_id: if provided, try to return the first undecided message
+    from that conversation before falling back to normal queue ordering.
+    Used after label switches to keep the instructor in the same conversation.
+    """
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
@@ -3530,6 +3592,7 @@ def get_next_focused(
         label_id,
         assignment_id,
         explore_fraction=_effective_hybrid_explore_fraction(label),
+        hint_chatlog_id=hint_chatlog_id,
     )
     db.commit()
     if not payload:
@@ -3567,9 +3630,17 @@ def get_assist(
 
 
 def _decide_response(
-    db: Session, label_id: int, assignment_id: Optional[int] = None
+    db: Session,
+    label_id: int,
+    assignment_id: Optional[int] = None,
+    hint_chatlog_id: Optional[int] = None,
 ) -> DecideResponse:
-    """Build the combined next-message + readiness payload for the /run hot path."""
+    """Build the combined next-message + readiness payload for the /run hot path.
+
+    `hint_chatlog_id` pins the next pick to the same conversation while it still
+    has undecided student turns, so yes/no/skip walk a conversation to completion
+    before the sampler jumps elsewhere.
+    """
     label = db.get(LabelDefinition, label_id)
     explore = _effective_hybrid_explore_fraction(label) if label else None
     assist_service.rebuild_cache_if_stale(db, label_id)
@@ -3578,6 +3649,7 @@ def _decide_response(
         label_id,
         assignment_id,
         explore_fraction=explore,
+        hint_chatlog_id=hint_chatlog_id,
     )
     db.commit()
     nxt = FocusedMessageResponse(**payload) if payload else None
@@ -3611,7 +3683,10 @@ def post_decide(
         message_index=req.message_index,
         value=req.value,
     )
-    return _decide_response(db, label_id, assignment_id)
+    # Stay in the same conversation until its student turns are exhausted.
+    return _decide_response(
+        db, label_id, assignment_id, hint_chatlog_id=req.chatlog_id
+    )
 
 
 @app.post(
@@ -3648,7 +3723,20 @@ def post_undo(
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
-    decision_service.undo_last_decision(db, label_id)
+    snapshot = decision_service.undo_last_decision(db, label_id)
+    # Re-focus the exact message we just undid so the instructor lands back on
+    # it, instead of the sampler jumping to a fresh conversation.
+    if snapshot is not None:
+        payload = queue_service.focus_payload_for_message(
+            db, label_id, snapshot.chatlog_id, snapshot.message_index
+        )
+        if payload is not None:
+            readiness = ReadinessResponse(
+                **decision_service.compute_readiness(db, label_id)
+            )
+            return DecideResponse(
+                next=FocusedMessageResponse(**payload), readiness=readiness
+            )
     return _decide_response(db, label_id, assignment_id)
 
 
@@ -3747,7 +3835,14 @@ def _do_classification(
     cached = db.exec(
         select(MessageCache.chatlog_id, MessageCache.message_index, MessageCache.message_text)
     ).all()
-    pending = [(c, i, t) for (c, i, t) in cached if (c, i) not in decided_keys]
+    # Study lock: only classify the week this label's mode is scoped to
+    # (single -> Week 8). Keeps Gemini handoff bounded and fast.
+    scope = study_scope.scope_for_mode(label.mode)
+    in_scope = study_scope.in_scope_keys(db, scope)
+    pending = [
+        (c, i, t) for (c, i, t) in cached
+        if (c, i) not in decided_keys and (c, i) in in_scope
+    ]
 
     if sample_size is not None:
         pending = random.sample(pending, min(sample_size, len(pending)))
@@ -4650,6 +4745,33 @@ def upsert_single_label_note(
     db.add(app_row)
     db.commit()
     return {"ok": True}
+
+
+@app.patch("/api/single-labels/{label_id}/applications/{chatlog_id}/flag")
+def set_single_label_flag(
+    label_id: int,
+    chatlog_id: int,
+    body: FlagRequest,
+    message_index: int = Query(0, ge=0),
+    db: Session = Depends(get_session),
+):
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="single-label not found")
+
+    app_row = db.exec(
+        select(LabelApplication)
+        .where(LabelApplication.label_id == label_id)
+        .where(LabelApplication.chatlog_id == chatlog_id)
+        .where(LabelApplication.message_index == message_index)
+    ).first()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="no application row")
+
+    app_row.flagged = body.flagged
+    db.add(app_row)
+    db.commit()
+    return {"ok": True, "flagged": app_row.flagged}
 
 
 @app.patch(

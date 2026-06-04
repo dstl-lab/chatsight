@@ -31,7 +31,7 @@ An example is 'Responds to AI question or message'. It does not restate any of t
         prompt += f"\n\nAdditional guidance from the instructor: {guidance}\n\nRevise the definition to incorporate this guidance while remaining grounded in the examples above."
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0),
     )
@@ -59,7 +59,7 @@ The following student messages have been labeled "{label_name}" by human instruc
 Which single message best exemplifies the description above? It should be the message that most explicitly shows this description. If there are messages that are equally related the description, prioritize the shorter message. Reply with only the number of that message (e.g. "3"). Nothing else."""
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0),
     )

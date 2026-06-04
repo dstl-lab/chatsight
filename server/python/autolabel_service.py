@@ -101,7 +101,7 @@ def classify_batch(
     prompt = build_prompt(label_definitions, examples_by_label, messages)
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=CONFIG,
     )
@@ -136,7 +136,7 @@ def summarize_message(message_text: str) -> str:
     )
     
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=message_text,
         config=config,
     )

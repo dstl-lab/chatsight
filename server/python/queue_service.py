@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 import assist_service
 import explore_service
+import study_scope
 from database import ext_engine
 from models import (
     ConversationCursor,
@@ -487,6 +488,7 @@ def next_message_for_label(
     explore_fraction: Optional[float] = None,
     *,
     extra_decided: Optional[set[tuple[int, int]]] = None,
+    hint_chatlog_id: Optional[int] = None,
 ) -> Optional[dict]:
     eff_explore = (
         max(0.0, min(1.0, explore_fraction))
@@ -505,6 +507,16 @@ def next_message_for_label(
     if assignment_id is not None:
         cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
     cache_rows = session.exec(cache_q).all()
+
+    # Study lock: restrict to the week tied to this label's mode
+    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
+    # client assignment_id filter above only narrows further.
+    _label = session.get(LabelDefinition, label_id)
+    _scope = study_scope.scope_for_mode(_label.mode if _label else "multi")
+    cache_rows = [
+        row for row in cache_rows
+        if study_scope.notebook_in_scope(row[4], _scope)
+    ]
 
     decided = set(
         session.exec(
@@ -575,6 +587,27 @@ def next_message_for_label(
 
     in_progress.sort(key=lambda c: _shuffle_key(label_id, c))
     not_started.sort(key=lambda c: _shuffle_key(label_id, c))
+
+    # If the caller pinned a conversation (e.g. after a label switch), try it first.
+    if hint_chatlog_id is not None and hint_chatlog_id in conv:
+        tup = _first_pending_turn(hint_chatlog_id, conv[hint_chatlog_id], decided)
+        if tup:
+            midx, text, notebook = tup
+            # Pinning the current conversation is a "continue"; let the display
+            # logic relabel it as "explore" if this conversation was originally
+            # surfaced by an explore pick (so the walk's provenance survives).
+            display_pick = _display_sampling_pick(
+                session, label_id, hint_chatlog_id, "continue"
+            )
+            sampling_meta = build_sampling_meta(
+                session, label_id, hint_chatlog_id, midx,
+                len(conv[hint_chatlog_id]), display_pick,
+            )
+            return _build_focus_payload(
+                session, label_id, hint_chatlog_id, midx, text, notebook,
+                sampling_meta=sampling_meta,
+            )
+        # Hint conversation is fully decided for this label — fall through to normal pick.
 
     cid_pick, pick_mode = _select_next_chatlog_id(
         session,
@@ -748,6 +781,47 @@ def _build_focus_payload(
     if sampling_meta:
         out.update(sampling_meta)
     return out
+
+
+def focus_payload_for_message(
+    session: Session,
+    label_id: int,
+    chatlog_id: int,
+    message_index: int,
+) -> Optional[dict]:
+    """Build a focus payload for one specific (chatlog_id, message_index).
+
+    Used to re-focus the exact message an instructor just undid, instead of
+    letting the sampler pick a fresh (possibly different) conversation.
+    Returns None if the message is not in the cache.
+    """
+    row = session.exec(
+        select(MessageCache.message_text, MessageCache.notebook)
+        .where(MessageCache.chatlog_id == chatlog_id)
+        .where(MessageCache.message_index == message_index)
+    ).first()
+    if not row:
+        return None
+    text, notebook = row
+    total = len(
+        session.exec(
+            select(MessageCache.message_index).where(
+                MessageCache.chatlog_id == chatlog_id
+            )
+        ).all()
+    )
+    sampling_meta = build_sampling_meta(
+        session, label_id, chatlog_id, message_index, total, "round_robin"
+    )
+    return _build_focus_payload(
+        session,
+        label_id,
+        chatlog_id,
+        message_index,
+        text,
+        notebook,
+        sampling_meta=sampling_meta,
+    )
 
 
 def _fetch_full_thread(chatlog_id: int) -> list[dict]:

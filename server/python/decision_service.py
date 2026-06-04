@@ -4,6 +4,8 @@ from typing import Optional, Tuple
 
 from sqlmodel import Session, select
 
+import study_scope
+
 from models import (
     ConversationCursor,
     LabelApplication,
@@ -146,10 +148,11 @@ def compute_readiness(session: Session, label_id: int) -> dict:
 
     walked = len({c for _, c in rows})
 
-    total_convs = session.exec(
-        select(MessageCache.chatlog_id).distinct()
-    ).all()
-    total_convs_count = len(total_convs)
+    # Study lock: single-label runs are Week 8 — count only in-scope convs.
+    label = session.get(LabelDefinition, label_id)
+    scope = study_scope.scope_for_mode(label.mode if label else "single")
+    in_scope = study_scope.in_scope_keys(session, scope)
+    total_convs_count = len({cid for cid, _ in in_scope})
 
     if yes == 0 or no == 0:
         tier = "gray"

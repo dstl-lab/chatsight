@@ -200,6 +200,11 @@ export interface ConceptCandidate {
   created_at: string
 }
 
+export interface LabelNameSuggestion {
+  name: string
+  description: string
+}
+
 export interface EmbedStatus {
   cached: number
   total_unlabeled: number

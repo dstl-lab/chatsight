@@ -20,11 +20,13 @@ import {
 import { DecisionDock } from '../components/run/DecisionDock'
 import { RunProgressOverlay } from '../components/run/RunProgressOverlay'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
+import { HandoffReadyModal } from '../components/run/HandoffReadyModal'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
 import { AiReviewDock } from '../components/decision/AiReviewDock'
 import { useKeybinds } from '../hooks/useKeybinds'
+import { useLabelSuggestions } from '../hooks/useLabelSuggestions'
 import { api } from '../services/api'
 import type {
   DecisionValue,
@@ -62,6 +64,9 @@ export function LabelRunPage() {
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
+  const [handoffReadyOpen, setHandoffReadyOpen] = useState(false)
+  // Track which label IDs have already shown the handoff-ready popup so it only fires once.
+  const handoffReadyShownRef = useRef<Set<number>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tutorialStep, setTutorialStep] = useState<RunTutorialStep | null>(null)
   const [labelNameDraft, setLabelNameDraft] = useState('')
@@ -74,6 +79,20 @@ export function LabelRunPage() {
   useEffect(() => {
     activeLabelIdRef.current = activeLabel?.id ?? null
   }, [activeLabel?.id])
+
+  // Show handoff-ready popup once when readiness first hits green for this label.
+  useEffect(() => {
+    const labelId = activeLabel?.id
+    if (
+      labelId != null &&
+      readiness?.tier === 'green' &&
+      activeLabel?.phase === 'labeling' &&
+      !handoffReadyShownRef.current.has(labelId)
+    ) {
+      handoffReadyShownRef.current.add(labelId)
+      setHandoffReadyOpen(true)
+    }
+  }, [readiness?.tier, activeLabel?.id, activeLabel?.phase])
 
   const syncActiveLabelCounts = useCallback(
     (labelId: number, state: ReadinessState) => {
@@ -458,23 +477,6 @@ export function LabelRunPage() {
     }
   }, [activeLabel, handoffPending, refresh])
 
-  const handleSampleHandoff = useCallback(async (n: number) => {
-    if (!activeLabel || handoffPending) return
-    setHandoffPending(true)
-    setLoadError(null)
-    try {
-      await api.handoffSingleLabel(activeLabel.id, n)
-      await refresh()
-    } catch (e) {
-      console.error('sample handoff failed', e)
-      setLoadError(
-        e instanceof Error ? e.message : 'Sample handoff failed. Check the server logs.',
-      )
-    } finally {
-      setHandoffPending(false)
-    }
-  }, [activeLabel, handoffPending, refresh])
-
   const handleContinueToReview = useCallback(async () => {
     setSummaryOpen(false)
     if (!activeLabel) return
@@ -549,21 +551,43 @@ export function LabelRunPage() {
   )
 
   const { keybinds } = useKeybinds()
+  const { suggestions } = useLabelSuggestions()
 
   const handleSwitchToQueued = useCallback(
     async (id: number) => {
       if (busy) return
+      const hintChatlogId = focused?.chatlog_id
       setBusyMessage('Switching label…')
       setBusy(true)
       try {
         await api.switchToLabel(id)
         setBusyMessage('Loading label…')
-        await refresh()
+        // Use hintChatlogId so the new label opens on the same conversation.
+        const [active, a, um] = await Promise.all([
+          api.getActiveSingleLabel(),
+          api.listAssignments(),
+          api.getUnmappedCount(),
+        ])
+        setAssignments(a)
+        setUnmapped(um)
+        if (active) {
+          const [next, ready, q] = await Promise.all([
+            api.getNextFocused(active.id, selectedAssignmentId ?? undefined, hintChatlogId),
+            api.getReadiness(active.id),
+            api.listSingleLabels({ phase: 'queued' }),
+          ])
+          setActiveLabel(active)
+          setFocused(next)
+          setReadiness(ready)
+          setQueued(q)
+          setReviewQueue(null)
+          setReviewIdx(0)
+        }
       } finally {
         setBusy(false)
       }
     },
-    [busy, refresh]
+    [busy, focused?.chatlog_id, selectedAssignmentId]
   )
 
   const progressActive = loading || busy || handoffPending
@@ -696,7 +720,6 @@ export function LabelRunPage() {
                 onSelectAssignment={() => {}}
                 onHandoff={handleHandoff}
                 onLabelMetaUpdated={refresh}
-                onSampleHandoff={handleSampleHandoff}
                 readinessOpen={readinessOpen}
                 onReadinessOpenChange={setReadinessOpen}
                 queued={queued}
@@ -704,6 +727,7 @@ export function LabelRunPage() {
                 onClearAll={handleClearQueue}
                 onSwitchQueued={(id) => void handleSwitchToQueued(id)}
                 onRemoveQueued={(id) => void handleRemoveQueued(id)}
+                suggestions={suggestions}
               />
               <ConversationMeta
                 chatlogId={item.chatlog_id}
@@ -739,6 +763,7 @@ export function LabelRunPage() {
           open={noteOpen}
           onClose={() => setNoteOpen(false)}
           onSubmit={handleNoteSubmit}
+          suggestions={suggestions}
         />
         {abortOpen && (
           <AbortConfirmModal
@@ -776,7 +801,6 @@ export function LabelRunPage() {
               labelNameLocked={tutorialActive}
               onHandoff={draftMode ? undefined : handleHandoff}
               onLabelMetaUpdated={draftMode ? undefined : refresh}
-              onSampleHandoff={draftMode ? undefined : handleSampleHandoff}
               readinessOpen={readinessOpen}
               onReadinessOpenChange={setReadinessOpen}
               queued={queued}
@@ -786,6 +810,7 @@ export function LabelRunPage() {
               onClearAll={handleClearQueue}
               onSwitchQueued={(id) => void handleSwitchToQueued(id)}
               onRemoveQueued={(id) => void handleRemoveQueued(id)}
+              suggestions={suggestions}
             />
             <ConversationMeta
               chatlogId={focused.chatlog_id}
@@ -838,6 +863,7 @@ export function LabelRunPage() {
         open={noteOpen}
         onClose={() => setNoteOpen(false)}
         onSubmit={handleNoteSubmit}
+        suggestions={suggestions}
       />
       <SummaryModal
         summary={summary}
@@ -853,6 +879,12 @@ export function LabelRunPage() {
           noCount={activeLabel.no_count}
           onConfirm={handleAbortActive}
           onCancel={() => setAbortOpen(false)}
+        />
+      )}
+      {handoffReadyOpen && (
+        <HandoffReadyModal
+          onHandoff={() => { setHandoffReadyOpen(false); void handleHandoff() }}
+          onDismiss={() => setHandoffReadyOpen(false)}
         />
       )}
     </>

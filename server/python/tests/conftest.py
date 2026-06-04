@@ -5,6 +5,11 @@ import os
 # reads this env var at module load time.
 os.environ.setdefault("PG_PASSWORD", "test_dummy_password")
 
+# The study week-lock (study_scope) is ON by default in production. The legacy
+# test suite seeds unscoped MessageCache rows (notebook=None or other weeks), so
+# disable the lock here. test_study_scope.py re-enables it per-test to validate it.
+os.environ.setdefault("CHATSIGHT_STUDY_LOCK", "0")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest

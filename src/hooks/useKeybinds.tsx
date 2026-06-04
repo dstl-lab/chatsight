@@ -7,10 +7,10 @@ export type KeybindMap = Record<Action, string>
 const STORAGE_KEY = 'chatsight-keybinds'
 
 const DEFAULT_KEYBINDS: KeybindMap = {
-  yes: 'a',
+  yes: 'z',
   no: 'd',
-  skip: ' ', // Space
-  undo: 's',
+  skip: 'arrowright',
+  undo: 'arrowleft',
 }
 
 type KeybindContextValue = {

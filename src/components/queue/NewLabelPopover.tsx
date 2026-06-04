@@ -20,6 +20,7 @@ export function NewLabelPopover({ onConfirm, onCancel }: Props) {
       <p className="font-serif text-xs text-paper mb-2">New label</p>
       <input
         autoFocus
+        autoComplete="new-password"
         value={name}
         onChange={e => setName(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && handleConfirm()}

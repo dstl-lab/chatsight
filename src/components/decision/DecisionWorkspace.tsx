@@ -67,8 +67,12 @@ export function DecisionWorkspace({
         h.onSkip?.()
       } else if (pressedKey === k.undo) {
         h.onUndo?.()
-      } else if (pressedKey === 'enter' || rawKey === 'enter') {
-        h.onAcceptAi?.()
+      } else if (rawKey === 'enter') {
+        if (h.onAcceptAi) {
+          h.onAcceptAi()
+        } else {
+          h.onSkip?.()
+        }
       }
     }
     window.addEventListener('keydown', onKey)
