@@ -20,6 +20,7 @@ import {
 import { DecisionDock } from '../components/run/DecisionDock'
 import { RunProgressOverlay } from '../components/run/RunProgressOverlay'
 import { NoteLabelPopover } from '../components/run/NoteLabelPopover'
+import { HandoffReadyModal } from '../components/run/HandoffReadyModal'
 import { SummaryModal } from '../components/run/SummaryModal'
 import { AbortConfirmModal } from '../components/run/AbortConfirmModal'
 import { DecisionWorkspace } from '../components/decision/DecisionWorkspace'
@@ -63,6 +64,9 @@ export function LabelRunPage() {
   const [assistNeighbors, setAssistNeighbors] = useState<AssistNeighbor[]>([])
   const [abortOpen, setAbortOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
+  const [handoffReadyOpen, setHandoffReadyOpen] = useState(false)
+  // Track which label IDs have already shown the handoff-ready popup so it only fires once.
+  const handoffReadyShownRef = useRef<Set<number>>(new Set())
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tutorialStep, setTutorialStep] = useState<RunTutorialStep | null>(null)
   const [labelNameDraft, setLabelNameDraft] = useState('')
@@ -75,6 +79,20 @@ export function LabelRunPage() {
   useEffect(() => {
     activeLabelIdRef.current = activeLabel?.id ?? null
   }, [activeLabel?.id])
+
+  // Show handoff-ready popup once when readiness first hits green for this label.
+  useEffect(() => {
+    const labelId = activeLabel?.id
+    if (
+      labelId != null &&
+      readiness?.tier === 'green' &&
+      activeLabel?.phase === 'labeling' &&
+      !handoffReadyShownRef.current.has(labelId)
+    ) {
+      handoffReadyShownRef.current.add(labelId)
+      setHandoffReadyOpen(true)
+    }
+  }, [readiness?.tier, activeLabel?.id, activeLabel?.phase])
 
   const syncActiveLabelCounts = useCallback(
     (labelId: number, state: ReadinessState) => {
@@ -862,6 +880,12 @@ export function LabelRunPage() {
           noCount={activeLabel.no_count}
           onConfirm={handleAbortActive}
           onCancel={() => setAbortOpen(false)}
+        />
+      )}
+      {handoffReadyOpen && (
+        <HandoffReadyModal
+          onHandoff={() => { setHandoffReadyOpen(false); void handleHandoff() }}
+          onDismiss={() => setHandoffReadyOpen(false)}
         />
       )}
     </>
