@@ -382,14 +382,19 @@ export const api = {
     USE_MOCK ? Promise.resolve({ ...mockActiveLabel, is_active: false, phase: 'complete' })
              : req(`/api/single-labels/${id}/close`, { method: 'POST' }),
 
-  getNextFocused: (id: number, assignmentId?: number, hintChatlogId?: number): Promise<FocusedMessage | null> => {
+  getNextFocused: (
+    id: number,
+    assignmentId?: number,
+    hintChatlogId?: number,
+    hintMessageIndex?: number,
+  ): Promise<FocusedMessage | null> => {
+    if (USE_MOCK) return Promise.resolve(mockFocusedMessage)
     const params = new URLSearchParams()
     if (assignmentId != null) params.set('assignment_id', String(assignmentId))
     if (hintChatlogId != null) params.set('hint_chatlog_id', String(hintChatlogId))
+    if (hintMessageIndex != null) params.set('hint_message_index', String(hintMessageIndex))
     const qs = params.toString()
-    return USE_MOCK
-      ? Promise.resolve(mockFocusedMessage)
-      : req(`/api/single-labels/${id}/next${qs ? '?' + qs : ''}`)
+    return req(`/api/single-labels/${id}/next${qs ? `?${qs}` : ''}`)
   },
 
   decide: (
@@ -403,6 +408,11 @@ export const api = {
           `/api/single-labels/${id}/decide${assignmentId ? `?assignment_id=${assignmentId}` : ''}`,
           { method: 'POST', ...json(body) }
         ),
+
+  getHumanDecisions: (id: number): Promise<{ chatlog_id: number; message_index: number }[]> =>
+    USE_MOCK
+      ? Promise.resolve([])
+      : req(`/api/single-labels/${id}/decisions`),
 
   undoLastDecision: (id: number, assignmentId?: number): Promise<DecideResult> =>
     USE_MOCK

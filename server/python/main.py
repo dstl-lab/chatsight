@@ -3100,6 +3100,7 @@ def _label_to_response(db: Session, label: LabelDefinition) -> SingleLabelRespon
         skip_count=skip,
         conversations_walked=walked,
         total_conversations=len(total_convs),
+        guidance=label.guidance,
         hybrid_explore_fraction=label.hybrid_explore_fraction,
         hybrid_explore_effective=_effective_hybrid_explore_fraction(label),
     )
@@ -3574,17 +3575,46 @@ def get_next_focused(
     label_id: int,
     assignment_id: Optional[int] = None,
     hint_chatlog_id: Optional[int] = None,
+    hint_message_index: Optional[int] = None,
     db: Session = Depends(get_session),
 ):
     """Walk the next focused message for the active labeling label.
 
-    hint_chatlog_id: if provided, try to return the first undecided message
-    from that conversation before falling back to normal queue ordering.
-    Used after label switches to keep the instructor in the same conversation.
-    """
+    If hint_chatlog_id + hint_message_index are both provided (e.g. after a
+    label switch) and that message has not yet been decided on this label,
+    pin the view to that exact position instead of running sampling."""
     label = db.get(LabelDefinition, label_id)
     if not label or label.mode != "single":
         raise HTTPException(status_code=404, detail="Single-label not found")
+
+    if hint_chatlog_id is not None and hint_message_index is not None:
+        already = db.exec(
+            select(LabelApplication).where(
+                LabelApplication.label_id == label_id,
+                LabelApplication.chatlog_id == hint_chatlog_id,
+                LabelApplication.message_index == hint_message_index,
+            )
+        ).first()
+        # If assignment filter is active, only honour the hint when the message
+        # belongs to that assignment — otherwise fall through to normal sampling
+        # so the filter actually takes effect.
+        in_assignment = True
+        if assignment_id is not None:
+            in_assignment = bool(
+                db.exec(
+                    select(MessageCache.id)
+                    .where(MessageCache.chatlog_id == hint_chatlog_id)
+                    .where(MessageCache.message_index == hint_message_index)
+                    .where(MessageCache.assignment_id == assignment_id)
+                ).first()
+            )
+        if not already and in_assignment:
+            payload = queue_service.focus_payload_for_message(
+                db, label_id, hint_chatlog_id, hint_message_index
+            )
+            if payload:
+                db.commit()
+                return FocusedMessageResponse(**payload)
 
     assist_service.rebuild_cache_if_stale(db, label_id)
     payload = queue_service.next_message_for_label(
@@ -3738,6 +3768,24 @@ def post_undo(
                 next=FocusedMessageResponse(**payload), readiness=readiness
             )
     return _decide_response(db, label_id, assignment_id)
+
+
+@app.get("/api/single-labels/{label_id}/decisions")
+def get_human_decisions(label_id: int, db: Session = Depends(get_session)):
+    """Return all human decisions for a label in chronological order.
+    Used by the frontend to seed the undo history after a page reload."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+        )
+        .order_by(LabelApplication.created_at.asc())
+    ).all()
+    return [{"chatlog_id": cid, "message_index": midx} for cid, midx in rows]
 
 
 @app.get("/api/single-labels/{label_id}/readiness", response_model=ReadinessResponse)
