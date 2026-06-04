@@ -404,6 +404,11 @@ export const api = {
           { method: 'POST', ...json(body) }
         ),
 
+  getHumanDecisions: (id: number): Promise<{ chatlog_id: number; message_index: number }[]> =>
+    USE_MOCK
+      ? Promise.resolve([])
+      : req(`/api/single-labels/${id}/decisions`),
+
   undoLastDecision: (id: number, assignmentId?: number): Promise<DecideResult> =>
     USE_MOCK
       ? Promise.resolve({ next: mockFocusedMessage, readiness: mockReadiness })

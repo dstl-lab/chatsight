@@ -1263,3 +1263,33 @@ def test_backfill_handed_off_at_uses_max_ai_row_time_else_created_at(engine, ses
     assert session.get(LabelDefinition, no_ai.id).handed_off_at == t_created  # fallback
     assert session.get(LabelDefinition, still_labeling.id).handed_off_at is None  # wrong phase
     assert session.get(LabelDefinition, multi.id).handed_off_at is None  # wrong mode
+
+
+# ─── Human decisions listing (undo-history seed) ──────────────────────────
+
+
+def test_get_human_decisions_returns_human_rows_in_order(client, session):
+    """GET /decisions feeds the frontend's undo-history seed: human decisions
+    only, in chronological order. AI rows are excluded."""
+    _seed(session)
+    a = _make_active_label(client)
+    _decide(client, a["id"], 300, 0, "yes")
+    _decide(client, a["id"], 300, 1, "no")
+    _decide(client, a["id"], 301, 0, "yes")
+    # An AI row must not appear in the undo seed.
+    session.add(LabelApplication(
+        label_id=a["id"], chatlog_id=301, message_index=1,
+        applied_by="ai", value="yes", confidence=0.9,
+    ))
+    session.commit()
+
+    rows = client.get(f"/api/single-labels/{a['id']}/decisions").json()
+    assert rows == [
+        {"chatlog_id": 300, "message_index": 0},
+        {"chatlog_id": 300, "message_index": 1},
+        {"chatlog_id": 301, "message_index": 0},
+    ]
+
+
+def test_get_human_decisions_404_for_missing_label(client, session):
+    assert client.get("/api/single-labels/99999/decisions").status_code == 404

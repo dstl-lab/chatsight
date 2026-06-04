@@ -3736,6 +3736,24 @@ def post_undo(
     return _decide_response(db, label_id, assignment_id)
 
 
+@app.get("/api/single-labels/{label_id}/decisions")
+def get_human_decisions(label_id: int, db: Session = Depends(get_session)):
+    """Return all human decisions for a label in chronological order.
+    Used by the frontend to seed the undo history after a page reload."""
+    label = db.get(LabelDefinition, label_id)
+    if not label or label.mode != "single":
+        raise HTTPException(status_code=404, detail="Single-label not found")
+    rows = db.exec(
+        select(LabelApplication.chatlog_id, LabelApplication.message_index)
+        .where(
+            LabelApplication.label_id == label_id,
+            LabelApplication.applied_by == "human",
+        )
+        .order_by(LabelApplication.created_at.asc())
+    ).all()
+    return [{"chatlog_id": cid, "message_index": midx} for cid, midx in rows]
+
+
 @app.get("/api/single-labels/{label_id}/readiness", response_model=ReadinessResponse)
 def get_readiness(label_id: int, db: Session = Depends(get_session)):
     label = db.get(LabelDefinition, label_id)

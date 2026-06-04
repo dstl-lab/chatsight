@@ -72,6 +72,17 @@ export function LabelRunPage() {
   const [labelNameDraft, setLabelNameDraft] = useState('')
   const [browseExhausted, setBrowseExhausted] = useState<number[]>([])
 
+  // Cross-label undo history. Each entry is the (labelId, chatlogId, messageIndex)
+  // of a message that was decided on. Undo pops from the end, switches labels
+  // if needed, and calls the backend undo for that specific label.
+  const [decisionHistory, setDecisionHistory] = useState<
+    Array<{ labelId: number; chatlogId: number; messageIndex: number }>
+  >([])
+
+  // Flips to true after the first history seed from the DB. Subsequent
+  // refresh() calls won't overwrite cross-label history built up this session.
+  const hasSeededHistory = useRef(false)
+
   // Mirrors activeLabel.id so async handlers can detect a label switch that
   // occurred while a decide/undo/skip was in flight, and avoid clobbering
   // state of the new active label with the old one's response.
@@ -183,6 +194,17 @@ export function LabelRunPage() {
       setReviewIdx(0)
       if (isPlaceholderLabelName(active.name)) {
         setLabelNameDraft('')
+      }
+      // Seed undo history from DB on first load only. Subsequent refreshes
+      // (after label switch, etc.) don't overwrite history built this session.
+      if (!hasSeededHistory.current) {
+        hasSeededHistory.current = true
+        const decisions = await api.getHumanDecisions(active.id)
+        setDecisionHistory(decisions.map(d => ({
+          labelId: active.id,
+          chatlogId: d.chatlog_id,
+          messageIndex: d.message_index,
+        })))
       }
     }
 
@@ -408,6 +430,11 @@ export function LabelRunPage() {
           value,
         }, selectedAssignmentId ?? undefined)
         if (activeLabelIdRef.current !== labelId) return
+        setDecisionHistory(prev => [...prev, {
+          labelId,
+          chatlogId: decided.chatlog_id,
+          messageIndex: decided.message_index,
+        }])
         setFocused(res.next)
         setReadiness(res.readiness)
         syncActiveLabelCounts(labelId, res.readiness)
@@ -419,20 +446,29 @@ export function LabelRunPage() {
   )
 
   const handleUndo = useCallback(async () => {
-    if (!activeLabel || busy) return
+    if (!activeLabel || busy || decisionHistory.length === 0) return
+    const entry = decisionHistory[decisionHistory.length - 1]
     setBusy(true)
-    const labelId = activeLabel.id
     try {
-      const res = await api.undoLastDecision(labelId, selectedAssignmentId ?? undefined)
-      if (activeLabelIdRef.current !== labelId) return
+      // If the decision to undo was on a different label, switch to it first.
+      if (entry.labelId !== activeLabel.id) {
+        const switched = await api.switchToLabel(entry.labelId)
+        setActiveLabel(switched)
+        activeLabelIdRef.current = switched.id
+        // Refresh the queued list since the previously active label is now queued.
+        const q = await api.listSingleLabels({ phase: 'queued' })
+        setQueued(q)
+      }
+      const res = await api.undoLastDecision(entry.labelId, selectedAssignmentId ?? undefined)
+      setDecisionHistory(prev => prev.slice(0, -1))
       setFocused(res.next)
       setReadiness(res.readiness)
-      syncActiveLabelCounts(labelId, res.readiness)
+      syncActiveLabelCounts(entry.labelId, res.readiness)
       setRecent(null)
     } finally {
       setBusy(false)
     }
-  }, [activeLabel, busy, selectedAssignmentId, syncActiveLabelCounts])
+  }, [activeLabel, busy, decisionHistory, selectedAssignmentId, syncActiveLabelCounts])
 
   const handleSkip = useCallback(() => {
     if (!activeLabel) void handleBrowseSkip()
@@ -467,6 +503,8 @@ export function LabelRunPage() {
     // label without a reload. Classification continues in the background and shows
     // up on /summaries with a progress meter.
     setHandoffPending(true)
+    setDecisionHistory([])
+    hasSeededHistory.current = false
     try {
       await api.handoffSingleLabel(activeLabel.id)
       await refresh()
