@@ -491,55 +491,55 @@ export function QueuePage() {
 	};
 
 	const handleNextInner = useCallback(async () => {
-		// // Recalibration: blind phase → check match → reconcile or auto-advance
-		// if (recalibration && recalibration.phase === "blind") {
-		// 	const relabelIds = new Set(appliedLabelIds);
-		// 	const originalSet = new Set(recalibration.item.original_label_ids);
-		// 	const matched =
-		// 		relabelIds.size === originalSet.size &&
-		// 		[...relabelIds].every((id) => originalSet.has(id));
+		// Recalibration: blind phase → check match → reconcile or auto-advance
+		if (recalibration && recalibration.phase === "blind") {
+			const relabelIds = new Set(appliedLabelIds);
+			const originalSet = new Set(recalibration.item.original_label_ids);
+			const matched =
+				relabelIds.size === originalSet.size &&
+				[...relabelIds].every((id) => originalSet.has(id));
 
-		// 	if (matched) {
-		// 		await api.saveRecalibration({
-		// 			chatlog_id: recalibration.item.chatlog_id,
-		// 			message_index: recalibration.item.message_index,
-		// 			original_label_ids: recalibration.item.original_label_ids,
-		// 			relabel_ids: [...relabelIds],
-		// 			final_label_ids: [...relabelIds],
-		// 		});
-		// 		setRecalibration(null);
-		// 		setRecalibrationToast("match");
-		// 		setTimeout(() => setRecalibrationToast(null), 2000);
-		// 		setAppliedLabelIds(new Set());
-		// 		api
-		// 			.getRecalibrationStats()
-		// 			.then(setRecalibrationStats)
-		// 			.catch(() => {});
-		// 	} else {
-		// 		setRecalibration((prev) =>
-		// 			prev ? { ...prev, phase: "reconcile", relabelIds } : prev,
-		// 		);
-		// 	}
-		// 	return;
-		// }
+			if (matched) {
+				await api.saveRecalibration({
+					chatlog_id: recalibration.item.chatlog_id,
+					message_index: recalibration.item.message_index,
+					original_label_ids: recalibration.item.original_label_ids,
+					relabel_ids: [...relabelIds],
+					final_label_ids: [...relabelIds],
+				});
+				setRecalibration(null);
+				setRecalibrationToast("match");
+				setTimeout(() => setRecalibrationToast(null), 2000);
+				setAppliedLabelIds(new Set());
+				api
+					.getRecalibrationStats()
+					.then(setRecalibrationStats)
+					.catch(() => {});
+			} else {
+				setRecalibration((prev) =>
+					prev ? { ...prev, phase: "reconcile", relabelIds } : prev,
+				);
+			}
+			return;
+		}
 
-		// // Recalibration: reconcile phase → save final labels and exit
-		// if (recalibration && recalibration.phase === "reconcile") {
-		// 	await api.saveRecalibration({
-		// 		chatlog_id: recalibration.item.chatlog_id,
-		// 		message_index: recalibration.item.message_index,
-		// 		original_label_ids: recalibration.item.original_label_ids,
-		// 		relabel_ids: [...recalibration.relabelIds],
-		// 		final_label_ids: [...appliedLabelIds],
-		// 	});
-		// 	setRecalibration(null);
-		// 	setAppliedLabelIds(new Set());
-		// 	api
-		// 		.getRecalibrationStats()
-		// 		.then(setRecalibrationStats)
-		// 		.catch(() => {});
-		// 	return;
-		// }
+		// Recalibration: reconcile phase → save final labels and exit
+		if (recalibration && recalibration.phase === "reconcile") {
+			await api.saveRecalibration({
+				chatlog_id: recalibration.item.chatlog_id,
+				message_index: recalibration.item.message_index,
+				original_label_ids: recalibration.item.original_label_ids,
+				relabel_ids: [...recalibration.relabelIds],
+				final_label_ids: [...appliedLabelIds],
+			});
+			setRecalibration(null);
+			setAppliedLabelIds(new Set());
+			api
+				.getRecalibrationStats()
+				.then(setRecalibrationStats)
+				.catch(() => {});
+			return;
+		}
 
 		if (isBackNav) {
 			setNavPos(null);
@@ -588,16 +588,16 @@ export function QueuePage() {
 		api.getQueuePosition().then((p) => setRemaining(p.total_remaining));
 		api.getRecentHistory(5).then(setHistory);
 
-		// // Check if recalibration is due after advancing (disabled)
-		// api
-		// 	.getRecalibration()
-		// 	.then((item) => {
-		// 		if (item) {
-		// 			setRecalibration({ item, phase: "blind", relabelIds: new Set() });
-		// 			setAppliedLabelIds(new Set());
-		// 		}
-		// 	})
-		// 	.catch(() => {});
+		// Check if recalibration is due after advancing
+		api
+			.getRecalibration()
+			.then((item) => {
+				if (item) {
+					setRecalibration({ item, phase: "blind", relabelIds: new Set() });
+					setAppliedLabelIds(new Set());
+				}
+			})
+			.catch(() => {});
 	}, [
 		recalibration,
 		isBackNav,
