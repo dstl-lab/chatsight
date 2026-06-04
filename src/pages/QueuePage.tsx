@@ -116,7 +116,7 @@ export function QueuePage() {
 
 	const currentMessage = queue[currentIdx] ?? null;
 
-	const formatKey = (key: string) => {
+	const formatKey = (key: string): string => {
 		if (key === " ") return "Space";
 		if (key === "enter") return "Enter";
 		if (key === "arrowleft") return "←";
