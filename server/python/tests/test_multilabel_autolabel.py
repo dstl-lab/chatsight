@@ -27,8 +27,12 @@ def test_build_prompt_multi_select_wording():
     single = autolabel_service.build_prompt(label_defs, {}, messages, multi_select=False)
     multi = autolabel_service.build_prompt(label_defs, {}, messages, multi_select=True)
     assert "each message" in single
+    assert single != multi, "multi_select prompt must differ from single-select prompt"
     # Multi prompt must tell the model multiple/zero labels are allowed.
     assert "all that apply" in multi.lower() or "every label" in multi.lower()
+    assert "none" in multi.lower() or "omit" in multi.lower(), (
+        "multi prompt must state that zero labels (no match) is allowed"
+    )
 
 
 def test_classify_batch_uses_multi_config(monkeypatch):
