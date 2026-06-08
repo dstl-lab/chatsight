@@ -1364,6 +1364,7 @@ def _run_split_autolabel(
 def _run_autolabel():
     """Background task: classify all unlabeled messages using Gemini."""
     from autolabel_service import classify_batch
+    import autolabel_service
 
     global _autolabel_status
     _autolabel_status = {"running": True, "processed": 0, "total": 0, "error": None}
@@ -1464,7 +1465,7 @@ def _run_autolabel():
                 return
             batch = unlabeled[i : i + BATCH_SIZE]
             try:
-                results = classify_batch(label_defs, examples_by_label, batch)
+                results = classify_batch(label_defs, examples_by_label, batch, multi_select=True)
             except Exception as e:
                 _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
                 continue
@@ -1495,6 +1496,11 @@ def _run_autolabel():
                             conf = max(0.0, min(1.0, float(conf)))
                         else:
                             conf = None
+                        # Multi-select gate: only persist labels the model is
+                        # confident enough about. Missing/non-numeric confidence
+                        # is treated as below threshold (not persisted).
+                        if conf is None or conf < autolabel_service.MULTILABEL_THRESHOLD:
+                            continue
                         db.add(LabelApplication(
                             label_id=label_map[label_name],
                             chatlog_id=msg["chatlog_id"],
