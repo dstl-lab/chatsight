@@ -496,28 +496,9 @@ def next_message_for_label(
         else default_hybrid_explore_fraction()
     )
 
-    cache_q = select(
-        MessageCache.id,
-        MessageCache.chatlog_id,
-        MessageCache.message_index,
-        MessageCache.message_text,
-        MessageCache.notebook,
-        MessageCache.assignment_id,
-    )
-    if assignment_id is not None:
-        cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
-    cache_rows = session.exec(cache_q).all()
-
-    # Study lock: restrict to the week tied to this label's mode
-    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
-    # client assignment_id filter above only narrows further.
-    _label = session.get(LabelDefinition, label_id)
-    _scope = study_scope.scope_for_mode(_label.mode if _label else "multi")
-    cache_rows = [
-        row for row in cache_rows
-        if study_scope.notebook_in_scope(row[4], _scope)
-    ]
-
+    # Fast path: a brand-new label with an onboarding seed and no decisions yet
+    # can return immediately without scanning the full MessageCache.
+    label = session.get(LabelDefinition, label_id)
     decided = set(
         session.exec(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
@@ -527,7 +508,6 @@ def next_message_for_label(
     if extra_decided:
         decided |= extra_decided
 
-    label = session.get(LabelDefinition, label_id)
     if (
         label
         and label.onboarding_seed_chatlog_id is not None
@@ -543,7 +523,7 @@ def next_message_for_label(
             .where(MessageCache.chatlog_id == seed_cid)
             .where(MessageCache.message_index == seed_midx)
         ).first()
-        if seed_row and (seed_cid, seed_midx) not in decided:
+        if seed_row:
             text, notebook = seed_row
             sampling_meta = build_sampling_meta(
                 session,
@@ -568,6 +548,27 @@ def next_message_for_label(
                 notebook,
                 sampling_meta=sampling_meta,
             )
+
+    cache_q = select(
+        MessageCache.id,
+        MessageCache.chatlog_id,
+        MessageCache.message_index,
+        MessageCache.message_text,
+        MessageCache.notebook,
+        MessageCache.assignment_id,
+    )
+    if assignment_id is not None:
+        cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
+    cache_rows = session.exec(cache_q).all()
+
+    # Study lock: restrict to the week tied to this label's mode
+    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
+    # client assignment_id filter above only narrows further.
+    _scope = study_scope.scope_for_mode(label.mode if label else "multi")
+    cache_rows = [
+        row for row in cache_rows
+        if study_scope.notebook_in_scope(row[4], _scope)
+    ]
 
     conv: dict[int, list[tuple[int, str, Optional[str]]]] = {}
     assign_by_cid: dict[int, Optional[int]] = {}
