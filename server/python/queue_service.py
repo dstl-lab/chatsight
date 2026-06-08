@@ -303,9 +303,9 @@ def build_sampling_meta(
 def default_hybrid_explore_fraction() -> float:
     """Server default when `LabelDefinition.hybrid_explore_fraction` is unset."""
     try:
-        v = float(os.environ.get("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0.35"))
+        v = float(os.environ.get("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0.75"))
     except (TypeError, ValueError):
-        v = 0.35
+        v = 0.75
     return max(0.0, min(1.0, v))
 
 
