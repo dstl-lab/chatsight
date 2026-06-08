@@ -1329,7 +1329,7 @@ def _run_split_autolabel(
             for r in results:
                 idx = r.get("index")
                 label_name = r.get("label")
-                if idx is None or idx >= len(batch) or label_name not in label_map:
+                if idx is None or idx < 0 or idx >= len(batch) or label_name not in label_map:
                     continue
                 msg = batch[idx]
                 db.add(
@@ -1363,6 +1363,7 @@ def _run_split_autolabel(
 
 def _run_autolabel():
     """Background task: classify all unlabeled messages using Gemini."""
+    # module import (not from-import) so tests can monkeypatch autolabel_service.MULTILABEL_THRESHOLD
     import autolabel_service
 
     global _autolabel_status
@@ -1477,7 +1478,7 @@ def _run_autolabel():
                 for r in results:
                     idx = r.get("index")
                     label_name = r.get("label")
-                    if idx is None or idx >= len(batch) or label_name not in label_map:
+                    if idx is None or idx < 0 or idx >= len(batch) or label_name not in label_map:
                         continue
                     msg = batch[idx]
                     # Check for duplicate

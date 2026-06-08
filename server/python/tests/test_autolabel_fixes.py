@@ -83,6 +83,7 @@ def test_autolabel_scopes_to_queue_scope(session, engine, monkeypatch):
     Week 8 messages in MessageCache must be excluded."""
     monkeypatch.setenv("CHATSIGHT_STUDY_LOCK", "1")
     monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(autolabel_service, "MULTILABEL_THRESHOLD", 0.5)
 
     _make_label(session, "scope-label")
     # In scope: Week 3
@@ -114,6 +115,7 @@ def test_autolabel_does_not_query_external_db(session, engine, monkeypatch):
     """After the fix, _run_autolabel must not call ext_engine.connect() at all.
     All data comes from local MessageCache."""
     monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(autolabel_service, "MULTILABEL_THRESHOLD", 0.5)
 
     _make_label(session, "no-ext-label")
     _seed_msg(session, 5, 0, notebook="lab01.ipynb", text="test msg")
