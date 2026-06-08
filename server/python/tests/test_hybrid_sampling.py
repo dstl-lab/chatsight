@@ -31,7 +31,7 @@ def test_select_next_always_baseline_when_explore_fraction_zero(session, monkeyp
         201: [(0, "a", None), (1, "b", None)],
         202: [(0, "c", None)],
     }
-    cid, mode = queue_service._select_next_chatlog_id(
+    cid, mode, _ = queue_service._select_next_chatlog_id(
         session,
         label_id=1,
         conv=conv,
@@ -53,7 +53,7 @@ def test_select_next_continue_when_multiple_in_progress(session, monkeypatch):
         203: [(0, "e", None)],
     }
     decided = {(201, 0), (202, 0)}
-    cid, mode = queue_service._select_next_chatlog_id(
+    cid, mode, _ = queue_service._select_next_chatlog_id(
         session,
         label_id=1,
         conv=conv,
@@ -74,7 +74,7 @@ def test_select_next_continue_when_single_in_progress(session):
         203: [(0, "d", None)],
     }
     decided = {(201, 0)}
-    cid, mode = queue_service._select_next_chatlog_id(
+    cid, mode, _ = queue_service._select_next_chatlog_id(
         session,
         label_id=1,
         conv=conv,
@@ -118,7 +118,7 @@ def test_select_next_explore_when_fraction_one(session, monkeypatch):
         return seq[0]
 
     monkeypatch.setattr(queue_service.random, "choice", _pick_one)
-    cid, mode = queue_service._select_next_chatlog_id(
+    cid, mode, _ = queue_service._select_next_chatlog_id(
         session,
         label_id=1,
         conv=conv,

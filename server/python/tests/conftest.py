@@ -17,8 +17,21 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
 from sqlmodel.pool import StaticPool
 
+import study_scope
 from main import app, get_ext_conn
 from database import get_session
+
+
+@pytest.fixture(autouse=True)
+def _clear_scope_cache():
+    """Wipe the in_scope_keys memo cache before each test.
+
+    Tests seed different numbers of MessageCache rows but may collide on the
+    (lock_on, names, row_count) cache key when row counts happen to match.
+    Clearing per-test gives isolation without coupling to any specific fixture."""
+    study_scope._scope_cache.clear()
+    yield
+    study_scope._scope_cache.clear()
 
 
 @pytest.fixture(name="engine")
