@@ -132,3 +132,16 @@ def test_run_autolabel_applies_multiple_labels_and_gates(session, engine, monkey
     for app in ai_apps:
         assert app.confidence is not None and app.confidence >= 0.5
     assert main._autolabel_status["error"] is None
+
+
+import inspect
+
+
+def test_split_flow_calls_classify_batch_single_select():
+    """The label-split background function must NOT pass multi_select=True;
+    splits are a 1-of-2 partition and must keep exactly-one-label semantics.
+    Only the general autolabel flow (_run_autolabel) opts into multi_select."""
+    src = inspect.getsource(main)
+    assert src.count("multi_select=True") == 1, (
+        "Exactly one call site (the general autolabel) should pass multi_select=True"
+    )
