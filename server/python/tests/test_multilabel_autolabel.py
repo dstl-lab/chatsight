@@ -134,6 +134,27 @@ def test_run_autolabel_applies_multiple_labels_and_gates(session, engine, monkey
     assert main._autolabel_status["error"] is None
 
 
+def test_run_autolabel_skips_nonnumeric_confidence(session, engine, monkeypatch):
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(_als, "MULTILABEL_THRESHOLD", 0.5)
+
+    a = _make_label(session, "label-a")
+    _seed_msg(session, 1, 0, "lab01.ipynb", "msg one")
+
+    def fake_classify(label_defs, examples_by_label, messages, multi_select=False):
+        # Non-numeric confidence -> treated as below threshold, not persisted.
+        return [{"index": 0, "label": "label-a", "confidence": "not-a-number"}]
+
+    monkeypatch.setattr(_als, "classify_batch", fake_classify)
+    main._run_autolabel()
+
+    ai_apps = session.exec(
+        select(LabelApplication).where(LabelApplication.applied_by == "ai")
+    ).all()
+    assert ai_apps == [], "non-numeric confidence must not be persisted"
+    assert main._autolabel_status["error"] is None
+
+
 import inspect
 
 
