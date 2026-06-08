@@ -39,6 +39,7 @@ npx tsc --noEmit     # type-check only
 - `PG_PASSWORD` — password for the `dsc10_tutor` PostgreSQL user (read from `.env` at repo root via `python-dotenv`)
 - `kubectl port-forward` to `localhost:5432` must be running before starting the backend (external DB is `dsc10_tutor_logs`)
 - Optional: `EXT_DB_URL` overrides the default PostgreSQL connection string
+- Optional: `CHATSIGHT_MULTILABEL_THRESHOLD` — minimum AI confidence (0.0–1.0, default 0.5) for a multi-label auto-label to be persisted in queue mode. Lower it (e.g. 0.3) if auto-labeling is too sparse.
 
 ## Architecture
 
