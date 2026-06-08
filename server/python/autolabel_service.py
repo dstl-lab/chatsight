@@ -106,6 +106,21 @@ def classify_batch(
         config=CONFIG,
     )
 
+    if (
+        not response.candidates
+        or not response.candidates[0].content
+        or not response.candidates[0].content.parts
+    ):
+        text_reply = getattr(response, "text", None)
+        log.warning(
+            "classify_batch: empty or blocked candidates; n_messages=%d text=%r",
+            len(messages),
+            (text_reply or "")[:200],
+        )
+        raise ClassifyToolMissing(
+            f"Gemini returned no candidates (n={len(messages)})"
+        )
+
     for part in response.candidates[0].content.parts:
         if part.function_call and part.function_call.name == "classify_messages":
             args = dict(part.function_call.args)
