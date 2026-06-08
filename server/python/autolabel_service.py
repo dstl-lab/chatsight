@@ -34,7 +34,7 @@ TOOL = types.Tool(function_declarations=[
                     "items": {
                         "type": "object",
                         "properties": {
-                            "index": {"type": "integer", "description": "Index in the input messages array"},
+                            "index": {"type": "integer", "description": "Index in the input messages array. The same index may appear in multiple entries when several labels apply."},
                             "label": {"type": "string", "description": "The label name to assign"},
                             "confidence": {"type": "number", "description": "Your confidence in this classification, 0.0 to 1.0"},
                         },
@@ -88,6 +88,7 @@ def build_prompt(
     label_definitions: List[Dict[str, Any]],
     examples_by_label: Dict[str, List[str]],
     messages: List[Dict[str, Any]],
+    multi_select: bool = False,
 ) -> str:
     """Build the classification prompt with definitions, examples, and messages."""
     parts = ["## Label Definitions\n"]
@@ -106,10 +107,18 @@ def build_prompt(
             ctx += f" [preceding AI: ...{msg['context_before'][-100:]}]"
         parts.append(f"{i}. \"{msg['message_text']}\"{ctx}")
     parts.append("")
-    parts.append(
-        "Call `classify_messages` with the index and label for each message. "
-        "Use label names exactly as defined above."
-    )
+    if multi_select:
+        parts.append(
+            "Call `classify_messages` with one entry per (message, applicable label). "
+            "Assign all that apply: a message may get several labels, one, or none. "
+            "Reuse the same index for each label that applies to that message; omit "
+            "messages that match no label. Use label names exactly as defined above."
+        )
+    else:
+        parts.append(
+            "Call `classify_messages` with the index and label for each message. "
+            "Use label names exactly as defined above."
+        )
     return "\n".join(parts)
 
 
@@ -117,14 +126,19 @@ def classify_batch(
     label_definitions: List[Dict[str, Any]],
     examples_by_label: Dict[str, List[str]],
     messages: List[Dict[str, Any]],
+    multi_select: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Classify a batch of messages. Returns list of {index, label}."""
-    prompt = build_prompt(label_definitions, examples_by_label, messages)
+    """Classify a batch of messages. Returns list of {index, label, confidence}.
+
+    When multi_select is True the model may return multiple entries per index
+    (one per applicable label) or none; otherwise exactly one label per message.
+    """
+    prompt = build_prompt(label_definitions, examples_by_label, messages, multi_select)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
-        config=CONFIG,
+        config=MULTI_SELECT_CONFIG if multi_select else CONFIG,
     )
 
     if (
