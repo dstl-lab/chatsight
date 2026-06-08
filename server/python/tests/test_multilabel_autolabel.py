@@ -129,4 +129,6 @@ def test_run_autolabel_applies_multiple_labels_and_gates(session, engine, monkey
     assert c.id not in by_label, "label-c (0.2) below threshold must NOT be applied"
     # Message index 1 got no entries -> stays unlabeled.
     assert all(app.chatlog_id == 1 for app in ai_apps), "only message 1 should be labeled"
+    for app in ai_apps:
+        assert app.confidence is not None and app.confidence >= 0.5
     assert main._autolabel_status["error"] is None

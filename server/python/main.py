@@ -1363,7 +1363,6 @@ def _run_split_autolabel(
 
 def _run_autolabel():
     """Background task: classify all unlabeled messages using Gemini."""
-    from autolabel_service import classify_batch
     import autolabel_service
 
     global _autolabel_status
@@ -1465,7 +1464,7 @@ def _run_autolabel():
                 return
             batch = unlabeled[i : i + BATCH_SIZE]
             try:
-                results = classify_batch(label_defs, examples_by_label, batch, multi_select=True)
+                results = autolabel_service.classify_batch(label_defs, examples_by_label, batch, multi_select=True)
             except Exception as e:
                 _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
                 continue

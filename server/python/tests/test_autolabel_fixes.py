@@ -45,6 +45,7 @@ def test_autolabel_excludes_archived_labels(session, engine, monkeypatch):
     """_run_autolabel must not send archived labels to Gemini and must not write
     LabelApplication rows for them."""
     monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(autolabel_service, "MULTILABEL_THRESHOLD", 0.5)
 
     active = _make_label(session, "active-label")
     _make_label(session, "archived-label", archived=True)
