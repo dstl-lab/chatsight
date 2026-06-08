@@ -52,7 +52,7 @@ def test_autolabel_excludes_archived_labels(session, engine, monkeypatch):
 
     label_defs_seen = []
 
-    def fake_classify(label_defs, examples_by_label, messages):
+    def fake_classify(label_defs, examples_by_label, messages, multi_select=False):
         label_defs_seen.extend(label_defs)
         return [{"index": 0, "label": label_defs[0]["name"], "confidence": 0.9}]
 
@@ -93,7 +93,7 @@ def test_autolabel_scopes_to_queue_scope(session, engine, monkeypatch):
 
     messages_sent = []
 
-    def fake_classify(label_defs, examples_by_label, messages):
+    def fake_classify(label_defs, examples_by_label, messages, multi_select=False):
         messages_sent.extend(messages)
         return []
 
@@ -131,7 +131,7 @@ def test_autolabel_does_not_query_external_db(session, engine, monkeypatch):
     monkeypatch.setattr(main.ext_engine, "connect", _fake_connect)
 
     # Autolabel should still succeed (no external DB calls)
-    def fake_classify(label_defs, examples_by_label, messages):
+    def fake_classify(label_defs, examples_by_label, messages, multi_select=False):
         return []
 
     monkeypatch.setattr(autolabel_service, "classify_batch", fake_classify)
