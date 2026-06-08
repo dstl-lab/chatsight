@@ -14,6 +14,8 @@ log = logging.getLogger(__name__)
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
+MULTILABEL_THRESHOLD = float(os.environ.get("CHATSIGHT_MULTILABEL_THRESHOLD", "0.5"))
+
 
 class ClassifyToolMissing(RuntimeError):
     """Gemini did not return the classify_messages tool call.
@@ -45,22 +47,41 @@ TOOL = types.Tool(function_declarations=[
     )
 ])
 
-CONFIG = types.GenerateContentConfig(
-    system_instruction=(
-        "You are classifying student messages from AI tutoring conversations. "
-        "You will be given label definitions with example messages, then a batch "
-        "of unlabeled messages to classify. Assign exactly one label to each message. "
-        "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
-    ),
-    temperature=0,
-    tools=[TOOL],
-    tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(
-            mode="ANY",
-            allowed_function_names=["classify_messages"],
-        )
-    ),
+_SINGLE_SELECT_INSTRUCTION = (
+    "You are classifying student messages from AI tutoring conversations. "
+    "You will be given label definitions with example messages, then a batch "
+    "of unlabeled messages to classify. Assign exactly one label to each message. "
+    "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
 )
+
+_MULTI_SELECT_INSTRUCTION = (
+    "You are classifying student messages from AI tutoring conversations. "
+    "You will be given label definitions with example messages, then a batch "
+    "of unlabeled messages to classify. Assign EVERY label that applies to a "
+    "message — a message may match several labels, exactly one, or none. Emit a "
+    "SEPARATE classification entry for each applicable label, reusing the same "
+    "index for every label that applies to that message. If a message matches no "
+    "label, emit no entry for it. "
+    "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
+)
+
+
+def _make_config(system_instruction: str) -> types.GenerateContentConfig:
+    return types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0,
+        tools=[TOOL],
+        tool_config=types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode="ANY",
+                allowed_function_names=["classify_messages"],
+            )
+        ),
+    )
+
+
+CONFIG = _make_config(_SINGLE_SELECT_INSTRUCTION)            # default / split flow
+MULTI_SELECT_CONFIG = _make_config(_MULTI_SELECT_INSTRUCTION)  # general auto-label
 
 
 def build_prompt(
