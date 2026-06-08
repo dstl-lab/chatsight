@@ -1370,10 +1370,12 @@ def _run_autolabel():
 
     try:
         with Session(engine) as db:
-            # Multi-label flow: only consider mode='multi' labels here so the
-            # AI batch never writes value-bearing rows to single-mode labels.
+            # Multi-label flow: only consider active (non-archived) mode='multi'
+            # labels so the AI batch never writes to archived or single-mode labels.
             labels = db.exec(
-                select(LabelDefinition).where(LabelDefinition.mode == "multi")
+                select(LabelDefinition)
+                .where(LabelDefinition.mode == "multi")
+                .where(LabelDefinition.archived_at == None)  # noqa: E711
             ).all()
             if not labels:
                 _autolabel_status = {
@@ -1389,7 +1391,8 @@ def _run_autolabel():
                 {"name": l.name, "description": l.description} for l in labels
             ]
 
-            # Get human-labeled examples for each label
+            # Get human-labeled examples for each label — use MessageCache
+            # (populated at startup) to avoid slow external-DB round-trips.
             examples_by_label: dict[str, list[str]] = {}
             for label in labels:
                 apps = db.exec(
@@ -1399,32 +1402,14 @@ def _run_autolabel():
                         _is_multi_application(),
                     )
                 ).all()
-                # We need message text — fetch from external DB
-                if apps:
-                    pairs = [(a.chatlog_id, a.message_index) for a in apps[:10]]
-                    with ext_engine.connect() as conn:
-                        for cid, midx in pairs:
-                            row = conn.execute(
-                                text("""
-                                WITH student AS (
-                                    SELECT payload->>'question' AS msg,
-                                           (ROW_NUMBER() OVER (
-                                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                                           )) - 1 AS idx
-                                    FROM events
-                                    WHERE event_type = 'tutor_query'
-                                      AND payload->>'conversation_id' = (
-                                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                                      )
-                                )
-                                SELECT msg FROM student WHERE idx = :midx
-                            """),
-                                {"cid": cid, "midx": midx},
-                            ).first()
-                            if row and row[0]:
-                                examples_by_label.setdefault(label.name, []).append(
-                                    row[0]
-                                )
+                for a in apps[:10]:
+                    cached_text = db.exec(
+                        select(MessageCache.message_text)
+                        .where(MessageCache.chatlog_id == a.chatlog_id)
+                        .where(MessageCache.message_index == a.message_index)
+                    ).first()
+                    if cached_text:
+                        examples_by_label.setdefault(label.name, []).append(cached_text)
 
             # Get unlabeled messages (multi-label scope — single-label /run
             # decisions on the same message must not exclude it from the
@@ -1439,43 +1424,33 @@ def _run_autolabel():
             }
             excluded = labeled_set | skipped_set
 
-        # Fetch all student messages from external DB
-        with ext_engine.connect() as conn:
-            rows = (
-                conn.execute(
-                    text("""
-                WITH student AS (
-                    SELECT id,
-                           payload->>'conversation_id' AS conv_id,
-                           payload->>'question' AS message_text,
-                           (ROW_NUMBER() OVER (
-                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                           )) - 1 AS message_index
-                    FROM events WHERE event_type = 'tutor_query'
-                ),
-                chatlog_ids AS (
-                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events
-                    WHERE event_type IN ('tutor_query', 'tutor_response')
-                    GROUP BY payload->>'conversation_id'
+            # Fetch candidates from MessageCache (already populated at startup
+            # from the external DB). Filter to Week 3 scope (QUEUE_SCOPE) so
+            # autolabel stays within the study boundary — same as the live queue.
+            cache_rows = db.exec(
+                select(
+                    MessageCache.chatlog_id,
+                    MessageCache.message_index,
+                    MessageCache.message_text,
+                    MessageCache.context_before,
+                    MessageCache.notebook,
                 )
-                SELECT s.message_text, s.message_index, ci.chatlog_id,
-                    (SELECT e2.payload->>'response' FROM events e2
-                     WHERE e2.payload->>'conversation_id' = s.conv_id
-                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
-                     ORDER BY e2.id DESC LIMIT 1) AS context_before
-                FROM student s
-                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            """)
-                )
-                .mappings()
-                .all()
-            )
+            ).all()
+
+        in_scope_rows = [
+            row for row in cache_rows
+            if study_scope.notebook_in_scope(row[4], study_scope.QUEUE_SCOPE)
+        ]
 
         unlabeled = [
-            dict(r)
-            for r in rows
-            if (r["chatlog_id"], r["message_index"]) not in excluded
+            {
+                "chatlog_id": row[0],
+                "message_index": row[1],
+                "message_text": row[2],
+                "context_before": row[3],
+            }
+            for row in in_scope_rows
+            if (row[0], row[1]) not in excluded
         ]
         _autolabel_status["total"] = len(unlabeled)
 
