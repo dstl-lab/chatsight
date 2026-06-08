@@ -29,6 +29,18 @@ The `classify_messages` tool returns a **flat** `classifications` array of
 `(label_id, chatlog_id, message_index)`. So the data structures already support
 multiple rows per message index — only the prompt prevents it.
 
+**Important constraint:** `classify_batch` is shared by two flows:
+- `_run_autolabel` — general multi-label auto-labeling (the target of this change).
+- `_run_label_split` (`main.py:~1290`) — splits one label into two sub-labels by
+  redistributing each orphaned message into **exactly one** of two new buckets,
+  then deletes the original label. This is a 1-of-2 **partition**, not a
+  multi-label assignment. Making it multi-select would let a message land in
+  both or neither bucket — and "neither" silently drops the message when the
+  original label is deleted.
+
+Therefore the new behavior must be **opt-in per call**, leaving the split flow
+on today's exactly-one-label semantics.
+
 ## Decisions
 
 | Decision | Choice |
@@ -48,35 +60,44 @@ Rejected alternatives:
 
 ## Design
 
-### 1. `autolabel_service.py` — allow 0..N labels per message
+### 1. `autolabel_service.py` — opt-in multi-select
 
-- **System instruction** (line ~53): replace *"Assign exactly one label to each
-  message"* with an instruction to assign **every** label that applies, emitting
-  a **separate** entry per applicable label for the same `index`, and to emit
-  **no** entry for a message that fits no label.
-- **Tool description** (`classify_messages`, line ~26) and the `classifications`
-  item description: clarify that the same `index` may appear multiple times (once
-  per applicable label) or be absent entirely.
-- **`build_prompt`** closing instruction (lines ~88-91): mirror the
-  "all that apply / none is allowed" wording.
+- Add a `multi_select: bool = False` parameter to both `build_prompt` and
+  `classify_batch`. Default `False` preserves today's exactly-one behavior for
+  the split flow.
+- Provide **two** system-instruction strings (single vs. multi) and select the
+  matching `GenerateContentConfig` inside `classify_batch` based on
+  `multi_select`. The multi variant instructs the model to assign **every**
+  label that applies, emitting a **separate** entry per applicable label for the
+  same `index`, and to emit **no** entry for a message that fits no label.
+- **Tool description** (`classify_messages`) and the `classifications` item
+  description: clarify that the same `index` may appear multiple times (once per
+  applicable label) or be absent entirely. (Shared by both modes; the per-call
+  system instruction governs how many labels are emitted.)
+- **`build_prompt`** closing instruction: when `multi_select`, mirror the
+  "all that apply / none is allowed" wording; otherwise keep the existing
+  one-label wording.
 - **`classify_batch`** return shape is **unchanged**: still a flat
   `list[{index, label, confidence}]`, now possibly with repeated or missing
-  indices.
+  indices when `multi_select=True`.
 - Add module-level constant:
   `MULTILABEL_THRESHOLD = float(os.environ.get("CHATSIGHT_MULTILABEL_THRESHOLD", "0.5"))`.
 
 ### 2. Confidence threshold gate (consumer side)
 
-Applied in `main.py` at **both** auto-label consumer sites:
-- `_run_autolabel` (line ~1364) — main multi-label flow.
-- The split-flow autolabel consumer (line ~1290).
+Applied in `main.py` **only** at the general flow `_run_autolabel`
+(line ~1364), which now calls `classify_batch(..., multi_select=True)`.
 
 After clamping `conf` to `[0.0, 1.0]`:
 - If `conf` is `None` / non-numeric, treat as **below** threshold → do not persist.
-- If `conf < MULTILABEL_THRESHOLD`, do not persist.
+- If `conf < autolabel_service.MULTILABEL_THRESHOLD`, do not persist.
 - Otherwise persist the `LabelApplication` (with existing dedup check).
 
 A label only lands when the model is explicitly confident enough.
+
+The split-flow consumer (`main.py:~1290`) calls `classify_batch` with the
+default `multi_select=False` and **does not** apply the gate — it keeps today's
+exactly-one-label partition behavior, fully unchanged.
 
 ### 3. Zero-label outcome
 
@@ -100,7 +121,8 @@ reporting is unaffected.
     `LabelApplication` rows written for that message.
   - a sub-threshold entry → assert it is **not** persisted.
   - an `index` with no entries → assert the message stays unlabeled.
-- Verify both consumer sites (`_run_autolabel` and the split flow) apply the gate.
+- Verify the split flow (`classify_batch` with default `multi_select=False`)
+  still produces exactly one label per message and does **not** apply the gate.
 
 ## Trade-offs / risks
 
