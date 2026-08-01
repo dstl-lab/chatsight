@@ -15,7 +15,7 @@ For exploratory, many-labels-per-message coding:
 1. The system shows one student message at a time.
 2. The instructor **toggles one or more labels** on/off, **creates a new label** on the fly if nothing fits, or **skips** the message.
 3. Clicking **"Next"** advances (disabled until at least one label is applied); a brief **undo toast** lets you revert.
-4. **Two-tier AI assist**: after **20** human-labeled messages, Gemini suggestions appear as ghost tags; after **min(40% of total, 100)** human labels, an **auto-label** button batch-classifies the rest in the background.
+4. **Two-tier AI assist**: after **20** human-labeled messages, Gemini suggestions appear as ghost tags; after **min(40% of total, 100)** human labels, an **auto-label** button batch-classifies the rest in the background. Auto-labeling is **multi-select** — a message can receive several labels, each gated by a confidence threshold (`CHATSIGHT_MULTILABEL_THRESHOLD`, default 0.5).
 5. Labels can be **merged, split, renamed, reordered, or archived** from the label management view as understanding evolves (archiving returns a label's orphaned messages to the queue).
 6. **Concept induction** ("Discover") clusters unlabeled messages and proposes candidate labels for you to accept or reject.
 
@@ -23,7 +23,7 @@ For exploratory, many-labels-per-message coding:
 
 For one decision per message (a binary "does this label apply?" pass), with a warm editorial UI:
 
-1. The instructor makes a **yes / no / skip** decision per message (keyboard-driven: `a` / `d` / Space, `s` to undo — rebindable).
+1. The instructor makes a **yes / no / skip** decision per message (keyboard-driven: `a` / `d` / `→` to skip, `z` to undo — rebindable).
 2. A **readiness** indicator tracks when enough variety has been labeled to hand off.
 3. On **handoff**, Gemini classifies all remaining messages (inline or via the Gemini Batch API for large jobs). Low-confidence predictions land in a **review queue** for the instructor to confirm or override.
 4. Optional free-text **instructor guidance** is fed into the classifier, and a "Gemini's Understanding" preview shows how the model interprets the label.
@@ -135,7 +135,11 @@ chatsight/
 │   ├── definition_service.py         # Gemini label descriptions / "understanding" previews
 │   ├── assist_service.py             # Single-message suggestion path
 │   ├── assignment_service.py         # Notebook filename → assignment-name mapping
+│   ├── name_suggestion_service.py    # Label-name autocomplete (similarity-filtered candidates)
+│   ├── onboarding_service.py         # Starter conversation + suggested names for onboarding
+│   ├── study_scope.py                # Opt-in study week-lock (CHATSIGHT_STUDY_LOCK=1; off by default)
 │   ├── analysis_single_label.py      # Single-label analysis APIRouter
+│   ├── analysis_multi_label.py       # Multi-label analysis APIRouter
 │   ├── label_service.py              # Legacy pre-queue Gemini labeling (reference only)
 │   ├── pyproject.toml                # Python dependencies
 │   └── tests/                        # Backend tests (pytest, in-memory SQLite)
@@ -202,11 +206,11 @@ All routes are in `server/python/main.py` (single-label analysis routes are an `
 
 ## AI system
 
-Chatsight uses **Google Gemini 2.0 Flash** (function-calling mode, `mode=ANY`, for structured JSON output) plus **`gemini-embedding-001`** for embeddings. AI-written labels are always stored with `applied_by="ai"` (and a `confidence` score) so they stay distinguishable from human labels.
+Chatsight uses **Google Gemini 2.5 Flash** (function-calling mode, `mode=ANY`, for structured JSON output) plus **`gemini-embedding-001`** for embeddings. AI-written labels are always stored with `applied_by="ai"` (and a `confidence` score) so they stay distinguishable from human labels.
 
 **Multi-label suggestions** (`autolabel_service.py`, unlocks at 20 human labels): when the instructor views a message, `POST /api/queue/suggest` builds a prompt with label definitions + up to 5 human-labeled examples per label and asks Gemini to classify the current message. The result appears as a ghost tag.
 
-**Multi-label auto-labeling** (unlocks at min(40% of total, 100) human labels): a background thread classifies all unlabeled messages in batches; the frontend polls `/api/queue/autolabel/status` for progress.
+**Multi-label auto-labeling** (unlocks at min(40% of total, 100) human labels): a background thread classifies all unlabeled messages in batches — multi-select, so one message can receive several labels, each persisted only above the `CHATSIGHT_MULTILABEL_THRESHOLD` confidence (default 0.5). Candidates come from the local `MessageCache` (archived labels excluded). The frontend polls `/api/queue/autolabel/status` for progress.
 
 **Single-label classification** (`binary_autolabel_service.py`): after the instructor labels a sample and hands off, Gemini makes a binary yes/no decision on every remaining message — either inline (parallel chunks with retry/backoff) or via the **Gemini Batch API** with multi-sub-batch splitting for large jobs. Optional instructor **guidance** is threaded into the prompt; low-confidence predictions are routed to a review queue. `definition_service.py` also generates label descriptions and "Gemini's Understanding" previews.
 
@@ -247,7 +251,7 @@ Frontend tests use mock data — no backend needed.
 | ORM | SQLModel | Combines SQLAlchemy + Pydantic (same models for DB and validation) |
 | Local DB | SQLite | Zero setup, file-based, good enough for single-user research tool |
 | External DB | PostgreSQL | Where the real chatlog data lives (read-only) |
-| AI | Google Gemini 2.0 Flash + `gemini-embedding-001`; scikit-learn (KMeans) | Function-calling classification, embeddings, and concept clustering |
+| AI | Google Gemini 2.5 Flash + `gemini-embedding-001`; scikit-learn (KMeans) | Function-calling classification, embeddings, and concept clustering |
 | Tests | pytest (backend), vitest (frontend) | Both run fast with in-memory/mock data |
 
 ---
@@ -271,6 +275,12 @@ You need at least 20 human-labeled messages before suggestions unlock. Check the
 
 **Auto-label button is grayed out**
 Auto-labeling requires min(40% of total messages, 100) human labels. Keep labeling manually until the threshold is reached.
+
+**Auto-labeling runs but applies very few labels**
+Multi-label auto-labels are only persisted above a confidence threshold. Lower `CHATSIGHT_MULTILABEL_THRESHOLD` (e.g. `0.3`; default `0.5`) in `.env` and re-run.
+
+**/queue or /run only shows one assignment's messages**
+The study week-lock is on. Remove `CHATSIGHT_STUDY_LOCK=1` from your environment (it's off by default) to serve the full quarter.
 
 ---
 
