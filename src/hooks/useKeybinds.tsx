@@ -9,8 +9,8 @@ const STORAGE_KEY = 'chatsight-keybinds'
 const DEFAULT_KEYBINDS: KeybindMap = {
   yes: 'a',
   no: 'd',
-  skip: ' ',
-  undo: 's',
+  skip: 'arrowright',
+  undo: 'z',
 }
 
 type KeybindContextValue = {

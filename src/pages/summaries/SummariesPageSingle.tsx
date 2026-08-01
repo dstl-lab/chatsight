@@ -8,6 +8,10 @@ import { DeleteConfirmModal } from '../../components/summaries/DeleteConfirmModa
 import { api } from '../../services/api'
 import type { HandoffSummaryItem, SingleLabelDetail } from '../../types'
 
+// Matches SummariesPageMulti's cadence. We only poll while a handoff is in
+// flight, so an idle page makes no requests.
+const POLL_MS = 2000
+
 export function SummariesPageSingle() {
   const [items, setItems] = useState<HandoffSummaryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,7 +42,29 @@ export function SummariesPageSingle() {
       setLoading(false)
     })
   }, [])
-  useEffect(() => { refreshDetail() }, [refreshDetail])
+
+  // Auto-refresh the label list while any handoff is still classifying so
+  // progress updates live without a manual refresh. The effect re-arms whenever
+  // `items` changes; once nothing is classifying it returns early and the page
+  // goes quiet again (a new handoff flips an item back to 'classifying', which
+  // re-arms it).
+  useEffect(() => {
+    const anyClassifying = items.some((it) => it.phase === 'classifying')
+    if (!anyClassifying) return
+    const id = setInterval(() => {
+      api.listHandoffSummaries().then(setItems).catch(() => {})
+    }, POLL_MS)
+    return () => clearInterval(id)
+  }, [items])
+
+  // Refresh the open detail pane when the active label's progress or phase
+  // changes (e.g. it finishes classifying → show its final counts + summary).
+  // `activeProgress` is stable while that label is untouched, so unrelated poll
+  // ticks don't trigger detail fetches.
+  const activeItem = items.find((it) => it.label_id === activeId)
+  const activeProgress = activeItem ? `${activeItem.phase}:${activeItem.classified_count}` : null
+  useEffect(() => { refreshDetail() }, [refreshDetail, activeProgress])
+
   useEffect(() => {
     if (activeId !== null) localStorage.setItem('summaries.active_label_id', String(activeId))
   }, [activeId])

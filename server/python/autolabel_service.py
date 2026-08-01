@@ -14,6 +14,8 @@ log = logging.getLogger(__name__)
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
+MULTILABEL_THRESHOLD = float(os.environ.get("CHATSIGHT_MULTILABEL_THRESHOLD", "0.5"))
+
 
 class ClassifyToolMissing(RuntimeError):
     """Gemini did not return the classify_messages tool call.
@@ -32,7 +34,7 @@ TOOL = types.Tool(function_declarations=[
                     "items": {
                         "type": "object",
                         "properties": {
-                            "index": {"type": "integer", "description": "Index in the input messages array"},
+                            "index": {"type": "integer", "description": "Index in the input messages array. The same index may appear in multiple entries when several labels apply."},
                             "label": {"type": "string", "description": "The label name to assign"},
                             "confidence": {"type": "number", "description": "Your confidence in this classification, 0.0 to 1.0"},
                         },
@@ -45,28 +47,48 @@ TOOL = types.Tool(function_declarations=[
     )
 ])
 
-CONFIG = types.GenerateContentConfig(
-    system_instruction=(
-        "You are classifying student messages from AI tutoring conversations. "
-        "You will be given label definitions with example messages, then a batch "
-        "of unlabeled messages to classify. Assign exactly one label to each message. "
-        "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
-    ),
-    temperature=0,
-    tools=[TOOL],
-    tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(
-            mode="ANY",
-            allowed_function_names=["classify_messages"],
-        )
-    ),
+_SINGLE_SELECT_INSTRUCTION = (
+    "You are classifying student messages from AI tutoring conversations. "
+    "You will be given label definitions with example messages, then a batch "
+    "of unlabeled messages to classify. Assign exactly one label to each message. "
+    "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
 )
+
+_MULTI_SELECT_INSTRUCTION = (
+    "You are classifying student messages from AI tutoring conversations. "
+    "You will be given label definitions with example messages, then a batch "
+    "of unlabeled messages to classify. Assign EVERY label that applies to a "
+    "message — a message may match several labels, exactly one, or none. Emit a "
+    "SEPARATE classification entry for each applicable label, reusing the same "
+    "index for every label that applies to that message. If a message matches no "
+    "label, emit no entry for it. "
+    "Use the label names exactly as provided. Rate your confidence from 0.0 (very uncertain) to 1.0 (very certain)."
+)
+
+
+def _make_config(system_instruction: str) -> types.GenerateContentConfig:
+    return types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0,
+        tools=[TOOL],
+        tool_config=types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(
+                mode="ANY",
+                allowed_function_names=["classify_messages"],
+            )
+        ),
+    )
+
+
+CONFIG = _make_config(_SINGLE_SELECT_INSTRUCTION)            # default / split flow
+MULTI_SELECT_CONFIG = _make_config(_MULTI_SELECT_INSTRUCTION)  # general auto-label
 
 
 def build_prompt(
     label_definitions: List[Dict[str, Any]],
     examples_by_label: Dict[str, List[str]],
     messages: List[Dict[str, Any]],
+    multi_select: bool = False,
 ) -> str:
     """Build the classification prompt with definitions, examples, and messages."""
     parts = ["## Label Definitions\n"]
@@ -85,10 +107,18 @@ def build_prompt(
             ctx += f" [preceding AI: ...{msg['context_before'][-100:]}]"
         parts.append(f"{i}. \"{msg['message_text']}\"{ctx}")
     parts.append("")
-    parts.append(
-        "Call `classify_messages` with the index and label for each message. "
-        "Use label names exactly as defined above."
-    )
+    if multi_select:
+        parts.append(
+            "Call `classify_messages` with one entry per (message, applicable label). "
+            "Assign all that apply: a message may get several labels, one, or none. "
+            "Reuse the same index for each label that applies to that message; omit "
+            "messages that match no label. Use label names exactly as defined above."
+        )
+    else:
+        parts.append(
+            "Call `classify_messages` with the index and label for each message. "
+            "Use label names exactly as defined above."
+        )
     return "\n".join(parts)
 
 
@@ -96,15 +126,35 @@ def classify_batch(
     label_definitions: List[Dict[str, Any]],
     examples_by_label: Dict[str, List[str]],
     messages: List[Dict[str, Any]],
+    multi_select: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Classify a batch of messages. Returns list of {index, label}."""
-    prompt = build_prompt(label_definitions, examples_by_label, messages)
+    """Classify a batch of messages. Returns list of {index, label, confidence}.
+
+    When multi_select is True the model may return multiple entries per index
+    (one per applicable label) or none; otherwise exactly one label per message.
+    """
+    prompt = build_prompt(label_definitions, examples_by_label, messages, multi_select)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
-        config=CONFIG,
+        config=MULTI_SELECT_CONFIG if multi_select else CONFIG,
     )
+
+    if (
+        not response.candidates
+        or not response.candidates[0].content
+        or not response.candidates[0].content.parts
+    ):
+        text_reply = getattr(response, "text", None)
+        log.warning(
+            "classify_batch: empty or blocked candidates; n_messages=%d text=%r",
+            len(messages),
+            (text_reply or "")[:200],
+        )
+        raise ClassifyToolMissing(
+            f"Gemini returned no candidates (n={len(messages)})"
+        )
 
     for part in response.candidates[0].content.parts:
         if part.function_call and part.function_call.name == "classify_messages":

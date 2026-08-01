@@ -108,19 +108,35 @@ def compose_explore_pick_explanation(
     chatlog_id: int,
     message_index: int,
     pending_text: str,
+    *,
+    precomputed: Optional[dict] = None,
 ) -> dict:
-    """≤20-word summary + concise score bullets for Explore (frozen per chat)."""
-    unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
-    labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
-    conv_nov = explore_service.conversation_novelty(
-        session, label_id, chatlog_id, labeled_centroids
-    )
-    theme_nov = explore_service.theme_novelty(session, label_id, chatlog_id)
-    rarity = explore_service.student_message_corpus_rarity(session, chatlog_id, message_index)
+    """≤20-word summary + concise score bullets for Explore (frozen per chat).
+
+    Pass `precomputed` (from `_select_next_chatlog_id`) to skip re-running the
+    expensive k-NN and embedding queries for the winning candidate."""
+    if precomputed:
+        unc_nov = precomputed.get("unc_nov")
+        conv_nov = precomputed.get("conv_nov")
+        theme_nov = precomputed.get("theme_nov")
+        rarity = precomputed.get("rarity")
+        spec = precomputed.get("spec")
+    else:
+        unc_nov = neighbor_uncertainty_novelty(session, label_id, chatlog_id, message_index)
+        labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
+        conv_nov = explore_service.conversation_novelty(
+            session, label_id, chatlog_id, labeled_centroids
+        )
+        theme_nov = explore_service.theme_novelty(session, label_id, chatlog_id)
+        rarity = explore_service.student_message_corpus_rarity(session, chatlog_id, message_index)
+        spec = explore_service.student_help_specificity(
+            pending_text or "", corpus_rarity=rarity
+        )
     paste_score = explore_service.student_message_copy_paste_likelihood(pending_text or "")
-    spec = explore_service.student_help_specificity(
-        pending_text or "", corpus_rarity=rarity
-    )
+    if spec is None:
+        spec = explore_service.student_help_specificity(
+            pending_text or "", corpus_rarity=rarity
+        )
     paste = paste_score or 0.0
 
     breakdown: list[str] = []
@@ -303,9 +319,9 @@ def build_sampling_meta(
 def default_hybrid_explore_fraction() -> float:
     """Server default when `LabelDefinition.hybrid_explore_fraction` is unset."""
     try:
-        v = float(os.environ.get("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0.35"))
+        v = float(os.environ.get("CHATSIGHT_HYBRID_EXPLORE_FRACTION", "0.75"))
     except (TypeError, ValueError):
-        v = 0.35
+        v = 0.75
     return max(0.0, min(1.0, v))
 
 
@@ -337,7 +353,7 @@ def _select_next_chatlog_id(
     in_progress: list[int],
     not_started: list[int],
     explore_fraction: float,
-) -> Tuple[Optional[int], Optional[str]]:
+) -> Tuple[Optional[int], Optional[str], Optional[dict]]:
     ip_pending = [
         c for c in in_progress
         if c in conv and _first_pending_turn(c, conv[c], decided)
@@ -347,21 +363,21 @@ def _select_next_chatlog_id(
         if c in conv and _first_pending_turn(c, conv[c], decided)
     ]
     if not ip_pending and not ns_pending:
-        return None, None
+        return None, None, None
 
     pool = ip_pending if ip_pending else ns_pending
     in_prog_bucket = bool(ip_pending)
 
     if len(pool) == 1:
         if in_prog_bucket:
-            return pool[0], "continue"
-        return pool[0], "round_robin"
+            return pool[0], "continue", None
+        return pool[0], "round_robin", None
 
     explore = random.random() < explore_fraction
     if not explore:
         if in_prog_bucket:
             pool_sorted = sorted(pool, key=lambda c: _shuffle_key(label_id, c))
-            return pool_sorted[0], "continue"
+            return pool_sorted[0], "continue", None
         pool_sorted = sorted(
             pool,
             key=lambda c: (
@@ -370,7 +386,7 @@ def _select_next_chatlog_id(
                 _shuffle_key(label_id, c),
             ),
         )
-        return pool_sorted[0], "round_robin"
+        return pool_sorted[0], "round_robin", None
 
     cap = explore_service.explore_score_pool_cap()
     pool_to_score = pool
@@ -411,14 +427,14 @@ def _select_next_chatlog_id(
     labeled_centroids = explore_service.labeled_student_centroids(session, label_id)
     theme_vectors = explore_service.labeled_theme_vectors(session, label_id)
 
-    def _conversation_utility(cid: int) -> float:
+    def _conversation_utility(cid: int) -> Tuple[float, dict]:
         pending = _first_pending_turn(cid, conv[cid], decided)
         if not pending:
-            return 0.0
+            return 0.0, {}
         midx, text, _notebook = pending
         student_texts = [t for _i, t, _n in conv[cid]]
-        result = neighbor_uncertainty_novelty(session, label_id, cid, midx)
-        uncertainty, msg_nov = (result if result else (None, None))
+        unc_nov = neighbor_uncertainty_novelty(session, label_id, cid, midx)
+        uncertainty, msg_nov = (unc_nov if unc_nov else (None, None))
         conv_nov = explore_service.conversation_novelty(
             session, label_id, cid, labeled_centroids
         )
@@ -428,7 +444,7 @@ def _select_next_chatlog_id(
         rarity = explore_service.student_message_corpus_rarity(session, cid, midx)
         spec = explore_service.student_help_specificity(text, corpus_rarity=rarity)
         spam = explore_service.conversation_spam_penalty(student_texts)
-        return explore_service.blended_explore_utility(
+        score = explore_service.blended_explore_utility(
             uncertainty,
             msg_nov,
             conv_nov,
@@ -437,10 +453,19 @@ def _select_next_chatlog_id(
             rarity,
             spam,
         )
+        components = {
+            "unc_nov": unc_nov,
+            "conv_nov": conv_nov,
+            "theme_nov": theme_nov,
+            "rarity": rarity,
+            "spec": spec,
+        }
+        return score, components
 
-    utility_scores = {
+    utility_results = {
         cid: _conversation_utility(cid) for cid in explore_candidates
     }
+    utility_scores = {cid: score for cid, (score, _) in utility_results.items()}
     scored = sorted(
         explore_candidates,
         key=lambda c: (-utility_scores[c], c),
@@ -448,7 +473,9 @@ def _select_next_chatlog_id(
     top_k = max(1, (len(scored) + 3) // 4)
     explore_choices = [c for c in scored[:top_k]]
 
-    return random.choice(explore_choices), "explore"
+    winner = random.choice(explore_choices)
+    _, winner_components = utility_results[winner]
+    return winner, "explore", winner_components
 
 
 def _synthetic_decided_for_exhausted_conversations(
@@ -496,28 +523,9 @@ def next_message_for_label(
         else default_hybrid_explore_fraction()
     )
 
-    cache_q = select(
-        MessageCache.id,
-        MessageCache.chatlog_id,
-        MessageCache.message_index,
-        MessageCache.message_text,
-        MessageCache.notebook,
-        MessageCache.assignment_id,
-    )
-    if assignment_id is not None:
-        cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
-    cache_rows = session.exec(cache_q).all()
-
-    # Study lock: restrict to the week tied to this label's mode
-    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
-    # client assignment_id filter above only narrows further.
-    _label = session.get(LabelDefinition, label_id)
-    _scope = study_scope.scope_for_mode(_label.mode if _label else "multi")
-    cache_rows = [
-        row for row in cache_rows
-        if study_scope.notebook_in_scope(row[4], _scope)
-    ]
-
+    # Fast path: a brand-new label with an onboarding seed and no decisions yet
+    # can return immediately without scanning the full MessageCache.
+    label = session.get(LabelDefinition, label_id)
     decided = set(
         session.exec(
             select(LabelApplication.chatlog_id, LabelApplication.message_index)
@@ -527,7 +535,6 @@ def next_message_for_label(
     if extra_decided:
         decided |= extra_decided
 
-    label = session.get(LabelDefinition, label_id)
     if (
         label
         and label.onboarding_seed_chatlog_id is not None
@@ -543,7 +550,7 @@ def next_message_for_label(
             .where(MessageCache.chatlog_id == seed_cid)
             .where(MessageCache.message_index == seed_midx)
         ).first()
-        if seed_row and (seed_cid, seed_midx) not in decided:
+        if seed_row:
             text, notebook = seed_row
             sampling_meta = build_sampling_meta(
                 session,
@@ -568,6 +575,27 @@ def next_message_for_label(
                 notebook,
                 sampling_meta=sampling_meta,
             )
+
+    cache_q = select(
+        MessageCache.id,
+        MessageCache.chatlog_id,
+        MessageCache.message_index,
+        MessageCache.message_text,
+        MessageCache.notebook,
+        MessageCache.assignment_id,
+    )
+    if assignment_id is not None:
+        cache_q = cache_q.where(MessageCache.assignment_id == assignment_id)
+    cache_rows = session.exec(cache_q).all()
+
+    # Study lock: restrict to the week tied to this label's mode
+    # (single -> Week 8, multi/onboarding -> Week 3). Unconditional; the
+    # client assignment_id filter above only narrows further.
+    _scope = study_scope.scope_for_mode(label.mode if label else "multi")
+    cache_rows = [
+        row for row in cache_rows
+        if study_scope.notebook_in_scope(row[4], _scope)
+    ]
 
     conv: dict[int, list[tuple[int, str, Optional[str]]]] = {}
     assign_by_cid: dict[int, Optional[int]] = {}
@@ -609,7 +637,7 @@ def next_message_for_label(
             )
         # Hint conversation is fully decided for this label — fall through to normal pick.
 
-    cid_pick, pick_mode = _select_next_chatlog_id(
+    cid_pick, pick_mode, pick_components = _select_next_chatlog_id(
         session,
         label_id,
         conv,
@@ -628,7 +656,7 @@ def next_message_for_label(
     midx, text, notebook = tup
     if pick_mode == "explore":
         explanation = compose_explore_pick_explanation(
-            session, label_id, cid_pick, midx, text
+            session, label_id, cid_pick, midx, text, precomputed=pick_components
         )
         _ensure_explore_pick_explanation(
             session,

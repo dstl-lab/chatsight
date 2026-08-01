@@ -99,6 +99,28 @@ def _migrate_label_definition(conn, inspect, text):
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_chatlog_id INTEGER"))
     if "onboarding_seed_message_index" not in cols:
         conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN onboarding_seed_message_index INTEGER"))
+    if "handed_off_at" not in cols:
+        conn.execute(text("ALTER TABLE labeldefinition ADD COLUMN handed_off_at DATETIME"))
+        _backfill_handed_off_at(conn, text)
+
+
+def _backfill_handed_off_at(conn, text):
+    """One-time: populate handed_off_at for already-handed-off single labels using
+    the most-recent AI-applied row's created_at as a proxy for when the handoff
+    ran, falling back to the label's own created_at when no AI rows exist. Only
+    touches NULL rows in a handed-off phase, so it's safe to re-run."""
+    conn.execute(text(
+        """
+        UPDATE labeldefinition
+        SET handed_off_at = COALESCE(
+            (SELECT MAX(la.created_at) FROM labelapplication la
+             WHERE la.label_id = labeldefinition.id AND la.applied_by = 'ai'),
+            created_at)
+        WHERE mode = 'single'
+          AND handed_off_at IS NULL
+          AND phase IN ('classifying', 'handed_off', 'reviewing', 'complete', 'failed')
+        """
+    ))
 
 
 def _migrate_onboarding_starter_cache(conn, inspect, text):

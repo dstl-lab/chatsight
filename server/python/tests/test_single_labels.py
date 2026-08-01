@@ -120,6 +120,24 @@ def test_list_messages_filter_review(client, session):
     assert len(items) == 2  # _seed_label_with_rows creates 2 review-bucket rows
 
 
+def test_list_messages_includes_skip_verdict(client, session):
+    """Skipped human decisions (value='skip') must not 500 the listing endpoint.
+
+    Regression: MessageListItem.verdict only allowed yes/no/review, so a
+    'skip' row raised a pydantic ValidationError → 500.
+    """
+    label = _seed_label_with_rows(session, yes=0, no=0, review=0, human_gold=0)
+    session.add(LabelApplication(
+        label_id=label.id, chatlog_id=9000, message_index=0,
+        applied_by="human", value="skip",
+    ))
+    session.commit()
+    r = client.get(f"/api/single-labels/{label.id}/messages?limit=200")
+    assert r.status_code == 200, r.text
+    verdicts = [it["verdict"] for it in r.json()["items"]]
+    assert "skip" in verdicts
+
+
 def test_list_messages_pagination(client, session):
     label = _seed_label_with_rows(session, yes=30, no=0, review=0, human_gold=0)
     r = client.get(f"/api/single-labels/{label.id}/messages?offset=10&limit=10")

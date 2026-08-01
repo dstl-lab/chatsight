@@ -22,10 +22,10 @@ const renderWorkspace = (props = {}) => {
 }
 
 describe('DecisionWorkspace Keybinds', () => {
-  it('calls onYes when "z" is pressed (default)', () => {
+  it('calls onYes when "a" is pressed (default)', () => {
     const onYes = vi.fn()
     renderWorkspace({ onYes })
-    fireEvent.keyDown(window, { key: 'z' })
+    fireEvent.keyDown(window, { key: 'a' })
     expect(onYes).toHaveBeenCalled()
   })
 
@@ -50,10 +50,10 @@ describe('DecisionWorkspace Keybinds', () => {
     expect(onSkip).toHaveBeenCalled()
   })
 
-  it('calls onUndo when ArrowLeft is pressed (default)', () => {
+  it('calls onUndo when "z" is pressed (default)', () => {
     const onUndo = vi.fn()
     renderWorkspace({ onUndo })
-    fireEvent.keyDown(window, { key: 'ArrowLeft' })
+    fireEvent.keyDown(window, { key: 'z' })
     expect(onUndo).toHaveBeenCalled()
   })
 
@@ -69,7 +69,7 @@ describe('DecisionWorkspace Keybinds', () => {
   it('respects case-insensitivity', () => {
     const onYes = vi.fn()
     renderWorkspace({ onYes })
-    fireEvent.keyDown(window, { key: 'Z' })
+    fireEvent.keyDown(window, { key: 'A' })
     expect(onYes).toHaveBeenCalled()
   })
 

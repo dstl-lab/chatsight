@@ -657,7 +657,7 @@ export interface SingleLabelDetail {
   confidence_histogram: ConfidenceHistogramBin[]
 }
 
-export type MessageVerdict = 'yes' | 'no' | 'review'
+export type MessageVerdict = 'yes' | 'no' | 'skip' | 'review'
 
 export interface MessageListItem {
   chatlog_id: number

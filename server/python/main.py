@@ -1329,7 +1329,7 @@ def _run_split_autolabel(
             for r in results:
                 idx = r.get("index")
                 label_name = r.get("label")
-                if idx is None or idx >= len(batch) or label_name not in label_map:
+                if idx is None or idx < 0 or idx >= len(batch) or label_name not in label_map:
                     continue
                 msg = batch[idx]
                 db.add(
@@ -1363,17 +1363,20 @@ def _run_split_autolabel(
 
 def _run_autolabel():
     """Background task: classify all unlabeled messages using Gemini."""
-    from autolabel_service import classify_batch
+    # module import (not from-import) so tests can monkeypatch autolabel_service.MULTILABEL_THRESHOLD
+    import autolabel_service
 
     global _autolabel_status
     _autolabel_status = {"running": True, "processed": 0, "total": 0, "error": None}
 
     try:
         with Session(engine) as db:
-            # Multi-label flow: only consider mode='multi' labels here so the
-            # AI batch never writes value-bearing rows to single-mode labels.
+            # Multi-label flow: only consider active (non-archived) mode='multi'
+            # labels so the AI batch never writes to archived or single-mode labels.
             labels = db.exec(
-                select(LabelDefinition).where(LabelDefinition.mode == "multi")
+                select(LabelDefinition)
+                .where(LabelDefinition.mode == "multi")
+                .where(LabelDefinition.archived_at == None)  # noqa: E711
             ).all()
             if not labels:
                 _autolabel_status = {
@@ -1389,7 +1392,8 @@ def _run_autolabel():
                 {"name": l.name, "description": l.description} for l in labels
             ]
 
-            # Get human-labeled examples for each label
+            # Get human-labeled examples for each label — use MessageCache
+            # (populated at startup) to avoid slow external-DB round-trips.
             examples_by_label: dict[str, list[str]] = {}
             for label in labels:
                 apps = db.exec(
@@ -1399,32 +1403,14 @@ def _run_autolabel():
                         _is_multi_application(),
                     )
                 ).all()
-                # We need message text — fetch from external DB
-                if apps:
-                    pairs = [(a.chatlog_id, a.message_index) for a in apps[:10]]
-                    with ext_engine.connect() as conn:
-                        for cid, midx in pairs:
-                            row = conn.execute(
-                                text("""
-                                WITH student AS (
-                                    SELECT payload->>'question' AS msg,
-                                           (ROW_NUMBER() OVER (
-                                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                                           )) - 1 AS idx
-                                    FROM events
-                                    WHERE event_type = 'tutor_query'
-                                      AND payload->>'conversation_id' = (
-                                          SELECT payload->>'conversation_id' FROM events WHERE id = :cid LIMIT 1
-                                      )
-                                )
-                                SELECT msg FROM student WHERE idx = :midx
-                            """),
-                                {"cid": cid, "midx": midx},
-                            ).first()
-                            if row and row[0]:
-                                examples_by_label.setdefault(label.name, []).append(
-                                    row[0]
-                                )
+                for a in apps[:10]:
+                    cached_text = db.exec(
+                        select(MessageCache.message_text)
+                        .where(MessageCache.chatlog_id == a.chatlog_id)
+                        .where(MessageCache.message_index == a.message_index)
+                    ).first()
+                    if cached_text:
+                        examples_by_label.setdefault(label.name, []).append(cached_text)
 
             # Get unlabeled messages (multi-label scope — single-label /run
             # decisions on the same message must not exclude it from the
@@ -1439,43 +1425,33 @@ def _run_autolabel():
             }
             excluded = labeled_set | skipped_set
 
-        # Fetch all student messages from external DB
-        with ext_engine.connect() as conn:
-            rows = (
-                conn.execute(
-                    text("""
-                WITH student AS (
-                    SELECT id,
-                           payload->>'conversation_id' AS conv_id,
-                           payload->>'question' AS message_text,
-                           (ROW_NUMBER() OVER (
-                               PARTITION BY payload->>'conversation_id' ORDER BY id
-                           )) - 1 AS message_index
-                    FROM events WHERE event_type = 'tutor_query'
-                ),
-                chatlog_ids AS (
-                    SELECT payload->>'conversation_id' AS conv_id, MIN(id) AS chatlog_id
-                    FROM events
-                    WHERE event_type IN ('tutor_query', 'tutor_response')
-                    GROUP BY payload->>'conversation_id'
+            # Fetch candidates from MessageCache (already populated at startup
+            # from the external DB). Filter to Week 3 scope (QUEUE_SCOPE) so
+            # autolabel stays within the study boundary — same as the live queue.
+            cache_rows = db.exec(
+                select(
+                    MessageCache.chatlog_id,
+                    MessageCache.message_index,
+                    MessageCache.message_text,
+                    MessageCache.context_before,
+                    MessageCache.notebook,
                 )
-                SELECT s.message_text, s.message_index, ci.chatlog_id,
-                    (SELECT e2.payload->>'response' FROM events e2
-                     WHERE e2.payload->>'conversation_id' = s.conv_id
-                       AND e2.event_type = 'tutor_response' AND e2.id < s.id
-                     ORDER BY e2.id DESC LIMIT 1) AS context_before
-                FROM student s
-                JOIN chatlog_ids ci ON s.conv_id = ci.conv_id
-            """)
-                )
-                .mappings()
-                .all()
-            )
+            ).all()
+
+        in_scope_rows = [
+            row for row in cache_rows
+            if study_scope.notebook_in_scope(row[4], study_scope.QUEUE_SCOPE)
+        ]
 
         unlabeled = [
-            dict(r)
-            for r in rows
-            if (r["chatlog_id"], r["message_index"]) not in excluded
+            {
+                "chatlog_id": row[0],
+                "message_index": row[1],
+                "message_text": row[2],
+                "context_before": row[3],
+            }
+            for row in in_scope_rows
+            if (row[0], row[1]) not in excluded
         ]
         _autolabel_status["total"] = len(unlabeled)
 
@@ -1489,7 +1465,7 @@ def _run_autolabel():
                 return
             batch = unlabeled[i : i + BATCH_SIZE]
             try:
-                results = classify_batch(label_defs, examples_by_label, batch)
+                results = autolabel_service.classify_batch(label_defs, examples_by_label, batch, multi_select=True)
             except Exception as e:
                 _autolabel_status["error"] = f"Gemini error at batch {i}: {str(e)}"
                 continue
@@ -1502,7 +1478,7 @@ def _run_autolabel():
                 for r in results:
                     idx = r.get("index")
                     label_name = r.get("label")
-                    if idx is None or idx >= len(batch) or label_name not in label_map:
+                    if idx is None or idx < 0 or idx >= len(batch) or label_name not in label_map:
                         continue
                     msg = batch[idx]
                     # Check for duplicate
@@ -1520,6 +1496,11 @@ def _run_autolabel():
                             conf = max(0.0, min(1.0, float(conf)))
                         else:
                             conf = None
+                        # Multi-select gate: only persist labels the model is
+                        # confident enough about. Missing/non-numeric confidence
+                        # is treated as below threshold (not persisted).
+                        if conf is None or conf < autolabel_service.MULTILABEL_THRESHOLD:
+                            continue
                         db.add(LabelApplication(
                             label_id=label_map[label_name],
                             chatlog_id=msg["chatlog_id"],
@@ -3842,6 +3823,15 @@ CLASSIFICATION_CHUNK_SIZE = 50
 # per-project quota in the first second of a fresh run. The retry-on-429
 # logic in `_classify_in_parallel` self-throttles below this when needed.
 PARALLEL_CONCURRENCY = 3
+# Process-wide gate: only one inline classification runs at a time. Concurrent
+# handoffs would each spawn PARALLEL_CONCURRENCY workers, multiplying the Gemini
+# request rate past the quota PARALLEL_CONCURRENCY was tuned to sit under (see
+# above), causing retry/backoff thrashing that is slower than running serially.
+# Serializing whole inline jobs keeps aggregate concurrency at the tuned value
+# and lets each label finish — and become usable — before the next starts. The
+# Batch API path is intentionally NOT gated: Google manages its throughput
+# asynchronously, so local serialization would only stall progress.
+_INLINE_CLASSIFY_LOCK = threading.Lock()
 # Retry settings for the chunk-classifier when Gemini returns 429. Other
 # error classes fail-fast so genuine bugs surface immediately.
 PARALLEL_RETRY_MAX_ATTEMPTS = 4   # initial try + 3 retries
@@ -3949,9 +3939,12 @@ def _do_classification(
             db, label, pending, yes_examples, no_examples
         )
     else:
-        yes_msgs, no_msgs = _classify_in_parallel(
-            db, label, pending, yes_examples, no_examples
-        )
+        # Serialize inline jobs process-wide so N concurrent handoffs don't
+        # multiply Gemini request rate past quota. See _INLINE_CLASSIFY_LOCK.
+        with _INLINE_CLASSIFY_LOCK:
+            yes_msgs, no_msgs = _classify_in_parallel(
+                db, label, pending, yes_examples, no_examples
+            )
 
     summary = binary_autolabel_service.summarize_batch(
         label_name=label.name,
@@ -4498,6 +4491,7 @@ def handoff_single_label(
 
     label.phase = "classifying"
     label.is_active = False
+    label.handed_off_at = datetime.utcnow()
     db.add(label)
 
     next_q = db.exec(
@@ -4546,6 +4540,10 @@ def retry_handoff_single_label(
 
     label.phase = "classifying"
     label.summary_json = None
+    # A retry resumes the original handoff, so keep the original handed_off_at;
+    # only stamp it if it was never set (e.g. a pre-migration row).
+    if label.handed_off_at is None:
+        label.handed_off_at = datetime.utcnow()
     # Keep classified_count / classification_total — they're cumulative across
     # retries. _do_classification extends them by the new pending set's size.
     db.add(label)
@@ -5058,7 +5056,9 @@ def list_handoff_summaries(db: Session = Depends(get_session)):
         .where(LabelDefinition.phase.in_(  # type: ignore[attr-defined]
             ["classifying", "handed_off", "reviewing", "complete", "failed"]
         ))
-        .order_by(LabelDefinition.id.desc())
+        # Most-recently handed-off first. id.desc() is a stable tiebreaker and
+        # also orders any rows that predate the handed_off_at backfill (nulls last).
+        .order_by(LabelDefinition.handed_off_at.desc().nulls_last(), LabelDefinition.id.desc())
     ).all()
 
     out: list[HandoffSummaryListItem] = []

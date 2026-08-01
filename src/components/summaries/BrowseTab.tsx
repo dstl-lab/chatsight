@@ -87,8 +87,8 @@ export function BrowseTab({ label, onLabelChanged }: BrowseTabProps) {
   )
 
   const accept = useCallback(() => {
-    if (!detail?.verdict || detail.verdict === 'review') return
-    flip(detail.verdict as 'yes' | 'no')
+    if (!detail?.verdict || detail.verdict === 'review' || detail.verdict === 'skip') return
+    flip(detail.verdict)
   }, [detail, flip])
 
   const saveNote = useCallback(
