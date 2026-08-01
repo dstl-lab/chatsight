@@ -1,6 +1,7 @@
-"""Study fixture: hard-locked per-week assignment scopes for the user study.
+"""Study fixture: opt-in per-week assignment scopes for user studies.
 
-`/queue` (multi-label) is locked to DSC 10 Winter-2026 Week 3 (Lab 1 + HW 1);
+Inert by default (full-quarter scope). When CHATSIGHT_STUDY_LOCK=1,
+`/queue` (multi-label) is locked to DSC 10 Winter-2026 Week 3 (Lab 1 + HW 1) and
 `/run` (single-label) is locked to Week 8 (Lab 5 + HW 5). Scope is expressed in
 canonical assignment names (the same vocabulary as assignment_service) so it does
 not depend on AssignmentMapping rows existing. Weeks come from
@@ -29,10 +30,11 @@ RUN_SCOPE = {"Lab 5", "Homework 5"}     # Week 8 — single-label
 
 
 def lock_enabled() -> bool:
-    """Whether the study week-lock is active. ON by default (production/study);
-    set CHATSIGHT_STUDY_LOCK=0 to disable (legacy test suite seeds unscoped data).
+    """Whether the study week-lock is active. OFF by default: main serves the
+    full quarter; set CHATSIGHT_STUDY_LOCK=1 on a study deployment to lock
+    /queue and /run to their study weeks.
     Read at call time so tests can toggle it via monkeypatch."""
-    return os.getenv("CHATSIGHT_STUDY_LOCK", "1") != "0"
+    return os.getenv("CHATSIGHT_STUDY_LOCK", "0") != "0"
 
 
 def scope_for_mode(mode: str) -> set[str]:
